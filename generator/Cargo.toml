@@ -1,0 +1,15 @@
+[package]
+name = "generator"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+csv = "1.1.6"
+rand = "0.8.4"
+clap = "2.33.3"
+derive_more = "0.99.16"
+chrono = "0.4.19"
+rust_decimal = "1.17.0"
+uuid = { version = "0.8.2", features = ["v4"] }
+
+[dev-dependencies]
