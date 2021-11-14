@@ -10,4 +10,4 @@ Cargo.lock
 **/*.rs.bk
 
 # Generated data files
-/tmp/
+**/tmp/
