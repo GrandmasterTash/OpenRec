@@ -4,6 +4,7 @@ use generator::Options;
 mod data_type;
 mod column;
 mod schema;
+mod group;
 mod generator;
 
 const ABOUT: &str = r#"Utility to generate psuedo-realistic random CSV transaction files that reference each other. Multiple transaction types are created. Invoices, Payments and receipts. Each file can be given a column schema or left to be randomly generated.
@@ -27,6 +28,7 @@ fn main() {
     let matches = App::new("CSV Data Generator")
         .version("1.0")
         .about(ABOUT)
+        // TODO: Allow output folder to be specified - and allow an env var to apply a default.
         .arg(Arg::with_name("INVOICE_SCHEMA")
             .help("The schema string for the invoice file.")
             .required(false)

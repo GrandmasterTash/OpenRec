@@ -52,20 +52,54 @@ pub struct ColumnMeta {
 }
 
 impl ColumnMeta {
+    pub fn new_reference(segments: Vec<(u8, SegmentType)>) -> Self {
+        Self {
+            segments: Some(SegmentMeta::new(
+                segments.iter().map(|s| s.0).collect(),
+                segments.iter().map(|s| s.1).collect(),
+                std::iter::repeat('/').take(segments.len()-1).collect()
+            )),
+            currency: None,
+            integer: None,
+            long: None,
+            decimal: None,
+        }
+    }
+
+    pub fn new_decimal(precision: u8, scale: u8) -> Self {
+        Self {
+            segments: None,
+            currency: None,
+            integer: None,
+            long: None,
+            decimal: Some(DecimalMeta::new(precision, scale)),
+        }
+    }
+
+    pub fn new_currency(code: Option<String>) -> Self {
+        Self {
+            segments: None,
+            currency: Some(CurrencyMeta::new(code)),
+            integer: None,
+            long: None,
+            decimal: None,
+        }
+    }
+
     ///
     /// Generate a random set of column properties based on the data-type.
     ///
-    pub fn new(data_type: DataType, rng: &mut StdRng) -> Self {
+    pub fn generate(data_type: DataType, rng: &mut StdRng) -> Self {
         match data_type {
             DataType::STRING => {
                 match rng.gen_range(1..=100) {
-                    1..=60 => ColumnMeta { segments: Some(SegmentMeta::new(None, rng)), ..Default::default() }, // 60% of string columns are a reference code.
-                    _      => ColumnMeta { currency: Some(CurrencyMeta::new(rng)), ..Default::default() },      // 40% of string columns are an ISO currency code.
+                    1..=60 => ColumnMeta { segments: Some(SegmentMeta::generate(None, rng)), ..Default::default() }, // 60% of string columns are a reference code.
+                    _      => ColumnMeta { currency: Some(CurrencyMeta::generate(rng)), ..Default::default() },      // 40% of string columns are an ISO currency code.
                 }
             },
             DataType::INTEGER => ColumnMeta { integer: Some(IntegerMeta::new(rng)), ..Default::default() },
             DataType::LONG    => ColumnMeta { long: Some(LongMeta::new(rng)), ..Default::default() },
-            DataType::DECIMAL => ColumnMeta { decimal: Some(DecimalMeta::new(rng)), ..Default::default() },
+            DataType::DECIMAL => ColumnMeta { decimal: Some(DecimalMeta::generate(rng)), ..Default::default() },
             _ => ColumnMeta::default(),
         }
     }
@@ -103,7 +137,15 @@ pub struct SegmentMeta {
 }
 
 impl SegmentMeta {
-    fn new(segments: Option<u8>, rng: &mut StdRng) -> Self {
+    fn new(segment_lens: Vec<u8>, segment_types: Vec<SegmentType>, separators: Vec<char>) -> Self {
+        Self {
+            segment_lens,
+            segment_types,
+            separators
+        }
+    }
+
+    fn generate(segments: Option<u8>, rng: &mut StdRng) -> Self {
         // Generate 1-4 segments.
         let segments = match segments {
             Some(count) => count,
@@ -168,7 +210,11 @@ pub struct CurrencyMeta {
 }
 
 impl CurrencyMeta {
-    fn new(rng: &mut StdRng) -> Self {
+    pub fn new(code: Option<String>) -> Self {
+        Self { code }
+    }
+
+    fn generate(rng: &mut StdRng) -> Self {
         let currency = match rng.gen_range(1..=100) {
             1..=70 => Some(generator::rand_currency()), // All values in this column will use this randomly selected currency.
             _      => None,                  // Each value in this column will be a random currency.
@@ -222,7 +268,11 @@ pub struct DecimalMeta {
 }
 
 impl DecimalMeta {
-    fn new(rng: &mut StdRng) -> Self {
+    pub fn new(precision: u8, scale: u8) -> Self {
+        Self { precision, scale }
+    }
+
+    fn generate(rng: &mut StdRng) -> Self {
         let scale = 2 + rng.gen_range(0..=5);
         let precision = scale + 1 + rng.gen_range(0..=5);
         Self { precision, scale }

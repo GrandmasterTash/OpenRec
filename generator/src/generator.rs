@@ -7,7 +7,7 @@ use humantime::format_duration;
 use num_format::{Locale, ToFormattedString};
 use chrono::{Datelike, NaiveDate, TimeZone, Utc};
 use rand::{Rng, SeedableRng, prelude::{SliceRandom, StdRng}};
-use crate::{column::*, data_type::DataType, schema::Schema};
+use crate::{column::*, data_type::DataType, group::Group, schema::Schema};
 
 
 pub mod prelude {
@@ -17,6 +17,21 @@ pub mod prelude {
     pub const RANDOM_ALPHA: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     pub const RANDOM_NUMERIC: &str = "0123456789";
     pub const RANDOM_SEPARATORS: &str = "-/_ ";
+
+    // Always-present, column names.
+    pub const AMOUNT: &str = "Amount";
+    pub const CURRENCY: &str = "Currency";
+    pub const FX_RATE: &str = "FXRate";
+    pub const INVOICE_REF: &str = "InvoiceRef";
+    pub const PAYMENT_DATE: &str = "PaymentDate";
+    pub const PAYMENT_REF: &str = "PaymentRef";
+    pub const RECEIPT_DATE: &str = "ReceiptDate";
+    pub const RECEIPT_REF: &str = "ReceiptRef";
+    pub const RECORD_TYPE: &str = "RecordType";
+    pub const REFERENCE: &str = "Reference";
+    pub const SETTLEMENT_DATE: &str = "SettlementDate";
+    pub const TOTAL_AMOUNT: &str = "TotalAmount";
+    pub const TRADE_DATE: &str = "TradeDate";
 }
 
 pub struct Options {
@@ -30,8 +45,6 @@ pub struct Options {
     pub rnd_seed: Option<u64>
 }
 
-// TODO: Look at 1-n record generation.
-
 ///
 /// A utility to generate some related CSV data.
 ///
@@ -40,24 +53,32 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     let start = Instant::now();
 
     let rnd_seed = options.rnd_seed.unwrap_or(1234567890u64);
-    let mut rng = StdRng::seed_from_u64(rnd_seed);
-    let inv_schema = column_schema(options.inv_schema, options.inv_columns, &mut rng);
-    let pay_schema = column_schema(options.pay_schema, options.pay_columns, &mut rng);
-    let rec_schema = column_schema(options.rec_schema, options.rec_columns, &mut rng);
+    let mut rng = StdRng::seed_from_u64(rnd_seed); // TODO: Mung next 3 lines into Options somehow.
+    let inv_schema = column_schema(&options.inv_schema, &options.inv_columns, &mut rng);
+    let pay_schema = column_schema(&options.pay_schema, &options.pay_columns, &mut rng);
+    let rec_schema = column_schema(&options.rec_schema, &options.rec_columns, &mut rng);
 
     // Turn the ID,ST,DT,DE type strings into real schemas with some randomness to field lengths.
-    let inv_schema = Schema::new(&inv_schema, &mut rng);
-    let pay_schema = Schema::new(&pay_schema, &mut rng);
-    let rec_schema = Schema::new(&rec_schema, &mut rng);
+    let inv_schema = Schema::new(&inv_schema, &mut rng, &mut fixed_inv_columns());
+    let pay_schema = Schema::new(&pay_schema, &mut rng, &mut fixed_pay_columns());
+    let rec_schema = Schema::new(&rec_schema, &mut rng, &mut fixed_rec_columns());
+
+    let inv_path = std::path::Path::new("./tmp/invoice.csv");
+    let pay_path = std::path::Path::new("./tmp/payments.csv");
+    let rec_path = std::path::Path::new("./tmp/receipts.csv");
+
+    // Create parent dirs if required.
+    let parent = inv_path.parent().unwrap();
+    std::fs::create_dir_all(parent).unwrap();
 
     // Output the column headers to both files.
-    let mut inv_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::NonNumeric).from_path("./tmp/invoice.csv")?;
+    let mut inv_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(inv_path)?;
     inv_wtr.write_record(inv_schema.header_vec())?;
 
-    let mut pay_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::NonNumeric).from_path("./tmp/payments.csv")?;
+    let mut pay_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(pay_path)?;
     pay_wtr.write_record(pay_schema.header_vec())?;
 
-    let mut rec_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::NonNumeric).from_path("./tmp/receipts.csv")?;
+    let mut rec_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(rec_path)?;
     rec_wtr.write_record(rec_schema.header_vec())?;
 
     // Initialise some counters.
@@ -65,35 +86,31 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
 
     // Generate some random CSV rows.
     for _row in 1..=options.rows.unwrap_or(10) {
-        // Generate a common reference that links this row in both files.
-        let foreign_key = format!("REF-{}", generate_ref(&mut rng, &SegmentMeta::default()));
+        // Generate number of records which should match into a group.
+        let group = Group::new(&inv_schema, &pay_schema, &rec_schema, &mut rng);
 
-        inv_wtr.write_record(
-            generate_row(&inv_schema, &foreign_key, "INV", &mut rng)
-                .iter()
-                .map(AsRef::as_ref)
-                .collect::<Vec<&str>>())?;
+        // Write the group to the approriate file.
+        inv_wtr.write_record(group.invoice())?;
         invoices +=1;
 
-        pay_wtr.write_record(
-            generate_row(&pay_schema,&foreign_key, "PAY", &mut rng)
-                .iter()
-                .map(AsRef::as_ref)
-                .collect::<Vec<&str>>())?;
-        payments += 1;
+        for payment in group.payments() {
+            pay_wtr.write_record(payment)?;
+            payments += 1
+        }
 
-        rec_wtr.write_record(
-            generate_row(&rec_schema, &foreign_key, "REC", &mut rng)
-                .iter()
-                .map(AsRef::as_ref)
-                .collect::<Vec<&str>>())?;
-        receipts += 1;
+        for receipt in group.receipts() {
+            rec_wtr.write_record(receipt)?;
+            receipts += 1
+        }
     }
 
-    println!("Generated data in {dur} using seed {seed}\n  {inv} invoices\n  {pay} payments\n  {rec} receipts",
+    println!("Generated data in {dur} using seed {seed}\n  {inv} invoices exported to {inv_p}\n  {pay} payments exported to {pay_p}\n  {rec} receipts exported to {rec_p}",
         inv = invoices.to_formatted_string(&Locale::en),
         pay = payments.to_formatted_string(&Locale::en),
         rec = receipts.to_formatted_string(&Locale::en),
+        inv_p = inv_path.canonicalize().unwrap().into_os_string().into_string().unwrap(),
+        pay_p = pay_path.canonicalize().unwrap().into_os_string().into_string().unwrap(),
+        rec_p = rec_path.canonicalize().unwrap().into_os_string().into_string().unwrap(),
         dur = format_duration(start.elapsed()),
         seed = rnd_seed
     );
@@ -106,9 +123,54 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
 }
 
 ///
+/// Add some fixed columns which are always present regardless of other random junk.
+///
+fn fixed_inv_columns() -> Vec<Column> {
+    vec!(
+        Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
+        Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+        Column::new(DataType::STRING, INVOICE_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+        Column::new(DataType::DATE, TRADE_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DATE, SETTLEMENT_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DECIMAL, TOTAL_AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
+        Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("USD".into()))),
+        Column::new(DataType::DECIMAL, FX_RATE.into(), ColumnMeta::new_decimal(12, 6)),
+    )
+}
+
+///
+/// Add some fixed columns which are always present regardless of other random junk.
+///
+fn fixed_pay_columns() -> Vec<Column> {
+    vec!(
+        Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
+        Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+        Column::new(DataType::STRING, PAYMENT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+        Column::new(DataType::DATE, PAYMENT_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DECIMAL, AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
+        Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("GBP".into()))),
+        Column::new(DataType::DECIMAL, FX_RATE.into(), ColumnMeta::new_decimal(12, 6)),
+    )
+}
+
+///
+/// Add some fixed columns which are always present regardless of other random junk.
+///
+fn fixed_rec_columns() -> Vec<Column> {
+    vec!(
+        Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
+        Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+        Column::new(DataType::STRING, RECEIPT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+        Column::new(DataType::DATE, RECEIPT_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DECIMAL, AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
+        Column::new(DataType::STRING, PAYMENT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+    )
+}
+
+///
 /// Use the schema specified or generate a random one.
 ///
-fn column_schema(schema: Option<String>, columns: Option<usize>, rng: &mut StdRng) -> String {
+fn column_schema(schema: &Option<String>, columns: &Option<usize>, rng: &mut StdRng) -> String {
     match schema {
         Some(schema) => schema.into(),
         None => random_schema(columns.unwrap_or(10), rng),
@@ -147,7 +209,7 @@ fn random_schema(cols: usize, rng: &mut StdRng) -> String {
 ///
 /// Generate a random reference string used to link records in different files.
 ///
-fn generate_ref(rng: &mut StdRng, meta: &SegmentMeta) -> String {
+pub fn generate_ref(rng: &mut StdRng, meta: &SegmentMeta) -> String {
     let mut reference = String::new();
 
     for segment in 0..meta.segment_types().len() {
@@ -172,17 +234,16 @@ fn generate_ref(rng: &mut StdRng, meta: &SegmentMeta) -> String {
 ///
 /// Generate a random row of data using the Schema and meta data provided.
 ///
-fn generate_row(schema: &Schema, foreign_key: &str, record_type: &str, rng: &mut StdRng) -> Vec<String> {
+pub fn generate_row(schema: &Schema, foreign_key: &str, record_type: &str, rng: &mut StdRng) -> Vec<String> {
 
     schema.columns()
         .iter()
-        .enumerate()
-        .map(|(idx, col)| {
-            match idx {
-                0 => record_type.to_string(),
-                1 => foreign_key.to_string(),
+        .map(|col| {
+            match col.header() {
+                RECORD_TYPE => record_type.to_string(),
+                REFERENCE   => foreign_key.to_string(),
                 _ => match col.data_type() {
-                    DataType::UNKNOWN  => panic!("Unknown data type encountered at position {}", idx),
+                    DataType::UNKNOWN  => panic!("Unknown data type encountered for column {}", col.header()),
                     DataType::BOOLEAN  => generate_boolean(rng),
                     DataType::BYTE     => generate_byte(rng),
                     DataType::CHAR     => generate_char(rng),
@@ -253,7 +314,7 @@ fn generate_integer(rng: &mut StdRng, meta: &ColumnMeta) -> String {
 ///
 /// Generate a random decimal number using the column's precision and scale to determine how many digits.
 ///
-fn generate_decimal(rng: &mut StdRng, meta: &ColumnMeta) -> String {
+pub fn generate_decimal(rng: &mut StdRng, meta: &ColumnMeta) -> String {
     let meta = meta.decimal().as_ref().unwrap();
     let precision = meta.precision() as usize;
     let scale = meta.scale() as u32;
