@@ -63,9 +63,14 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     let pay_schema = Schema::new(&pay_schema, &mut rng, &mut fixed_pay_columns());
     let rec_schema = Schema::new(&rec_schema, &mut rng, &mut fixed_rec_columns());
 
-    let inv_path = std::path::Path::new("./tmp/invoice.csv");
-    let pay_path = std::path::Path::new("./tmp/payments.csv");
-    let rec_path = std::path::Path::new("./tmp/receipts.csv");
+    let prefix = Utc::now().format("%Y%m%d_%H%M%S%3f_").to_string();
+    let inv_path = format!("./tmp/{}invoices.csv", prefix);
+    let pay_path = format!("./tmp/{}payments.csv", prefix);
+    let rec_path = format!("./tmp/{}receipts.csv", prefix);
+
+    let inv_path = std::path::Path::new(&inv_path);
+    let pay_path = std::path::Path::new(&pay_path);
+    let rec_path = std::path::Path::new(&rec_path);
 
     // Create parent dirs if required.
     let parent = inv_path.parent().unwrap();
@@ -74,12 +79,15 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     // Output the column headers to both files.
     let mut inv_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(inv_path)?;
     inv_wtr.write_record(inv_schema.header_vec())?;
+    inv_wtr.write_record(inv_schema.schema_vec())?;
 
     let mut pay_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(pay_path)?;
     pay_wtr.write_record(pay_schema.header_vec())?;
+    pay_wtr.write_record(pay_schema.schema_vec())?;
 
     let mut rec_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(rec_path)?;
     rec_wtr.write_record(rec_schema.header_vec())?;
+    rec_wtr.write_record(rec_schema.schema_vec())?;
 
     // Initialise some counters.
     let (mut invoices, mut receipts, mut payments) = (0, 0, 0);
