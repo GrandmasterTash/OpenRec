@@ -24,8 +24,14 @@ pub enum MatcherError {
     #[error("No data type specified for column {column}")]
     NoSchemaTypeForColumn { column: usize },
 
+    #[error("Charter contained an invalid regular expression")]
+    InvalidSourceFileRegEx { source: regex::Error },
+
+    #[error("Schemas for {filename} must be the same, found these two schemas: -\n[{first}]\n[{second}]")]
+    SchemaMismatch { filename: String, first: String, second: String },
+
     /// Represents all other cases of `std::io::Error`.
     #[error(transparent)]
-    IOError(#[from] std::io::Error), 
+    IOError(#[from] std::io::Error),
 
 }

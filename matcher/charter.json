@@ -4,9 +4,9 @@
     "base_currency": "EUR",
     "version": 1637208553000,
     "instructions": [
-        { "sequence": 1, "instruction": "SOURCE_DATA", "filename": "invoices" },
-        { "sequence": 2, "instruction": "SOURCE_DATA", "filename": "payments" },
-        { "sequence": 3, "instruction": "SOURCE_DATA", "filename": "receipts" },
+        { "sequence": 1, "instruction": "SOURCE_DATA", "filename": ".*invoices\\.csv" },
+        { "sequence": 2, "instruction": "SOURCE_DATA", "filename": ".*payments\\.csv" },
+        { "sequence": 3, "instruction": "SOURCE_DATA", "filename": ".*receipts\\.csv" },
         { "sequence": 4, "instruction": "PROJECT_COLUMN", "name": "PAYMENT_AMOUNT_BASE", "lua": "payments.Amount * payments.FXRate" },
         { "sequence": 5, "instruction": "PROJECT_COLUMN", "name": "RECEIPT_AMOUNT_BASE", "lua": "receipts.Amount * receipts.FXRate" },
         { "sequence": 6, "instruction": "PROJECT_COLUMN", "name": "TOTAL_AMOUNT_BASE", "lua": "invoices.TotalAmount * invoices.FXRate" },

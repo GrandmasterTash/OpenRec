@@ -103,13 +103,14 @@ pub fn progress_to_archive() -> Result<(), MatcherError> {
 }
 
 ///
-/// Return all the files in the matching folder.
+/// Return all the files in the matching folder which match the filename (wildcard) specified.
 ///
-pub fn files_in_matching() -> Result<Vec<DirEntry>, MatcherError> {
+pub fn files_in_matching(filename: &str) -> Result<Vec<DirEntry>, MatcherError> {
+    let wildcard = Regex::new(filename).map_err(|source| MatcherError::InvalidSourceFileRegEx { source })?;
     let mut files = vec!();
     for entry in matching().read_dir()? {
         if let Ok(entry) = entry {
-            if is_data_file(&entry) {
+            if is_data_file(&entry) && wildcard.is_match(&entry.file_name().to_string_lossy()) {
                 files.push(entry);
             }
         }
@@ -182,6 +183,14 @@ pub fn shortname<'a>(filename: &'a str) -> &'a str {
         Some(_captures) => filename,
         None => filename,
     }
+}
+
+///
+/// Remove the timestamp prefix and the file-extension suffix from the filename.
+///
+pub fn entry_shortname<'a>(entry: &'a DirEntry) -> String {
+    let filename: String = entry.file_name().to_string_lossy().into();
+    shortname(&filename).into()
 }
 
 ///

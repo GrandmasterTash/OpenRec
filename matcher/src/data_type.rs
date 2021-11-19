@@ -2,7 +2,7 @@
 ///
 /// Logical/business data-type for any given csv column.
 ///
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DataType {
     UNKNOWN,  // Unable to map short-code to a known value.
     BOOLEAN,  // 1,0 - uses byte.
@@ -17,6 +17,12 @@ pub enum DataType {
     STRING,   // Null-terminated, UTF-8.
     UUID,     // 16-byte (UUID). A colum is added in memory if none is present in source file.
     // PROVIDED("PR") // 0-byte (value calculated on demand from column metadata).
+}
+
+impl DataType {
+    pub fn to_str(&self) -> &str {
+        self.into()
+    }
 }
 
 
@@ -39,8 +45,8 @@ impl From<&str> for DataType {
     }
 }
 
-impl From<DataType> for &str {
-    fn from(dt: DataType) -> Self {
+impl From<&DataType> for &str {
+    fn from(dt: &DataType) -> Self {
         match dt {
             DataType::UNKNOWN  => "ER",
             DataType::BOOLEAN  => "BO",

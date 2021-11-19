@@ -1,8 +1,9 @@
 use std::{collections::HashMap, fs};
 use crate::{data_type::DataType, error::MatcherError};
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Schema {
+    prefix: String,
     headers: Vec<String>,
     type_map: HashMap<String, DataType>
 }
@@ -12,7 +13,7 @@ impl Schema {
     /// Build a hashmap of column header to parsed data-types. The data types should be on the first
     /// csv row after the headers.
     ///
-    pub fn new(rdr: &mut csv::Reader<fs::File>) -> Result<Self, MatcherError> {
+    pub fn new(prefix: String, rdr: &mut csv::Reader<fs::File>) -> Result<Self, MatcherError> {
         let mut type_record = csv::StringRecord::new();
 
         if let Err(source) = rdr.read_record(&mut type_record) {
@@ -36,14 +37,23 @@ impl Schema {
                 None => return Err(MatcherError::NoSchemaTypeForColumn { column: idx }),
             };
 
-            headers.push(hdr.into());
-            type_map.insert(hdr.into(), data_type);
+            let header = format!("{}.{}", prefix, hdr);
+            headers.push(header.clone());
+            type_map.insert(header.into(), data_type);
         }
 
-        Ok(Self { headers, type_map })
+        Ok(Self { prefix, headers, type_map })
     }
 
     pub fn headers(&self) -> &[String] {
         &self.headers
+    }
+
+    pub fn to_short_string(&self) -> String {
+        self.headers
+            .iter()
+            .map(|hdr| self.type_map.get(hdr).unwrap_or(&DataType::UNKNOWN).to_str())
+            .collect::<Vec<&str>>()
+            .join(",")
     }
 }
