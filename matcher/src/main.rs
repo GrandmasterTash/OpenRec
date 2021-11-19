@@ -1,3 +1,4 @@
+mod grid;
 mod error;
 mod schema;
 mod record;
@@ -5,14 +6,12 @@ mod folders;
 mod charter;
 mod datafile;
 mod data_type;
+use std::time;
 use anyhow::Result;
-use data_type::DataType;
+use schema::Schema;
 use error::MatcherError;
 use folders::ToCanoncialString;
-use log::Log;
-use schema::Schema;
-use std::{collections::HashMap, fs::{self, DirEntry}, ops::Index, time};
-use crate::{charter::{Charter, Constraint, Instruction}, datafile::DataFile, record::Record};
+use crate::{charter::{Charter, Constraint, Instruction}, datafile::DataFile, grid::Grid, record::Record};
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
@@ -53,9 +52,6 @@ fn main() -> Result<()> {
 
     log::info!("Completed match job {}", job_id);
 
-    // TODO: Charter and embed schema as 2nd header row in each file - bloody genious!
-    // TODO: Do some actual matching.
-
     Ok(())
 }
 
@@ -65,9 +61,7 @@ fn main() -> Result<()> {
 fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
 
     // Load all data into memory (for now).
-    // TODO: Consider a Grid with both of these aggregated.
-    let mut files = vec!();
-    let mut data = vec!();
+    let mut grid = Grid::new();
 
     // TODO: Iterate the instructions and process each one - output memory after each instruction.
 
@@ -82,7 +76,7 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
             .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
 
         // Build a schema from the file's header rows.
-        files.push(DataFile::new(&file, Schema::new(&mut rdr)?));
+        grid.add_file(DataFile::new(&file, Schema::new(&mut rdr)?));
 
         // Load the data as bytes into memory.
         for result in rdr.byte_records() {
@@ -90,43 +84,23 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
                 .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
 
             count += 1;
-            data.push(Record::new(files.len() - 1, record));
+            grid.add_record(Record::new(grid.files().len() - 1, record));
         }
 
         log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
     }
 
     // Output a new result csv file.
-    let mut cells = vec!();
-    for file in &files {
-        file.schema().headers().iter().for_each(|hdr| {
-            cells.push(format!("{}.{}", file.shortname(), hdr));
-        });
-    }
-
     let output_path = std::path::Path::new("./tmp/output.csv");
     let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(output_path).unwrap();
-    wtr.write_record(cells).unwrap();
+    wtr.write_record(grid.headers()).unwrap();
 
-    // TODO: Encapsulate this logic into a DataGrid.
-    for record in data {
-        let mut cells = vec!();
-
-        for (f_idx, file) in files.iter().enumerate() {
-            for col in 0..file.schema().headers().len() {
-                if f_idx == record.file_idx() {
-                    // TODO: data-type getters.
-                    // record.string(idx)
-                    // record.long(idx)
-                    // record.uuid(idx) etc...
-                    cells.push(record.inner().get(col).unwrap());
-                } else {
-                    cells.push(b""); // Pad cells with empty values.
-                }
-            }
-        }
-
-        wtr.write_byte_record(&cells.into()).unwrap();
+    for record in grid.records() {
+        let data: Vec<&[u8]> = grid.record_data(record)
+            .iter()
+            .map(|v| v.unwrap_or(b""))
+            .collect();
+        wtr.write_byte_record(&data.into()).unwrap();
     }
 
     wtr.flush().unwrap();
