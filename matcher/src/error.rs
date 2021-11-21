@@ -33,8 +33,8 @@ pub enum MatcherError {
     #[error("Projected column {header} already exists")]
     ProjectedColumnExists { header: String, /* schema: String,  script: String*/ },
 
-    #[error("Lua error in script: {script}")]
-    ScriptError { script: String, source: rlua::Error },
+    #[error("Lua error in script\neval: {eval}\nreturn type: {data_type}\nwhen: {when}\nrecord: {record}")]
+    ScriptError { eval: String, when: String, data_type: String, record: String, source: rlua::Error },
 
     #[error(transparent)]
     LuaError(#[from] rlua::Error),

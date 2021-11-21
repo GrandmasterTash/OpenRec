@@ -81,6 +81,30 @@ impl Grid {
     }
 
     ///
+    /// Dump the record to a string
+    ///
+    pub fn record_as_string(&self, idx: usize) -> Option<String> {
+        let record = match self.records.get(idx) {
+            Some(rec) => rec,
+            None => return None,
+        };
+
+        let mut data = Vec::with_capacity(self.schema().headers().len());
+
+        for header in self.schema().headers() {
+            if let Some(col) = self.schema().position_in_record(header, record) {
+                if let Some(value) = record.inner().get(*col) {
+                    data.push(format!("{}: \"{}\"", header, String::from_utf8_lossy(value)));
+                    continue;
+                }
+            }
+            data.push(format!("{}: --", header));
+        }
+
+        Some(data.join(", "))
+    }
+
+    ///
     /// Return how much memory all the ByteRecords are using.
     ///
     pub fn memory_usage(&self) -> usize {

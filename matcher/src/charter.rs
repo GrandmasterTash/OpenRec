@@ -12,7 +12,7 @@ pub struct Charter {
 
 #[derive(Debug)]
 pub enum Instruction {
-    SourceData { filename: String },                    // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
+    SourceData { filename: /* TODO: rename file_pattern*/ String },                    // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
     ProjectColumn { name: String, data_type: DataType, eval: String, when: String }, // Create a derived column from one or more other columns.
     MergeColumns { name: String, source: Vec<String> }, // Merge the contents of columns together.
     GroupBy { columns: Vec<String> },                   // Group the data by one or more columns (header-names)

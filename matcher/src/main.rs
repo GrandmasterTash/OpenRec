@@ -13,7 +13,6 @@ use error::MatcherError;
 use ubyte::ToByteUnit;
 use crate::{charter::{Charter, Instruction}, data_type::DataType, folders::ToCanoncialString, grid::Grid};
 
-// TODO: Make this charter work with in-memory data.
 // TODO: Refactor to work with data streamed from files.
 
 fn main() -> Result<()> {
@@ -28,7 +27,7 @@ fn main() -> Result<()> {
         Instruction::SourceData { filename: ".*receipts\\.csv".into() },
         Instruction::ProjectColumn { name: "PAYMENT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["payments.Amount"] * record["payments.FXRate"]"#.into(), when: r#"file["prefix"] == "payments""#.into() },
         Instruction::ProjectColumn { name: "RECEIPT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["receipts.Amount"]"#.into(), when: r#"file["prefix"] == "receipts""#.into() },
-        Instruction::ProjectColumn { name: "TOTAL_AMOUNT_BASE".into(),   data_type: DataType::DECIMAL, eval: r#"return record["invoices.TotalAmount"] * record["invoices.FXRate"]"#.into(), when: r#"file["prefix"] == "invoices""#.into() },
+        Instruction::ProjectColumn { name: "TOTAL_AMOUNT_BASE".into(),   data_type: DataType::DECIMAL, eval: r#"record["invoices.TotalAmount"] * record["invoices.FXRate"]"#.into(), when: r#"file["prefix"] == "invoices""#.into() },
         // Instruction::MERGE_COLUMNS { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receiptes.ReceiptDate".into() )},
         // Instruction::MERGE_COLUMNS { name: "AMOUNT_BASE".into(),     source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
         // Instruction::GROUP_BY { columns: vec!("SETTLEMENT_DATE".into()) },
@@ -79,13 +78,13 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
         match inst {
             Instruction::SourceData { filename } => instructions::source_data::source_data(filename, &mut grid)?,
             Instruction::ProjectColumn { name, data_type, eval, when } => instructions::project_col::project_column(name, *data_type, eval, when, &mut grid, &lua)?,
-            Instruction::MergeColumns { name, source }  => println!("TODO: MERGE_COLUMNS {} {:?}", name, source),
-            Instruction::GroupBy { columns }            => println!("TODO: GROUP_BY {:?}", columns),
-            Instruction::UnGroup                        => println!("TODO: UN_GROUP"),
-            Instruction::MatchGroups { constraints }    => println!("TODO: MATCH_GROUPS: {} constraints", constraints.len()),
-            Instruction::Filter                         => println!("TODO: FILTER"),
-            Instruction::UnFilter                       => println!("TODO: UN_FILTER"),
-        }
+            Instruction::MergeColumns { name, source }  => {},
+            Instruction::GroupBy { columns }            => {},
+            Instruction::UnGroup                        => {},
+            Instruction::MatchGroups { constraints }    => {},
+            Instruction::Filter                         => {},
+            Instruction::UnFilter                       => {},
+        };
 
         log::info!("Memory Grid Size: {}",
             ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.0}", grid.memory_usage().bytes())));

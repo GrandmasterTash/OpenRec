@@ -1,8 +1,5 @@
 use rlua::{Context, Table};
-use rust_decimal::{Decimal, prelude::{FromPrimitive, ToPrimitive}};
-use crate::{data_type::DataType, error::MatcherError, grid::Grid, record::Record, schema::{Column, GridSchema}};
-
-// TODO: Decimal types? Ref: https://github.com/amethyst/rlua/issues/204
+use crate::{data_type::{DataType, LuaDecimal}, error::MatcherError, grid::Grid, record::Record, schema::{Column, GridSchema}};
 
 ///
 /// Use a script to calculate a value for a new column in each record.
@@ -24,6 +21,7 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
 
     // Snapshot the schema so we can iterate mutable records in a mutable grid.
     let schema = grid.schema().clone();
+    let mut row = 0;
 
     lua.context(|lua_ctx| {
         let globals = lua_ctx.globals();
@@ -33,8 +31,8 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
             let lua_record = lua_record(record, &schema, &lua_ctx)?;
             globals.set("record", lua_record)?;
 
-            let lua_file = lua_file(record, &schema, &lua_ctx)?;
-            globals.set("file", lua_file)?;
+            let lua_meta = lua_meta(record, &schema, &lua_ctx)?;
+            globals.set("meta", lua_meta)?;
 
             // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip
             // attempting to calulate values that are not relevant to the record without having to write verbose scripts.
@@ -47,7 +45,7 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
                     DataType::CHAR     => record.append_char(lua_ctx.load(&eval).eval::<String>().map(|s|s.chars().next().unwrap_or_default())?),
                     DataType::DATE     => record.append_date(lua_ctx.load(&eval).eval::<u64>()?),
                     DataType::DATETIME => record.append_datetime(lua_ctx.load(&eval).eval::<u64>()?),
-                    DataType::DECIMAL  => record.append_decimal(Decimal::from_f64(lua_ctx.load(&eval).eval::<f64>()?).expect("f64 hack not worky")),
+                    DataType::DECIMAL  => record.append_decimal(lua_ctx.load(&eval).eval::<LuaDecimal>()?.0),
                     DataType::INTEGER  => record.append_int(lua_ctx.load(&eval).eval::<i32>()?),
                     DataType::LONG     => record.append_long(lua_ctx.load(&eval).eval::<i64>()?),
                     DataType::SHORT    => record.append_short(lua_ctx.load(&eval).eval::<i16>()?),
@@ -58,11 +56,18 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
                 // Put a blank value in the projected column if we're not evaluating it.
                 record.append_string("");
             }
+
+            row += 1;
         }
         Ok(())
     })
-    // TODO: Can we debug print the entire record when a Lua fails?
-    .map_err(|source| MatcherError::ScriptError { script: eval.into(), source })?; // TODO: add when and type to this.
+    .map_err(|source| MatcherError::ScriptError {
+        eval: eval.into(),
+        when: when.into(),
+        data_type: data_type.to_str().into(),
+        record: grid.record_as_string(row).unwrap_or("(no record)".into()),
+        source
+    })?;
 
     Ok(())
 }
@@ -83,7 +88,7 @@ fn lua_record<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>) -
                 DataType::CHAR     => lua_record.set(header, record.get_char(header, &schema).map(|c|c.to_string()))?,
                 DataType::DATE     => lua_record.set(header, record.get_date(header, &schema))?,
                 DataType::DATETIME => lua_record.set(header, record.get_datetime(header, &schema))?,
-                DataType::DECIMAL  => lua_record.set(header, record.get_decimal(header, &schema).map(|d|d.to_f64()))?, // TODO: f64 hack
+                DataType::DECIMAL  => lua_record.set(header, record.get_decimal(header, &schema).map(|d|LuaDecimal(d)))?,
                 DataType::INTEGER  => lua_record.set(header, record.get_int(header, &schema))?,
                 DataType::LONG     => lua_record.set(header, record.get_long(header, &schema))?,
                 DataType::SHORT    => lua_record.set(header, record.get_short(header, &schema))?,
@@ -99,13 +104,13 @@ fn lua_record<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>) -
 ///
 /// Create some contextural information regarding the file that loaded a record.
 ///
-fn lua_file<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
-    let lua_file = lua_ctx.create_table()?;
+fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
+    let lua_meta = lua_ctx.create_table()?;
 
     match schema.file_schemas().get(record.schema_idx()) {
-        Some(file) => lua_file.set("prefix", file.prefix())?,
+        Some(file) => lua_meta.set("prefix", file.prefix())?,
         None       => log::warn!("record file missing from grid schema"),
     }
 
-    Ok(lua_file)
+    Ok(lua_meta)
 }

@@ -1,3 +1,5 @@
+use rust_decimal::Decimal;
+
 
 ///
 /// Logical/business data-type for any given csv column.
@@ -64,5 +66,26 @@ impl From<&DataType> for &str {
             DataType::STRING   => "ST",
             DataType::UUID     => "ID",
         }
+    }
+}
+
+///
+/// Provide a wrapper around the custom Decimal type so we can use it in Lua scripts.
+///
+#[derive(Clone)]
+pub struct LuaDecimal (pub Decimal);
+
+impl rlua::UserData for LuaDecimal {
+    fn add_methods<'lua, T: rlua::UserDataMethods<'lua, Self>>(methods: &mut T) {
+        // Decimal with Decimal.
+        methods.add_meta_method(rlua::MetaMethod::Add, |_, this, other: LuaDecimal| { Ok(LuaDecimal(this.0 + other.0)) });
+        methods.add_meta_method(rlua::MetaMethod::Sub, |_, this, other: LuaDecimal| { Ok(LuaDecimal(this.0 - other.0)) });
+        methods.add_meta_method(rlua::MetaMethod::Mul, |_, this, other: LuaDecimal| { Ok(LuaDecimal(this.0 * other.0)) });
+        methods.add_meta_method(rlua::MetaMethod::Div, |_, this, other: LuaDecimal| { Ok(LuaDecimal(this.0 / other.0)) });
+        methods.add_meta_method(rlua::MetaMethod::Lt,  |_, this, other: LuaDecimal| { Ok(this.0 < other.0) });
+        methods.add_meta_method(rlua::MetaMethod::Le,  |_, this, other: LuaDecimal| { Ok(this.0 <= other.0) });
+        methods.add_meta_method(rlua::MetaMethod::Eq,  |_, this, other: LuaDecimal| { Ok(this.0 == other.0) });
+        methods.add_meta_method(rlua::MetaMethod::ToString, |_, this, _: ()| { Ok(this.0.to_string()) });
+        // Decimal with other types can go here...
     }
 }
