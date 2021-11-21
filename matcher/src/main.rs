@@ -11,7 +11,7 @@ mod instructions;
 use anyhow::Result;
 use error::MatcherError;
 use ubyte::ToByteUnit;
-use crate::{charter::{Charter, Constraint, Instruction}, folders::ToCanoncialString, grid::Grid};
+use crate::{charter::{Charter, Instruction}, data_type::DataType, folders::ToCanoncialString, grid::Grid};
 
 // TODO: Make this charter work with in-memory data.
 // TODO: Refactor to work with data streamed from files.
@@ -23,19 +23,19 @@ fn main() -> Result<()> {
 
     // Build a charter model to match our three files with.
     let charter = Charter::new("test invoices".into(), false, "EUR".into(), chrono::Utc::now().timestamp_millis() as u64, vec!(
-        Instruction::SOURCE_DATA { filename: ".*invoices\\.csv".into() },
-        Instruction::SOURCE_DATA { filename: ".*payments\\.csv".into() },
-        Instruction::SOURCE_DATA { filename: ".*receipts\\.csv".into() },
-        Instruction::PROJECT_COLUMN { name: "PAYMENT_AMOUNT_BASE".into(), lua: r#"payments.Amount * payments.FXRate"#.into() },
-        Instruction::PROJECT_COLUMN { name: "RECEIPT_AMOUNT_BASE".into(), lua: r#"receipts.Amount * receipts.FXRate"#.into() },
-        Instruction::PROJECT_COLUMN { name: "TOTAL_AMOUNT_BASE".into(),   lua: r#"invoices.TotalAmount * invoices.FXRate"#.into() },
-        Instruction::MERGE_COLUMNS { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receiptes.ReceiptDate".into() )},
-        Instruction::MERGE_COLUMNS { name: "AMOUNT_BASE".into(),     source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
-        Instruction::GROUP_BY { columns: vec!("SETTLEMENT_DATE".into()) },
-        Instruction::MATCH_GROUPS { constraints: vec!(
-            Constraint::NETS_TO_ZERO { column: "AMOUNT_BASE".into(), lhs: r#"filename = 'payments'"#.into(), rhs: r#"filename = 'invoices'"#.into() },
-            Constraint::NETS_TO_ZERO { column: "AMOUNT_BASE".into(), lhs: r#"filename = 'receipts'"#.into(), rhs: r#"filename = 'invoices'"#.into() },
-        )},
+        Instruction::SourceData { filename: ".*invoices\\.csv".into() },
+        Instruction::SourceData { filename: ".*payments\\.csv".into() },
+        Instruction::SourceData { filename: ".*receipts\\.csv".into() },
+        Instruction::ProjectColumn { name: "PAYMENT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["payments.Amount"] * record["payments.FXRate"]"#.into(), when: r#"file["prefix"] == "payments""#.into() },
+        Instruction::ProjectColumn { name: "RECEIPT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["receipts.Amount"]"#.into(), when: r#"file["prefix"] == "receipts""#.into() },
+        Instruction::ProjectColumn { name: "TOTAL_AMOUNT_BASE".into(),   data_type: DataType::DECIMAL, eval: r#"return record["invoices.TotalAmount"] * record["invoices.FXRate"]"#.into(), when: r#"file["prefix"] == "invoices""#.into() },
+        // Instruction::MERGE_COLUMNS { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receiptes.ReceiptDate".into() )},
+        // Instruction::MERGE_COLUMNS { name: "AMOUNT_BASE".into(),     source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
+        // Instruction::GROUP_BY { columns: vec!("SETTLEMENT_DATE".into()) },
+        // Instruction::MATCH_GROUPS { constraints: vec!(
+        //     Constraint::NETS_TO_ZERO { column: "AMOUNT_BASE".into(), lhs: r#"filename = 'payments'"#.into(), rhs: r#"filename = 'invoices'"#.into() },
+        //     Constraint::NETS_TO_ZERO { column: "AMOUNT_BASE".into(), lhs: r#"filename = 'receipts'"#.into(), rhs: r#"filename = 'invoices'"#.into() },
+        // )},
     ));
 
     folders::ensure_exist()?;
@@ -67,6 +67,9 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
     // Load all data into memory (for now).
     let mut grid = Grid::new();
 
+    // Create Lua engine bindings.
+    let lua = rlua::Lua::new();
+
     log::info!("Running charter [{}] v{:?} using BASE [{}]",
         charter.name(),
         charter.version(),
@@ -74,14 +77,14 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
 
     for inst in charter.instructions() {
         match inst {
-            Instruction::SOURCE_DATA { filename }       => instructions::source_data::source_data(filename, &mut grid)?,
-            Instruction::PROJECT_COLUMN { name, lua }   => instructions::project_col::project_col(name, lua, &mut grid)?,
-            Instruction::MERGE_COLUMNS { name, source } => println!("TODO: MERGE_COLUMNS {} {:?}", name, source),
-            Instruction::GROUP_BY { columns }           => println!("TODO: GROUP_BY {:?}", columns),
-            Instruction::UN_GROUP                       => println!("TODO: UN_GROUP"),
-            Instruction::MATCH_GROUPS { constraints }   => println!("TODO: MATCH_GROUPS: {} constraints", constraints.len()),
-            Instruction::FILTER                         => println!("TODO: FILTER"),
-            Instruction::UN_FILTER                      => println!("TODO: UN_FILTER"),
+            Instruction::SourceData { filename } => instructions::source_data::source_data(filename, &mut grid)?,
+            Instruction::ProjectColumn { name, data_type, eval, when } => instructions::project_col::project_column(name, *data_type, eval, when, &mut grid, &lua)?,
+            Instruction::MergeColumns { name, source }  => println!("TODO: MERGE_COLUMNS {} {:?}", name, source),
+            Instruction::GroupBy { columns }            => println!("TODO: GROUP_BY {:?}", columns),
+            Instruction::UnGroup                        => println!("TODO: UN_GROUP"),
+            Instruction::MatchGroups { constraints }    => println!("TODO: MATCH_GROUPS: {} constraints", constraints.len()),
+            Instruction::Filter                         => println!("TODO: FILTER"),
+            Instruction::UnFilter                       => println!("TODO: UN_FILTER"),
         }
 
         log::info!("Memory Grid Size: {}",
@@ -96,7 +99,7 @@ fn dump_grid(grid: &Grid) {
     // Output a new result csv file.
     let output_path = std::path::Path::new("./tmp/output.csv");
     let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(output_path).unwrap();
-    wtr.write_record(grid.headers()).unwrap();
+    wtr.write_record(grid.schema().headers()).unwrap();
 
     for record in grid.records() {
         let data: Vec<&[u8]> = grid.record_data(record)

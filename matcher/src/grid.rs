@@ -1,5 +1,4 @@
-use crate::{datafile::DataFile, record::Record, schema::Schema};
-
+use crate::{datafile::DataFile, record::Record, schema::GridSchema};
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -26,81 +25,56 @@ use crate::{datafile::DataFile, record::Record, schema::Schema};
 /// Note: No memory is allocted for the empty cells shown above.
 ///
 pub struct Grid {
-    files: Vec<DataFile>,       // All of the sources of records.
-    schemas: Vec<Schema>,       // A file layout descriptor, multiple physical files can share the same layout.
-    records: Vec<Box<Record>>,  // Represents each row from each of the above files.
-    header_cache: Vec<String>,  // Combined headers from all added files.
+    files: Vec<DataFile>,      // All of the files used to source records.
+    records: Vec<Box<Record>>, // Represents each row from each of the above files.
+    schema: GridSchema,        // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
 
 impl Grid {
     pub fn new() -> Self {
         Self {
             files: vec!(),
-            schemas: vec!(),
             records: vec!(),
-            header_cache: vec!(),
+            schema: GridSchema::new(),
         }
     }
 
-    ///
-    /// If the schema is already present, return the existing index, otherwise add the schema and return
-    /// it's index.
-    ///
-    pub fn add_schema(&mut self, schema: Schema) -> usize {
-        match self.schemas.iter().position(|s| *s == schema) {
-            Some(position) => position,
-            None => {
-                self.schemas.push(schema);
-
-                // Rebuild the column header cache.
-                self.header_cache = self.schemas
-                    .iter()
-                    .flat_map(|s| s.headers())
-                    .map(String::clone)
-                    .collect::<Vec<String>>();
-
-                self.schemas.len() - 1
-            },
-        }
+    pub fn schema(&self) -> &GridSchema {
+        &self.schema
     }
 
-    pub fn add_file(&mut self, file: DataFile) {
+    pub fn schema_mut(&mut self) -> &mut GridSchema {
+        &mut self.schema
+    }
+
+    pub fn add_file(&mut self, file: DataFile) -> usize {
         self.files.push(file);
+        self.files.len() - 1
     }
 
     pub fn add_record(&mut self, record: Record) {
         self.records.push(Box::new(record));
     }
 
-    pub fn files(&self) -> &[DataFile] {
-        &self.files
-    }
-
-    pub fn schemas(&self) -> &[Schema] {
-        &self.schemas
-    }
-
     pub fn records(&self) -> &Vec<Box<Record>> {
         &self.records
     }
 
-    pub fn headers(&self) -> &[String] {
-        &self.header_cache
+    pub fn records_mut(&mut self) -> Vec<&mut Box<Record>> {
+        self.records.iter_mut().collect()
     }
 
     pub fn record_data<'a>(&self, record: &'a Record) -> Vec<Option<&'a [u8]>> {
-        let mut data = Vec::with_capacity(self.headers().len());
+        let mut data = Vec::with_capacity(self.schema().headers().len());
 
-        let file = self.files.get(record.file_idx()).expect("Record's file not found"); // TODO: Make this fn return a result.
-
-        for (s_idx, schema) in self.schemas.iter().enumerate() {
-            for col in 0..schema.headers().len() {
-                if s_idx == file.schema() {
-                    data.push(Some(record.inner().get(col).expect("record has no value in column"))); // TODO: Better Result err msg.
-                } else {
-                    data.push(None);
+        for header in self.schema().headers() {
+            if let Some(col) = self.schema().position_in_record(header, record) {
+                if let Some(value) = record.inner().get(*col) {
+                    data.push(Some(value));
+                    continue;
                 }
             }
+            data.push(None);
         }
 
         data

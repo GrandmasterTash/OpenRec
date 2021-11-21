@@ -30,6 +30,15 @@ pub enum MatcherError {
     #[error("Schemas for {filename} must be the same, found these two schemas: -\n[{first}]\n[{second}]")]
     SchemaMismatch { filename: String, first: String, second: String },
 
+    #[error("Projected column {header} already exists")]
+    ProjectedColumnExists { header: String, /* schema: String,  script: String*/ },
+
+    #[error("Lua error in script: {script}")]
+    ScriptError { script: String, source: rlua::Error },
+
+    #[error(transparent)]
+    LuaError(#[from] rlua::Error),
+
     /// Represents all other cases of `std::io::Error`.
     #[error(transparent)]
     IOError(#[from] std::io::Error),

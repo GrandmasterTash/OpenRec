@@ -19,6 +19,9 @@ pub enum DataType {
     // PROVIDED("PR") // 0-byte (value calculated on demand from column metadata).
 }
 
+pub const TRUE: &str  = "1";
+pub const FALSE: &str = "0";
+
 impl DataType {
     pub fn to_str(&self) -> &str {
         self.into()

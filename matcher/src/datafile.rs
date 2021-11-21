@@ -1,7 +1,7 @@
 use crate::folders;
 use std::fs::DirEntry;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DataFile {
     shortname: String, // 'invoices' if path is '/tmp/20201118_053000000_invoices.csv'
     filename: String,  // '20201118_053000000_invoices.csv' if path is '/tmp/20201118_053000000_invoices.csv'
@@ -20,19 +20,5 @@ impl DataFile {
         }
     }
 
-    pub fn _shortname(&self) -> &str {
-        &self.shortname
-    }
-
-    pub fn _filename(&self) -> &str {
-        &self.filename
-    }
-
-    pub fn _path(&self) -> &str {
-        &self.path
-    }
-
-    pub fn schema(&self) -> usize {
-        self.schema
-    }
+    // TODO: Evaluate if we need this struct anymore?
 }

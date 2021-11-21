@@ -1,30 +1,30 @@
+use crate::{data_type::DataType};
+
 #[derive(Debug)]
 pub struct Charter {
     name: String,
+    version: u64, // Epoch millis at UTC.
     preview: bool,
     base_currency: String,
-    version: u64, // Epoch millis at UTC.
     instructions: Vec<Instruction>,
-
     // TODO: Start at, end at
 }
 
 #[derive(Debug)]
 pub enum Instruction {
-    SOURCE_DATA { filename: String },                    // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
-    PROJECT_COLUMN { name: String, lua: String },        // Create a derived column from one or more other columns.
-    MERGE_COLUMNS { name: String, source: Vec<String> }, // Merge the contents of columns together.
-    // PROJECT_ROWS { projection: RowsProjection },      // 'Create' one or more rows from other rows.
-    GROUP_BY { columns: Vec<String> },                   // Group the data by one or more columns (header-names)
-    UN_GROUP,                                            // Remove any groupings on the data.
-    MATCH_GROUPS { constraints: Vec<Constraint> },       // Create match groups from the curreny grouped data. Constraints can be provided to leave unmatched data behind.
-    FILTER,     // Apply a filter so only data matching the filter is currently available.
-    UN_FILTER,  // Remove an applied filter.
+    SourceData { filename: String },                    // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
+    ProjectColumn { name: String, data_type: DataType, eval: String, when: String }, // Create a derived column from one or more other columns.
+    MergeColumns { name: String, source: Vec<String> }, // Merge the contents of columns together.
+    GroupBy { columns: Vec<String> },                   // Group the data by one or more columns (header-names)
+    UnGroup,                                            // Remove any groupings on the data.
+    MatchGroups { constraints: Vec<Constraint> },       // Create match groups from the curreny grouped data. Constraints can be provided to leave unmatched data behind.
+    Filter,                                             // Apply a filter so only data matching the filter is currently available.
+    UnFilter,                                           // Remove an applied filter.
 }
 
 #[derive(Debug)]
 pub enum Constraint {
-    NETS_TO_ZERO { column: String, lhs: String, rhs: String }
+    NetsToZero { column: String, lhs: String, rhs: String }
     // NETS_WITH_TOLERANCE
 }
 

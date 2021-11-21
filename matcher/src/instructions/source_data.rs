@@ -1,4 +1,4 @@
-use crate::{datafile::DataFile, error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::Schema};
+use crate::{datafile::DataFile, error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::FileSchema};
 
 pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> {
 
@@ -22,14 +22,14 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
             .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
 
         // Build a schema from the file's header rows.
-        let schema = Schema::new(folders::entry_shortname(&file), &mut rdr)?;
+        let schema = FileSchema::new(folders::entry_shortname(&file), &mut rdr)?;
 
         // Use an existing schema from the grid, if there is one, otherwise add this one.
-        let schema_idx = grid.add_schema(schema.clone());
+        let schema_idx = grid.schema_mut().add_file_schema(schema.clone());
         last_schema_idx = validate_schema(schema_idx, &last_schema_idx, &schema, &grid, filename)?;
 
         // Register the data file with the grid.
-        grid.add_file(DataFile::new(&file, schema_idx));
+        let file_idx = grid.add_file(DataFile::new(&file, schema_idx));
 
         // Load the data as bytes into memory.
         for result in rdr.byte_records() {
@@ -37,7 +37,7 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
                 .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
 
             count += 1;
-            grid.add_record(Record::new(grid.files().len() - 1, record));
+            grid.add_record(Record::new(file_idx, schema_idx, record));
         }
 
         log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
@@ -46,12 +46,12 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
     Ok(())
 }
 
-fn validate_schema(schema_idx: usize, last_schema_idx: &Option<usize>, schema: &Schema, grid: &Grid, filename: &str)
+fn validate_schema(schema_idx: usize, last_schema_idx: &Option<usize>, schema: &FileSchema, grid: &Grid, filename: &str)
     -> Result<Option<usize>, MatcherError> {
 
     if let Some(last) = last_schema_idx {
         if *last != schema_idx {
-            let existing: &Schema = &grid.schemas()[*last];
+            let existing: &FileSchema = &grid.schema().file_schemas()[*last];
             return Err(MatcherError::SchemaMismatch { filename: filename.into(), first: existing.to_short_string(), second: schema.to_short_string() })
         }
     }
