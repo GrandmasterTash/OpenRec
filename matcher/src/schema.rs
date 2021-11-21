@@ -40,6 +40,14 @@ impl Column {
     pub fn new(header: String, data_type: DataType) -> Self {
         Self { header, data_type, }
     }
+
+    pub fn header(&self) -> &str {
+        &self.header
+    }
+
+    pub fn data_type(&self) -> &DataType {
+        &self.data_type
+    }
 }
 
 impl FileSchema {

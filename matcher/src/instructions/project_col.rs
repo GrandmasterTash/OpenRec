@@ -1,4 +1,8 @@
+use regex::Regex;
 use rlua::{Context, Table};
+use lazy_static::lazy_static;
+use humantime::format_duration;
+use std::time::{Duration, Instant};
 use crate::{data_type::{DataType, LuaDecimal}, error::MatcherError, grid::Grid, record::Record, schema::{Column, GridSchema}};
 
 ///
@@ -6,21 +10,18 @@ use crate::{data_type::{DataType, LuaDecimal}, error::MatcherError, grid::Grid, 
 ///
 /// The script can reference any other value in the same record.
 ///
-/// Usful Ref: https://github.com/amethyst/rlua/blob/master/examples/guided_tour.rs
-///
 pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, grid: &mut Grid, lua: &rlua::Lua) -> Result<(), MatcherError> {
 
-    log::info!("Projecting column {name} as {data_type} with lua {eval} when {when}",
-        name = name,
-        data_type = data_type.to_str(),
-        eval = eval,
-        when = when);
+    let start = Instant::now();
+
+    log::info!("Projecting column {}", name);
 
     // Add the projected column to the schema.
     grid.schema_mut().add_projected_column(Column::new(name.into(), data_type))?;
 
     // Snapshot the schema so we can iterate mutable records in a mutable grid.
     let schema = grid.schema().clone();
+    let script_cols = script_columns(eval, &schema);
     let mut row = 0;
 
     lua.context(|lua_ctx| {
@@ -28,7 +29,7 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
 
         // Calculate the column value for every record.
         for record in grid.records_mut() {
-            let lua_record = lua_record(record, &schema, &lua_ctx)?;
+            let lua_record = lua_record(record, &script_cols, &schema, &lua_ctx)?;
             globals.set("record", lua_record)?;
 
             let lua_meta = lua_meta(record, &schema, &lua_ctx)?;
@@ -69,32 +70,57 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
         source
     })?;
 
+    let elapsed = start.elapsed();
+    let duration = Duration::new(elapsed.as_secs(), elapsed.subsec_millis() * 1000000); // Keep precision to ms.
+    let rate = (elapsed.as_millis() as f64 / row as f64) as f64;
+    log::info!("Projection took {} for {} rows ({}/row)",
+        format_duration(duration),
+        row,
+        ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.3}ms", rate)));
+
     Ok(())
+}
+
+lazy_static! {
+    // static ref META_REGEX: Regex = Regex::new(r#"meta\["(.*)"\]"#).unwrap();
+    static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();
+}
+
+///
+/// Return all the columns referenced in the script specified.
+///
+fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
+    let mut columns = Vec::new();
+
+    for cap in HEADER_REGEX.captures_iter(script) {
+        if let Some(data_type) = schema.data_type(&cap[1]) {
+            columns.push(Column::new(cap[1].into(), *data_type));
+        }
+    }
+
+    columns
 }
 
 ///
 /// Convert all the fields of the record into a Lua table.
 ///
-fn lua_record<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
+fn lua_record<'a>(record: &Record, script_cols: &[Column], schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
     let lua_record = lua_ctx.create_table()?;
 
-    // TODO: Performance - Could scan script once to build a list of required fields, rather than doing all.
-    for header in schema.headers().iter().map(String::as_str) {
-        if let Some(data_type) = schema.data_type(header) {
-            match data_type { // TODO: Vec of columns would improve perf here - avoiding the map look-up.
-                DataType::UNKNOWN  => {},
-                DataType::BOOLEAN  => lua_record.set(header, record.get_bool(header, &schema))?,
-                DataType::BYTE     => lua_record.set(header, record.get_byte(header, &schema))?,
-                DataType::CHAR     => lua_record.set(header, record.get_char(header, &schema).map(|c|c.to_string()))?,
-                DataType::DATE     => lua_record.set(header, record.get_date(header, &schema))?,
-                DataType::DATETIME => lua_record.set(header, record.get_datetime(header, &schema))?,
-                DataType::DECIMAL  => lua_record.set(header, record.get_decimal(header, &schema).map(|d|LuaDecimal(d)))?,
-                DataType::INTEGER  => lua_record.set(header, record.get_int(header, &schema))?,
-                DataType::LONG     => lua_record.set(header, record.get_long(header, &schema))?,
-                DataType::SHORT    => lua_record.set(header, record.get_short(header, &schema))?,
-                DataType::STRING   => lua_record.set(header, record.get_string(header, &schema))?,
-                DataType::UUID     => lua_record.set(header, record.get_uuid(header, &schema).map(|i|i.to_string()))?,
-            }
+    for col in script_cols {
+        match col.data_type() {
+            DataType::UNKNOWN  => {},
+            DataType::BOOLEAN  => lua_record.set(col.header(), record.get_bool(col.header(), &schema))?,
+            DataType::BYTE     => lua_record.set(col.header(), record.get_byte(col.header(), &schema))?,
+            DataType::CHAR     => lua_record.set(col.header(), record.get_char(col.header(), &schema).map(|c|c.to_string()))?,
+            DataType::DATE     => lua_record.set(col.header(), record.get_date(col.header(), &schema))?,
+            DataType::DATETIME => lua_record.set(col.header(), record.get_datetime(col.header(), &schema))?,
+            DataType::DECIMAL  => lua_record.set(col.header(), record.get_decimal(col.header(), &schema).map(|d|LuaDecimal(d)))?,
+            DataType::INTEGER  => lua_record.set(col.header(), record.get_int(col.header(), &schema))?,
+            DataType::LONG     => lua_record.set(col.header(), record.get_long(col.header(), &schema))?,
+            DataType::SHORT    => lua_record.set(col.header(), record.get_short(col.header(), &schema))?,
+            DataType::STRING   => lua_record.set(col.header(), record.get_string(col.header(), &schema))?,
+            DataType::UUID     => lua_record.set(col.header(), record.get_uuid(col.header(), &schema).map(|i|i.to_string()))?,
         }
     }
 

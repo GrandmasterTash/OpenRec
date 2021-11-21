@@ -18,11 +18,11 @@ ubyte = "0.10.1"
 rlua = "0.18.0"
 ansi_term = "0.12"
 rust_decimal = "1.17.0"
+humantime = "2.1.0"
 
 #rand = "0.8.4"
 #clap = "2.33.3"
 #derive_more = "0.99.16"
-#humantime = "2.1.0"
 #num-format = "0.4.0"
 
 [dev-dependencies]

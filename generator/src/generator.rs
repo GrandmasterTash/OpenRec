@@ -102,6 +102,7 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
         invoices +=1;
 
         for payment in group.payments() {
+            // TODO: Split payments into 2 files.
             pay_wtr.write_record(payment)?;
             payments += 1
         }

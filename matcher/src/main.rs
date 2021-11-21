@@ -14,6 +14,7 @@ use ubyte::ToByteUnit;
 use crate::{charter::{Charter, Instruction}, data_type::DataType, folders::ToCanoncialString, grid::Grid};
 
 // TODO: Refactor to work with data streamed from files.
+// TODO: Consider rayon when we're streaming from files.
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
@@ -25,11 +26,11 @@ fn main() -> Result<()> {
         Instruction::SourceData { filename: ".*invoices\\.csv".into() },
         Instruction::SourceData { filename: ".*payments\\.csv".into() },
         Instruction::SourceData { filename: ".*receipts\\.csv".into() },
-        Instruction::ProjectColumn { name: "PAYMENT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["payments.Amount"] * record["payments.FXRate"]"#.into(), when: r#"file["prefix"] == "payments""#.into() },
-        Instruction::ProjectColumn { name: "RECEIPT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["receipts.Amount"]"#.into(), when: r#"file["prefix"] == "receipts""#.into() },
-        Instruction::ProjectColumn { name: "TOTAL_AMOUNT_BASE".into(),   data_type: DataType::DECIMAL, eval: r#"record["invoices.TotalAmount"] * record["invoices.FXRate"]"#.into(), when: r#"file["prefix"] == "invoices""#.into() },
-        // Instruction::MERGE_COLUMNS { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receiptes.ReceiptDate".into() )},
-        // Instruction::MERGE_COLUMNS { name: "AMOUNT_BASE".into(),     source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
+        Instruction::ProjectColumn { name: "PAYMENT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["payments.Amount"] * record["payments.FXRate"]"#.into(), when: r#"meta["prefix"] == "payments""#.into() },
+        Instruction::ProjectColumn { name: "RECEIPT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["receipts.Amount"]"#.into(), when: r#"meta["prefix"] == "receipts""#.into() },
+        Instruction::ProjectColumn { name: "TOTAL_AMOUNT_BASE".into(),   data_type: DataType::DECIMAL, eval: r#"record["invoices.TotalAmount"] * record["invoices.FXRate"]"#.into(), when: r#"meta["prefix"] == "invoices""#.into() },
+        Instruction::MergeColumns { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receiptes.ReceiptDate".into() )},
+        Instruction::MergeColumns { name: "AMOUNT_BASE".into(), source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
         // Instruction::GROUP_BY { columns: vec!("SETTLEMENT_DATE".into()) },
         // Instruction::MATCH_GROUPS { constraints: vec!(
         //     Constraint::NETS_TO_ZERO { column: "AMOUNT_BASE".into(), lhs: r#"filename = 'payments'"#.into(), rhs: r#"filename = 'invoices'"#.into() },
@@ -90,7 +91,7 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
             ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.0}", grid.memory_usage().bytes())));
     }
 
-    dump_grid(&grid);
+    // dump_grid(&grid);
     Ok(())
 }
 
