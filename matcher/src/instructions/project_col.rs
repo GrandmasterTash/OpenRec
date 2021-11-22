@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::{data_type::{DataType, LuaDecimal}, error::MatcherError, grid::Grid, record::Record, schema::{Column, GridSchema}};
 
 ///
-/// Use a script to calculate a value for a new column in each record.
+/// Use a script (eval) to calculate a value for a new column in each record.
 ///
 /// The script can reference any other value in the same record.
 ///

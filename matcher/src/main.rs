@@ -29,7 +29,7 @@ fn main() -> Result<()> {
         Instruction::ProjectColumn { name: "PAYMENT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["payments.Amount"] * record["payments.FXRate"]"#.into(), when: r#"meta["prefix"] == "payments""#.into() },
         Instruction::ProjectColumn { name: "RECEIPT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["receipts.Amount"]"#.into(), when: r#"meta["prefix"] == "receipts""#.into() },
         Instruction::ProjectColumn { name: "TOTAL_AMOUNT_BASE".into(),   data_type: DataType::DECIMAL, eval: r#"record["invoices.TotalAmount"] * record["invoices.FXRate"]"#.into(), when: r#"meta["prefix"] == "invoices""#.into() },
-        Instruction::MergeColumns { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receiptes.ReceiptDate".into() )},
+        Instruction::MergeColumns { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receipts.ReceiptDate".into() )},
         Instruction::MergeColumns { name: "AMOUNT_BASE".into(), source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
         // Instruction::GROUP_BY { columns: vec!("SETTLEMENT_DATE".into()) },
         // Instruction::MATCH_GROUPS { constraints: vec!(
@@ -38,10 +38,10 @@ fn main() -> Result<()> {
         // )},
     ));
 
-    folders::ensure_exist()?;
-
     let job_id = uuid::Uuid::new_v4();
     log::info!("Starting match job {}", job_id);
+
+    folders::ensure_exist()?;
 
     // On start-up, any matching files should log warning and be moved to waiting.
     folders::rollback_incomplete()?;
@@ -79,7 +79,7 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
         match inst {
             Instruction::SourceData { filename } => instructions::source_data::source_data(filename, &mut grid)?,
             Instruction::ProjectColumn { name, data_type, eval, when } => instructions::project_col::project_column(name, *data_type, eval, when, &mut grid, &lua)?,
-            Instruction::MergeColumns { name, source }  => {},
+            Instruction::MergeColumns { name, source }  => instructions::merge_col::merge_cols(name, source, &mut grid)?,
             Instruction::GroupBy { columns }            => {},
             Instruction::UnGroup                        => {},
             Instruction::MatchGroups { constraints }    => {},
@@ -91,7 +91,7 @@ fn process_charter(charter: &Charter) -> Result<(), MatcherError> {
             ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.0}", grid.memory_usage().bytes())));
     }
 
-    // dump_grid(&grid);
+    dump_grid(&grid);
     Ok(())
 }
 

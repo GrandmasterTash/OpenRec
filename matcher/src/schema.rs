@@ -8,7 +8,7 @@ pub struct Column {
 }
 
 ///
-/// The schema of a CSV data file.
+/// The schema of a CSV data file. The GridSchema will be composed of these and projected and merged columns.
 ///
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileSchema {
@@ -34,6 +34,7 @@ pub struct GridSchema {
 
     // Artificial columns.
     projected_columns: Vec<Column>,
+    merged_columns: Vec<Column>,
 }
 
 impl Column {
@@ -63,7 +64,8 @@ impl GridSchema {
             type_map: HashMap::new(),
             position_map: HashMap::new(),
             file_schemas: Vec::new(),
-            projected_columns: Vec::new()
+            projected_columns: Vec::new(),
+            merged_columns: Vec::new(),
         }
     }
 
@@ -93,6 +95,19 @@ impl GridSchema {
         self.projected_columns.push(column);
         self.rebuild_cache();
         Ok(self.projected_columns.len() - 1)
+    }
+
+    ///
+    /// Added the merged column or error if it already exists.
+    ///
+    pub fn add_merged_column(&mut self, column: Column) -> Result<usize, MatcherError> {
+        if self.merged_columns.contains(&column) {
+            return Err(MatcherError::MergedColumnExists { header: column.header })
+        }
+
+        self.merged_columns.push(column);
+        self.rebuild_cache();
+        Ok(self.merged_columns.len() - 1)
     }
 
     pub fn file_schemas(&self) -> &[FileSchema] {
@@ -125,7 +140,7 @@ impl GridSchema {
             .enumerate()
             .for_each(|(idx, _fsc)| { position_map.insert(idx, HashMap::new()); });
 
-        // Cache all the projected columns. They start as the left-most ccolumn in the main grid.
+        // Cache all the projected columns. They start as the left-most column in the main grid.
         self.projected_columns
             .iter()
             .enumerate()
@@ -141,6 +156,25 @@ impl GridSchema {
                             .get_mut(&sdx)
                             .unwrap()
                             .insert(pc.header.clone(), fsc.columns().len() + idx);
+                    });
+            });
+
+        // Cache all the merged columns. They follow immediately after projected columns in the main grid.
+        self.merged_columns
+            .iter()
+            .enumerate()
+            .for_each(|(idx, mc)| {
+                headers.push(mc.header.clone());
+                type_map.insert(mc.header.clone(), mc.data_type);
+                self.file_schemas
+                    .iter()
+                    .enumerate()
+                    .for_each(|(sdx, fsc)| {
+                        // Merged columns map to the right-most set of columns (after projected) in the underlying Record/File schema.
+                        position_map
+                            .get_mut(&sdx)
+                            .unwrap()
+                            .insert(mc.header.clone(), fsc.columns().len() + self.projected_columns.len() + idx);
                     });
             });
 

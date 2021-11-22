@@ -1,5 +1,6 @@
 use uuid::Uuid;
 use rust_decimal::Decimal;
+use bytes::{BufMut, BytesMut};
 use crate::{data_type::{self, TRUE}, schema::GridSchema};
 
 #[derive(Debug)]
@@ -166,6 +167,45 @@ impl Record {
 
     pub fn append_uuid(&mut self, value: Uuid) {
         self.inner.push_field(format!("{}", value.to_hyphenated()).as_bytes())
+    }
+
+    ///
+    /// Copies the raw byte value in the column specified - if there is any.
+    ///
+    fn copy_raw(&self, header: &str, schema: &GridSchema) -> Option<Vec<u8>> {
+        match schema.position_in_record(header, self) {
+            Some(column) => {
+                match self.inner.get(*column) {
+                    Some(raw) if raw.len() > 0 => {
+                        let mut buf = BytesMut::with_capacity(raw.len());
+                        buf.put(raw);
+                        Some(buf.to_vec())
+                    },
+                    Some(_) => None,
+                    None => None,
+                }
+            },
+            None => None,
+        }
+    }
+
+    ///
+    /// Merge the first non-None value from the source columns into a new column.
+    ///
+    pub fn merge_from(&mut self, source: &[String], schema: &GridSchema) {
+        for header in source {
+            match self.copy_raw(header, schema) {
+                Some(raw) => {
+                    self.inner.push_field(&raw);
+                    return
+                },
+                None => continue,
+            }
+        }
+
+        // If we've not found a value, we'll still need to put a blank in there column
+        // to ensure the row has the correct number of columns.
+        self.append_string("");
     }
 }
 

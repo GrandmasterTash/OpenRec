@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::data_type::DataType;
 
 #[derive(Error, Debug)]
 pub enum MatcherError {
@@ -31,10 +32,22 @@ pub enum MatcherError {
     SchemaMismatch { filename: String, first: String, second: String },
 
     #[error("Projected column {header} already exists")]
-    ProjectedColumnExists { header: String, /* schema: String,  script: String*/ },
+    ProjectedColumnExists { header: String, },
+
+    #[error("Merged column {header} already exists")]
+    MergedColumnExists { header: String },
 
     #[error("Lua error in script\neval: {eval}\nreturn type: {data_type}\nwhen: {when}\nrecord: {record}")]
     ScriptError { eval: String, when: String, data_type: String, record: String, source: rlua::Error },
+
+    #[error("Column {header} doesn't exist in the source data and cannot be used to merge")]
+    MissingSourceColumn { header: String },
+
+    #[error("There are no valid source columns defined for the merge")]
+    NoValidSourceColumns {},
+
+    #[error("The source column {header} has type {this_type:?} which wont merge with {other_type:?}")]
+    InvalidSourceDataType { header: String, this_type: DataType, other_type: DataType},
 
     #[error(transparent)]
     LuaError(#[from] rlua::Error),

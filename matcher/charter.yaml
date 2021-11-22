@@ -1,0 +1,50 @@
+charter:
+  name: test invoices
+  preview: true
+  currency:
+    base: EUR
+  version: 1637208553000
+  instructions:
+    # TODO: Single instruction with array of paths.
+    - sourceData:
+      filePatterns: ['.*invoices\.csv', '.*payments\.csv', '.*receipts\.csv']
+
+    - projectColumn:
+      name: PAYMENT_AMOUNT_BASE
+      dataType: DECIMAL
+      from: record["payments.Amount"] * record["payments.FXRate"]
+      when: meta["prefix"] == "payments"
+
+    - projectColumn:
+      name: RECEIPT_AMOUNT_BASE
+      dataType: DECIMAL
+      from: record["receipts.Amount"]
+      when: meta["prefix"] == "receipts"
+
+    - projectColumn:
+      name: TOTAL_AMOUNT_BASE
+      dataType: DECIMAL
+      from: record["invoices.TotalAmount"] * record["invoices.FXRate"]
+      when: meta["prefix"] == "invoices"
+
+    - mergeColumns:
+      name: AMOUNT_BASE
+      from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
+
+    - mergeColumns:
+      name: SETTLEMENT_DATE
+      from: ['invoices.SettlementDate', 'payments.PaymentDate', 'receiptes.ReceiptDate']
+
+    - groupBy:
+      columns: ['SETTLEMENT_DATE']
+
+    - matchGroups:
+      constraints:
+        - netToZero:
+          column: AMOUNT_BASE
+          lhs: meta["prefix"] == "payments"
+          rhs: meta["prefix"] == "invoices"
+        - netToZero:
+          column: AMOUNT_BASE
+          lhs: meta["prefix"] == "receipts"
+          rhs: meta["prefix"] == "invoices"
