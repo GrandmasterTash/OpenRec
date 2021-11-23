@@ -38,7 +38,7 @@ pub enum MatcherError {
     MergedColumnExists { header: String },
 
     #[error("Lua error in script\neval: {eval}\nreturn type: {data_type}\nwhen: {when}\nrecord: {record}")]
-    ScriptError { eval: String, when: String, data_type: String, record: String, source: rlua::Error },
+    ProjectColScriptError { eval: String, when: String, data_type: String, record: String, source: rlua::Error },
 
     #[error("Column {header} doesn't exist in the source data and cannot be used to merge")]
     MissingSourceColumn { header: String },
@@ -48,6 +48,15 @@ pub enum MatcherError {
 
     #[error("The source column {header} has type {this_type:?} which wont merge with {other_type:?}")]
     InvalidSourceDataType { header: String, this_type: DataType, other_type: DataType},
+
+    #[error("A script problem occured during the match")]
+    MatchScriptError { source: rlua::Error },
+
+    #[error("The constraint column {column} is not present")]
+    ConstraintColumnMissing { column: String },
+
+    #[error("The constraint column {column} is not a DECIMAL data-type")]
+    ConstraintColumnNotDecimal { column: String },
 
     #[error(transparent)]
     LuaError(#[from] rlua::Error),

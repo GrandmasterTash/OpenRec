@@ -9,6 +9,7 @@ use chrono::{Datelike, NaiveDate, TimeZone, Utc};
 use rand::{Rng, SeedableRng, prelude::{SliceRandom, StdRng}};
 use crate::{column::*, data_type::DataType, group::Group, schema::Schema};
 
+// TODO: Generate a random FXRate snapshot and use random currencies for some rows.
 
 pub mod prelude {
     // Snaphot of ISO currency codes.
@@ -142,7 +143,7 @@ fn fixed_inv_columns() -> Vec<Column> {
         Column::new(DataType::DATE, TRADE_DATE.into(), ColumnMeta::default()),
         Column::new(DataType::DATE, SETTLEMENT_DATE.into(), ColumnMeta::default()),
         Column::new(DataType::DECIMAL, TOTAL_AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
-        Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("USD".into()))),
+        Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("GBP".into()))),
         Column::new(DataType::DECIMAL, FX_RATE.into(), ColumnMeta::new_decimal(12, 6)),
     )
 }
@@ -173,6 +174,8 @@ fn fixed_rec_columns() -> Vec<Column> {
         Column::new(DataType::DATE, RECEIPT_DATE.into(), ColumnMeta::default()),
         Column::new(DataType::DECIMAL, AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
         Column::new(DataType::STRING, PAYMENT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
+        Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("GBP".into()))),
+        Column::new(DataType::DECIMAL, FX_RATE.into(), ColumnMeta::new_decimal(12, 6)),
     )
 }
 

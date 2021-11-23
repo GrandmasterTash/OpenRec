@@ -1,5 +1,5 @@
 charter:
-  name: test invoices
+  name: Three-way invoice match
   preview: true
   currency:
     base: EUR
@@ -44,7 +44,9 @@ charter:
           column: AMOUNT_BASE
           lhs: meta["prefix"] == "payments"
           rhs: meta["prefix"] == "invoices"
+          debug: true
         - netToZero:
           column: AMOUNT_BASE
           lhs: meta["prefix"] == "receipts"
           rhs: meta["prefix"] == "invoices"
+          debug: true

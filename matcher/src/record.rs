@@ -172,13 +172,14 @@ impl Record {
     ///
     /// Copies the raw byte value in the column specified - if there is any.
     ///
-    fn copy_raw(&self, header: &str, schema: &GridSchema) -> Option<Vec<u8>> {
+    pub fn get_bytes_copy(&self, header: &str, schema: &GridSchema) -> Option<Vec<u8>> {
         match schema.position_in_record(header, self) {
             Some(column) => {
                 match self.inner.get(*column) {
                     Some(raw) if raw.len() > 0 => {
                         let mut buf = BytesMut::with_capacity(raw.len());
                         buf.put(raw);
+                        // TODO: Use.freeze
                         Some(buf.to_vec())
                     },
                     Some(_) => None,
@@ -194,7 +195,7 @@ impl Record {
     ///
     pub fn merge_from(&mut self, source: &[String], schema: &GridSchema) {
         for header in source {
-            match self.copy_raw(header, schema) {
+            match self.get_bytes_copy(header, schema) {
                 Some(raw) => {
                     self.inner.push_field(&raw);
                     return

@@ -1,9 +1,8 @@
 use std::cmp::{max, min};
-
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use rand::{Rng, prelude::StdRng};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
-use crate::{column::SegmentMeta, generator::{self, prelude::*}, schema::Schema};
+use crate::{column::{ColumnMeta, SegmentMeta}, generator::{self, prelude::*}, schema::Schema};
 
 type Record = Vec<String>;
 
@@ -28,9 +27,12 @@ impl Group {
     pub fn new(inv_schema: &Schema, pay_schema: &Schema, rec_schema: &Schema, rng: &mut StdRng) -> Self {
 
         let foreign_key = format!("GRP-{}", generator::generate_ref(rng, &SegmentMeta::default()));
-        let invoice = generator::generate_row(&inv_schema, &foreign_key, "INV", rng);
-        let payments = generate_payments(&invoice, inv_schema, pay_schema, &foreign_key, rng);
-        let receipts = generate_receipts(&payments, rec_schema, pay_schema, &foreign_key, rng);
+        let mut invoice = generator::generate_row(&inv_schema, &foreign_key, "INV", rng);
+        let fx_rate = generator::generate_decimal(rng, &ColumnMeta::new_decimal(12, 6)).parse().unwrap();
+        set_decimal(FX_RATE, fx_rate, &mut invoice, inv_schema);
+
+        let payments = generate_payments(&invoice, inv_schema, pay_schema, &foreign_key, fx_rate, rng);
+        let receipts = generate_receipts(&payments, &invoice, rec_schema, inv_schema, pay_schema, &foreign_key, fx_rate, rng);
 
         Self { invoice, payments, receipts }
     }
@@ -51,7 +53,13 @@ impl Group {
 ///
 /// Generate 1 to 6 payments for the invoice. Allocate the invoice's total amount amongst the payments.
 ///
-fn generate_payments(invoice: &Record, inv_schema: &Schema, pay_schema: &Schema, foreign_key: &str, rng: &mut StdRng) -> Vec<Record> {
+fn generate_payments(
+    invoice: &Record,
+    inv_schema: &Schema,
+    pay_schema: &Schema,
+    foreign_key: &str,
+    fx_rate: Decimal,
+    rng: &mut StdRng) -> Vec<Record> {
 
     let mut payments = (1..=rng.gen_range(1..=6))
         .map(|_idx| generator::generate_row(&pay_schema, &foreign_key, "PAY", rng))
@@ -62,11 +70,9 @@ fn generate_payments(invoice: &Record, inv_schema: &Schema, pay_schema: &Schema,
     allocate_decimal(AMOUNT, tot_amount, &mut payments, pay_schema, rng);
 
     let settlement_date = get_date(SETTLEMENT_DATE, &invoice, inv_schema);
-    let fx_rate = generator::generate_decimal(rng, pay_schema.columns()[column_idx(FX_RATE, pay_schema)].meta()).parse().unwrap();
 
     payments.iter_mut().for_each(|payment| {
-        // Set payment date to settlement date or +1-3d
-        set_date(PAYMENT_DATE, settlement_date + Duration::days(rng.gen_range(0..3)), payment, pay_schema);
+        set_date(PAYMENT_DATE, settlement_date, payment, pay_schema);
 
         // Set the FXRate to the same value for all payments.
         set_decimal(FX_RATE, fx_rate, payment, pay_schema);
@@ -80,9 +86,12 @@ fn generate_payments(invoice: &Record, inv_schema: &Schema, pay_schema: &Schema,
 ///
 fn generate_receipts(
     payments: &Vec<Record>,
+    invoice: &Record,
     rec_schema: &Schema,
+    inv_schema: &Schema,
     pay_schema: &Schema,
     foreign_key: &str,
+    fx_rate: Decimal,
     rng: &mut StdRng) -> Vec<Record> {
 
     // Generate some template receipts (1:2 ratio with payments).
@@ -93,10 +102,12 @@ fn generate_receipts(
         .map(|_idx| generator::generate_row(&rec_schema, &foreign_key, "REC", rng))
         .collect::<Vec<Vec<String>>>();
 
-    let max_pay_date = payments.iter()
-        .map(|payment| get_date(PAYMENT_DATE, payment, pay_schema))
-        .max()
-        .unwrap();
+    // let max_pay_date = payments.iter()
+    //     .map(|payment| get_date(PAYMENT_DATE, payment, pay_schema))
+    //     .max()
+    //     .unwrap();
+
+    let settlement_date = get_date(SETTLEMENT_DATE, &invoice, inv_schema);
 
     // Now 'assign' a payment to one of the templated receipts.
     for (idx, payment) in payments.iter().enumerate() {
@@ -106,7 +117,10 @@ fn generate_receipts(
         // Link the payment date and amount to the receipt.
         set_string(PAYMENT_REF, get_string(PAYMENT_REF, payment, pay_schema), &mut receipt, rec_schema);
         set_decimal(AMOUNT, get_decimal(AMOUNT, payment, pay_schema), &mut receipt, rec_schema);
-        set_date(RECEIPT_DATE, max_pay_date, &mut receipt, rec_schema);
+        set_date(RECEIPT_DATE, settlement_date, &mut receipt, rec_schema);
+
+        // Set the FXRate to the same value for all receipts.
+        set_decimal(FX_RATE, fx_rate, &mut receipt, rec_schema);
 
         receipts.push(receipt);
     }
