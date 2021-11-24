@@ -5,18 +5,27 @@ use crate::{data_type::{self, TRUE}, schema::GridSchema};
 
 #[derive(Debug)]
 pub struct Record {
+    row: usize, // The line number in the file. 1 and 2 are headers, so the first row will always be 3.
     file_idx: usize,
     schema_idx: usize,
     inner: csv::ByteRecord,
 }
 
 impl Record {
-    pub fn new(file_idx: usize, schema_idx: usize, inner: csv::ByteRecord) -> Self {
-        Self { file_idx, schema_idx, inner }
+    pub fn new(file_idx: usize, schema_idx: usize, row: usize, inner: csv::ByteRecord) -> Self {
+        Self { row, file_idx, schema_idx, inner }
+    }
+
+    pub fn row(&self) -> usize {
+        self.row
     }
 
     pub fn schema_idx(&self) -> usize {
         self.schema_idx
+    }
+
+    pub fn file_idx(&self) -> usize {
+        self.file_idx
     }
 
     pub fn inner(&self) -> &csv::ByteRecord {
@@ -209,5 +218,3 @@ impl Record {
         self.append_string("");
     }
 }
-
-// TODO: Unit tests.

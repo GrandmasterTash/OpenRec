@@ -58,6 +58,9 @@ pub enum MatcherError {
     #[error("The constraint column {column} is not a DECIMAL data-type")]
     ConstraintColumnNotDecimal { column: String },
 
+    #[error("Failed to write the match job header {job_header} to {path}")]
+    FailedToWriteJobHeader { job_header: String, path: String, source: serde_json::Error },
+
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 

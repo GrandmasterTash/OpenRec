@@ -1,3 +1,4 @@
+use chrono::Utc;
 use regex::Regex;
 use lazy_static::lazy_static;
 use crate::error::MatcherError;
@@ -37,7 +38,6 @@ use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
 
 // The root folder under which all data files are processed. In future this may become a mandatory command-line arg.
 const REC_HOME: &str = "./tmp";
-// const INCOMPLETE: &str = ".incomplete";
 const IN_PROGRESS: &str = ".inprogress";
 
 lazy_static! {
@@ -158,6 +158,17 @@ pub fn unmatched() -> PathBuf {
 
 pub fn archive() -> PathBuf {
     Path::new(REC_HOME).join("archive/")
+}
+
+pub fn new_matched_file() -> PathBuf {
+    matched().join(format!("{}_matched.json{}", timestamp(), IN_PROGRESS))
+}
+
+///
+/// Return a new timestamp in the file prefix format.
+///
+fn timestamp() -> String {
+    Utc::now().format("%Y%m%d_%H%M%S%3f_").to_string()
 }
 
 ///

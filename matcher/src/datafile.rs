@@ -20,5 +20,7 @@ impl DataFile {
         }
     }
 
-    // TODO: Evaluate if we need this struct anymore?
+    pub fn filename(&self) -> &str {
+        &self.filename
+    }
 }

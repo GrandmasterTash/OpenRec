@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use humantime::format_duration;
 use rlua::Context;
 use rust_decimal::Decimal;
 use crate::{data_type::DataType, error::MatcherError, lua, record::Record, schema::GridSchema};
@@ -14,19 +17,19 @@ pub struct Charter {
 
 #[derive(Debug)]
 pub enum Instruction {
-    SourceData { filename: /* TODO: rename file_pattern*/ String }, // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
+    SourceData { filename: /* TODO: rename file_pattern and use array rather than multiple instructions */ String }, // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
     ProjectColumn { name: String, data_type: DataType, eval: String, when: String }, // Create a derived column from one or more other columns.
     MergeColumns { name: String, source: Vec<String> }, // Merge the contents of columns together.
     MatchGroups { group_by: Vec<String>, constraints: Vec<Constraint> }, // Group the data by one or more columns (header-names)
-    _Filter, // Apply a filter so only data matching the filter is currently available.
-    _UnFilter, // Remove an applied filter.
+    _Filter, // TODO: Apply a filter so only data matching the filter is currently available.
+    _UnFilter, // TODO: Remove an applied filter.
 }
 
 #[derive(Debug)]
 pub enum Constraint {
     NetsToZero { column: String, lhs: String, rhs: String, debug: bool }
-    // NETS_WITH_TOLERANCE
-    // Custom Lua
+    // TODO: NETS_WITH_TOLERANCE
+    // Custom Lua with access to Count, Sum and all records in the group (so table of tables): records[1]["invoices.blah"]
 }
 
 impl Charter {
@@ -120,4 +123,18 @@ fn lua_filter<'a, 'b>(records: &[&'a Box<Record>], lua_script: &str, lua_ctx: &'
     }
 
     Ok(results)
+}
+
+///
+/// Provide a consistent formatting for durations and rates.
+///
+/// The format_duration will show micro and nano seconds but we typically only need to see ms.
+///
+pub fn formatted_duration_rate(amount: usize, elapsed: Duration) -> (String, String) {
+    let duration = Duration::new(elapsed.as_secs(), elapsed.subsec_millis() * 1000000); // Keep precision to ms.
+    let rate = (elapsed.as_millis() as f64 / amount as f64) as f64;
+    (
+        format_duration(duration).to_string(),
+        format!("{:.3}ms", rate)
+    )
 }

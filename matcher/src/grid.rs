@@ -39,6 +39,10 @@ impl Grid {
         }
     }
 
+    pub fn files(&self) -> &[DataFile] {
+        &self.files
+    }
+
     pub fn schema(&self) -> &GridSchema {
         &self.schema
     }

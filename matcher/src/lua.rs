@@ -24,7 +24,7 @@ pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
 }
 
 ///
-/// Convert all the fields of the record into a Lua table.
+/// Convert all the specified column/fields of the record into a Lua table.
 ///
 pub fn lua_record<'a>(record: &Record, script_cols: &[Column], schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
     let lua_record = lua_ctx.create_table()?;
@@ -52,7 +52,9 @@ pub fn lua_record<'a>(record: &Record, script_cols: &[Column], schema: &GridSche
 ///
 /// Create some contextural information regarding the file that loaded a record.
 ///
-pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
+pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
+    -> Result<Table<'a>, rlua::Error> {
+
     let lua_meta = lua_ctx.create_table()?;
 
     match schema.file_schemas().get(record.schema_idx()) {
@@ -64,7 +66,7 @@ pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
 }
 
 ///
-/// Provide a wrapper around the custom Decimal type so we can use it in Lua scripts.
+/// Provide a wrapper around the custom Decimal type so we can use a precise data-type in Lua scripts.
 ///
 #[derive(Clone)]
 pub struct LuaDecimal (pub Decimal);
@@ -80,6 +82,6 @@ impl rlua::UserData for LuaDecimal {
         methods.add_meta_method(rlua::MetaMethod::Le,  |_, this, other: LuaDecimal| { Ok(this.0 <= other.0) });
         methods.add_meta_method(rlua::MetaMethod::Eq,  |_, this, other: LuaDecimal| { Ok(this.0 == other.0) });
         methods.add_meta_method(rlua::MetaMethod::ToString, |_, this, _: ()| { Ok(this.0.to_string()) });
-        // Decimal with other types can go here...
+        // Arithmetic operations between a Decimal and other types can go here...
     }
 }

@@ -28,11 +28,13 @@ impl Group {
 
         let foreign_key = format!("GRP-{}", generator::generate_ref(rng, &SegmentMeta::default()));
         let mut invoice = generator::generate_row(&inv_schema, &foreign_key, "INV", rng);
+
+        let settlement_date = get_date(SETTLEMENT_DATE, &invoice, inv_schema);
         let fx_rate = generator::generate_decimal(rng, &ColumnMeta::new_decimal(12, 6)).parse().unwrap();
         set_decimal(FX_RATE, fx_rate, &mut invoice, inv_schema);
 
-        let payments = generate_payments(&invoice, inv_schema, pay_schema, &foreign_key, fx_rate, rng);
-        let receipts = generate_receipts(&payments, &invoice, rec_schema, inv_schema, pay_schema, &foreign_key, fx_rate, rng);
+        let payments = generate_payments(&invoice, inv_schema, pay_schema, &foreign_key, fx_rate, settlement_date, rng);
+        let receipts = generate_receipts(&payments, rec_schema, pay_schema, &foreign_key, fx_rate, settlement_date, rng);
 
         Self { invoice, payments, receipts }
     }
@@ -59,6 +61,7 @@ fn generate_payments(
     pay_schema: &Schema,
     foreign_key: &str,
     fx_rate: Decimal,
+    settlement_date: DateTime<Utc>,
     rng: &mut StdRng) -> Vec<Record> {
 
     let mut payments = (1..=rng.gen_range(1..=6))
@@ -68,8 +71,6 @@ fn generate_payments(
     // Get the total invoice amount - we'll allocate it amongst the payments.
     let tot_amount = get_decimal(TOTAL_AMOUNT, &invoice, inv_schema);
     allocate_decimal(AMOUNT, tot_amount, &mut payments, pay_schema, rng);
-
-    let settlement_date = get_date(SETTLEMENT_DATE, &invoice, inv_schema);
 
     payments.iter_mut().for_each(|payment| {
         set_date(PAYMENT_DATE, settlement_date, payment, pay_schema);
@@ -86,12 +87,11 @@ fn generate_payments(
 ///
 fn generate_receipts(
     payments: &Vec<Record>,
-    invoice: &Record,
     rec_schema: &Schema,
-    inv_schema: &Schema,
     pay_schema: &Schema,
     foreign_key: &str,
     fx_rate: Decimal,
+    settlement_date: DateTime<Utc>,
     rng: &mut StdRng) -> Vec<Record> {
 
     // Generate some template receipts (1:2 ratio with payments).
@@ -101,13 +101,6 @@ fn generate_receipts(
     let master_receipts = (1..=receipt_count)
         .map(|_idx| generator::generate_row(&rec_schema, &foreign_key, "REC", rng))
         .collect::<Vec<Vec<String>>>();
-
-    // let max_pay_date = payments.iter()
-    //     .map(|payment| get_date(PAYMENT_DATE, payment, pay_schema))
-    //     .max()
-    //     .unwrap();
-
-    let settlement_date = get_date(SETTLEMENT_DATE, &invoice, inv_schema);
 
     // Now 'assign' a payment to one of the templated receipts.
     for (idx, payment) in payments.iter().enumerate() {
@@ -190,7 +183,8 @@ fn set_decimal(field: &str, amount: Decimal, record: &mut Record, schema: &Schem
 ///
 fn allocate_decimal(field: &str, tot_amount: Decimal, records: &mut Vec<Record>, schema: &Schema, rng: &mut StdRng) {
     let mut remaining = tot_amount;
-    let allocation = tot_amount / Decimal::from(records.len());
+    let mut allocation = tot_amount / Decimal::from(records.len());
+    allocation.rescale(8); // Curb huge scales.
 
     records.iter_mut().for_each(|record| {
         // Allow a payment amount to vary by up to -/+50% of an uniform allocation.

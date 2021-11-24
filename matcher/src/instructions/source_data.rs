@@ -4,9 +4,6 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
 
     log::info!("Sourcing data with pattern [{}]", filename);
 
-    // TODO: Apply any .changeset.json files (do this when sourcing the data). This will modify the data or schema
-    // of a file prior to if being loaded.
-
     // Track schema's added for this source instruction - if any do not equal, return a validation error.
     // Because all files of the same record type will need the same schema for any single match run.
     let mut last_schema_idx = None;
@@ -37,7 +34,7 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
                 .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
 
             count += 1;
-            grid.add_record(Record::new(file_idx, schema_idx, record));
+            grid.add_record(Record::new(count + /* 2 header rows */ 2, file_idx, schema_idx, record));
         }
 
         log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());

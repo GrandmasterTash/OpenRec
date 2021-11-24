@@ -330,7 +330,8 @@ pub fn generate_decimal(rng: &mut StdRng, meta: &ColumnMeta) -> String {
     let meta = meta.decimal().as_ref().unwrap();
     let precision = meta.precision() as usize;
     let scale = meta.scale() as u32;
-    let rnd_nums = rand_chars(precision, RANDOM_NUMERIC, rng);
+    let rnd_nums = format!("{}000", rand_chars(precision - 3, /* Dont use all of the scale otherwise not all match groups will not net to zero due to max scale precision rounding issues */
+        RANDOM_NUMERIC, rng));
     let decimal = Decimal::new(
         rnd_nums.parse::<i64>().expect(&format!("Bad number {}", rnd_nums)),
         scale);

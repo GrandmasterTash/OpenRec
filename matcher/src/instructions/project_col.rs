@@ -1,6 +1,5 @@
-use humantime::format_duration;
-use std::time::{Duration, Instant};
-use crate::{data_type::DataType, error::MatcherError, grid::Grid, lua, schema::Column};
+use std::time::Instant;
+use crate::{charter::formatted_duration_rate, data_type::DataType, error::MatcherError, grid::Grid, lua, schema::Column};
 
 ///
 /// Use a script (eval) to calculate a value for a new column in each record.
@@ -69,13 +68,11 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
         source
     })?;
 
-    let elapsed = start.elapsed();
-    let duration = Duration::new(elapsed.as_secs(), elapsed.subsec_millis() * 1000000); // Keep precision to ms.
-    let rate = (elapsed.as_millis() as f64 / row as f64) as f64;
+    let (duration, rate) = formatted_duration_rate(row, start.elapsed());
     log::info!("Projection took {} for {} rows ({}/row)",
-        format_duration(duration),
+        duration,
         row,
-        ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.3}ms", rate)));
+        ansi_term::Colour::RGB(70, 130, 180).paint(rate));
 
     Ok(())
 }
