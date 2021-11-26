@@ -7,8 +7,17 @@ pub enum MatcherError {
     #[error("Path {path} is not a file and has no filename")]
     PathNotAFile { path: String },
 
+    #[error("Attempted to remove the .inprogress suffix from {path}")]
+    FileNotInProgress { path: String },
+
+    #[error("Unable to rename file {from} to {to}")]
+    CannotRenameFile { from: String, to: String, source: std::io::Error },
+
     #[error("Unable to create directory {path}")]
     CannotCreateDir { path: String, source: std::io::Error },
+
+    #[error("Unable to delete file {filename}")]
+    CannotDeleteFile { filename: String, source: std::io::Error },
 
     #[error("Unable to create unmatched file {path}")]
     CannotCreateUnmatchedFile { path: String, source: csv::Error },
@@ -36,6 +45,12 @@ pub enum MatcherError {
 
     #[error("Unable to write schema to {filename}")]
     CannotWriteSchema { filename: String, source: csv::Error },
+
+    #[error("Unable to write {thing} to {filename}")]
+    CannotWriteThing { thing: String, filename: String, source: std::io::Error },
+
+    #[error("Unable to write matched record row to {filename}")]
+    CannotWriteMatchedRecord { filename: String, source: serde_json::Error },
 
     #[error("Unable to write unmatched record row {row} to {filename}")]
     CannotWriteUnmatchedRecord { filename: String, row: usize, source: csv::Error },
@@ -70,8 +85,8 @@ pub enum MatcherError {
     #[error("The source column {header} has type {this_type:?} which wont merge with {other_type:?}")]
     InvalidSourceDataType { header: String, this_type: DataType, other_type: DataType},
 
-    #[error("A script problem occured during the match")]
-    MatchScriptError { source: rlua::Error },
+    #[error("A problem occured during the match")]
+    MatchGroupError { source: rlua::Error },
 
     #[error("The constraint column {column} is not present")]
     ConstraintColumnMissing { column: String },
@@ -81,6 +96,9 @@ pub enum MatcherError {
 
     #[error("Failed to write the match job header {job_header} to {path}")]
     FailedToWriteJobHeader { job_header: String, path: String, source: serde_json::Error },
+
+    #[error("Unmatched record's file {file_idx} not found in grid")]
+    UnmatchedFileNotInGrid { file_idx: usize },
 
     #[error("Unmatched file {filename} was not found in the unmatched handler")]
     UnmatchedFileNotInHandler { filename: String },

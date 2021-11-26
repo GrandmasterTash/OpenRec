@@ -4,8 +4,10 @@ use rlua::Context;
 use serde_json::json;
 use itertools::Itertools;
 use bytes::{BufMut, Bytes, BytesMut};
-use std::{cell::Cell, collections::HashMap, fs::File, io::{BufWriter, Write}, time::{Duration, Instant}};
+use std::{cell::Cell, collections::HashMap, fs::File, io::{BufWriter, Write}, path::PathBuf, time::{Duration, Instant}};
 use crate::{charter::{Charter, Constraint, formatted_duration_rate}, error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::{FileSchema, GridSchema}};
+
+// TODO: Create a 2-stage match charter and example data files.
 
 ///
 /// Bring groups of records together using the columns specified.
@@ -13,25 +15,30 @@ use crate::{charter::{Charter, Constraint, formatted_duration_rate}, error::Matc
 /// If a group of records matches all the constraint rules specified, the group is written to a matched
 /// file and any records which fail to be matched are written to un-matched files.
 ///
-pub fn match_groups(group_by: &[String], constraints: &[Constraint], grid: &mut Grid, lua: &rlua::Lua, job_id: Uuid, charter: &Charter)
-    -> Result<(), MatcherError> {
+pub fn match_groups(
+    group_by: &[String],
+    constraints: &[Constraint],
+    grid: &mut Grid,
+    lua: &rlua::Lua,
+    job_id: Uuid,
+    charter: &Charter) -> Result<(), MatcherError> {
 
-    log::info!("Grouping by {:?}", group_by);
+    log::info!("Grouping by {}", group_by.iter().join(", "));
 
     // Create a match file containing job details and giving us a place to append match results.
-    let mut matched_file = create_matched_file(job_id, charter, grid)?; // TODO: Consider a struct tracker for consistency.
+    let mut matched = MatchedHandler::new(job_id, charter, grid)?;
 
     // Create unmatched files for each sourced file.
     let mut unmatched = UnmatchedHandler::new(grid)?;
 
     let mut group_count = 0;
-    let mut match_count = 0;
+    // let mut match_count = 0;
     let lua_time = Cell::new(Duration::from_millis(0));
 
     // Create a Lua context to evaluate Constraint rules in.
     lua.context(|lua_ctx| {
         // Form groups from the records.
-        for (_key, group) in &grid.records().iter()
+        for (_key, group) in &grid.records().iter() // TODO: Make mute and remove matched records.
 
             // Build a 'group key' from the record using the grouping columns.
             .map(|record| (match_key(record, group_by, grid.schema()), record) )
@@ -47,11 +54,11 @@ pub fn match_groups(group_by: &[String], constraints: &[Constraint], grid: &mut 
 
             // Test any constraints on the group to see if it's a match.
             if is_match(&records, constraints, grid.schema(), &lua_ctx, &lua_time)? {
-                append_group(&records, &mut matched_file, group_count).unwrap();
-                match_count += 1; // TODO: Move to handler.
-
+                matched.append_group(&records)
+                    .map_err(|source| rlua::Error::external(source))?;
             } else {
-                unmatched.append_group(&records, &grid).unwrap(); // TODO: don't unwrap.
+                unmatched.append_group(&records, &grid)
+                    .map_err(|source| rlua::Error::external(source))?;
             }
 
             // TODO: If this instruction is not the last one, don't close the job file and dont write unmatched records.
@@ -61,11 +68,10 @@ pub fn match_groups(group_by: &[String], constraints: &[Constraint], grid: &mut 
 
         Ok(())
     })
-    .map_err(|source| MatcherError::MatchScriptError { source })?; // TODO: Maybe rename to MatchGroupError?
+    .map_err(|source| MatcherError::MatchGroupError { source })?;
 
-    // Terminate the matched file to make it's contents valid JSON.
-    write!(&mut matched_file, "]\n}}\n]\n").unwrap(); // TODO: Completing a job should also log the unmatched files and counts).
-    unmatched.complete_files();
+    matched.complete_files()?;
+    unmatched.complete_files()?;
 
     if charter.debug() {
         debug_grid(&grid);
@@ -73,7 +79,7 @@ pub fn match_groups(group_by: &[String], constraints: &[Constraint], grid: &mut 
 
     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
-        match_count,
+        matched.groups,
         group_count,
         duration,
         ansi_term::Colour::RGB(70, 130, 180).paint(rate));
@@ -116,83 +122,111 @@ fn is_match(group: &[&Box<Record>], constraints: &[Constraint], schema: &GridSch
 }
 
 ///
-/// Open a matched output file to write Json groups to. We'll add job details to the top of the file.
-///
-fn create_matched_file(job_id: Uuid, charter: &Charter, grid: &Grid) -> Result<BufWriter<File>, MatcherError> {
-
-    let path = folders::new_matched_file();
-    let file = File::create(&path)?;
-    let mut writer = BufWriter::new(file);
-
-    write!(&mut writer, "[\n")?;
-
-    let job_header = json!(
-    {
-        "job_id": job_id.to_hyphenated().to_string(),
-        "charter_name": charter.name(),
-        "charter_version": charter.version(),
-        "files": grid.files().iter().map(|f|f.original_filename()).collect::<Vec<&str>>()
-    });
-
-    if let Err(source) = serde_json::to_writer_pretty(&mut writer, &job_header) {
-        return Err(MatcherError::FailedToWriteJobHeader { job_header: job_header.to_string(), path: path.to_canoncial_string(), source })
-    }
-
-    write!(&mut writer, ",\n{{\n  \"groups\": [\n    ")?;
-
-    Ok(writer)
-}
-
-///
-/// Append the records in this group to the matched group file.
-///
-/// Each group entry in the file is a 'file coordinate' to the original data. This is in the form: -
-/// [[n1,y1], [n2,y2], [n2,y3]]
-///
-/// When n is a file index in the grid and y is the line number in the file for the record. Line numbers include
-/// the header rows (so the first line of data will start at 3).
-///
-fn append_group(records: &[&Box<Record>], file: &mut BufWriter<File>, group_count: usize) -> Result<(), MatcherError> {
-    // Push this file writing into an fn.
-    if group_count !=  0 {
-        write!(file, ",\n    ").unwrap();
-    }
-
-    let json = records.iter().map(|r| json!(vec!(r.file_idx(), r.row()))).collect::<Vec<serde_json::Value>>();
-    serde_json::to_writer(file, &json).unwrap(); // TODO: Don't unwrap - throw external.
-
-    Ok(())
-}
-
-///
 /// Writes all the grid's data to a file at this point
 ///
 fn debug_grid(grid: &Grid) {
     let output_path = folders::debug_path().join(format!("{}output.csv", folders::new_timestamp()));
     log::info!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
-    let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).unwrap();
-    wtr.write_record(grid.schema().headers()).unwrap();
+    let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
+    wtr.write_record(grid.schema().headers()).expect("Unable to write the debug headers");
 
     for record in grid.records() {
         let data: Vec<&[u8]> = grid.record_data(record)
             .iter()
             .map(|v| v.unwrap_or(b""))
             .collect();
-        wtr.write_byte_record(&data.into()).unwrap();
+        wtr.write_byte_record(&data.into()).expect("Unable to write record");
     }
 
-    wtr.flush().unwrap();
+    wtr.flush().expect("Unable to flush the debug file");
     log::info!("...{} rows written to {}", grid.records().len(), output_path.to_canoncial_string());
 }
 
+///
+/// Manages the matched job file and appends matched groups to it.
+///
+struct MatchedHandler {
+    groups: usize,
+    path: String,
+    writer: BufWriter<File>,
+} // TODO: This bad-boy will be created at the start of the job and passed into this module as there may be multiple
+
+
+impl MatchedHandler {
+    ///
+    /// Open a matched output file to write Json groups to. We'll add job details to the top of the file.
+    ///
+    pub fn new(job_id: Uuid, charter: &Charter, grid: &Grid) -> Result<Self, MatcherError> {
+        let path = folders::new_matched_file();
+        let file = File::create(&path)?;
+        let mut writer = BufWriter::new(file);
+
+        write!(&mut writer, "[\n")?;
+
+        let job_header = json!(
+        {
+            "job_id": job_id.to_hyphenated().to_string(),
+            "charter_name": charter.name(),
+            "charter_version": charter.version(),
+            "files": grid.files().iter().map(|f|f.original_filename()).collect::<Vec<&str>>()
+        });
+
+        if let Err(source) = serde_json::to_writer_pretty(&mut writer, &job_header) {
+            return Err(MatcherError::FailedToWriteJobHeader { job_header: job_header.to_string(), path: path.to_canoncial_string(), source })
+        }
+
+        write!(&mut writer, ",\n{{\n  \"groups\": [\n    ")?;
+
+        Ok(Self { groups: 0, writer, path: path.to_canoncial_string() })
+    }
+
+    ///
+    /// Append the records in this group to the matched group file.
+    ///
+    /// Each group entry in the file is a 'file coordinate' to the original data. This is in the form: -
+    /// [[n1,y1], [n2,y2], [n2,y3]]
+    ///
+    /// When n is a file index in the grid and y is the line number in the file for the record. Line numbers include
+    /// the header rows (so the first line of data will start at 3).
+    ///
+    fn append_group(&mut self, records: &[&Box<Record>]) -> Result<(), MatcherError> {
+        // Push this file writing into an fn.
+        if self.groups !=  0 {
+            write!(&mut self.writer, ",\n    ")
+                .map_err(|source| MatcherError::CannotWriteThing { thing: "matched padding".into(), filename: self.path.clone(), source })?;
+        }
+
+        let json = records.iter().map(|r| json!(vec!(r.file_idx(), r.row()))).collect::<Vec<serde_json::Value>>();
+        serde_json::to_writer(&mut self.writer, &json)
+            .map_err(|source| MatcherError::CannotWriteMatchedRecord{ filename: self.path.clone(), source })?;
+
+        self.groups += 1;
+
+        Ok(())
+    }
+
+    ///
+    /// Terminate the matched file to make it's contents valid JSON.
+    ///
+    pub fn complete_files(&mut self) -> Result<(), MatcherError> {
+        // Remove the .inprogress suffix
+        folders::complete_file(&self.path)?;
+
+        Ok(write!(&mut self.writer, "]\n}}\n]\n")
+            .map_err(|source| MatcherError::CannotWriteThing { thing: "matched terminator".into(), filename: self.path.clone(), source })?)
+
+        // TODO: Completing a job should also log the unmatched files and counts) - this will be the 3rd object in the matched JSON array.
+    }
+}
 
 ///
 /// Represents an unmatched file potentially being written to as part of the current job.
 ///
 struct UnmatchedFile {
     rows: usize,
-    full_filename: String, // 20211126_072400000_invoices.unmatched.csv.
+    path: PathBuf,
+    full_filename: String, // CURRENT filename, e.g. 20211126_072400000_invoices.unmatched.csv.
     schema: FileSchema,    // A copy of the original fileschema.
     writer: Writer<File>,
 }
@@ -201,7 +235,7 @@ struct UnmatchedFile {
 /// Manages the unmatched files for the current job.
 ///
 struct UnmatchedHandler {
-    files: HashMap<String /* 20211126_072400000_invoices.csv. */, UnmatchedFile>,
+    files: HashMap<String /* ORIGINAL filename, e.g. 20211126_072400000_invoices.csv. */, UnmatchedFile>,
 }
 
 impl UnmatchedHandler {
@@ -229,13 +263,13 @@ impl UnmatchedHandler {
                 let schema = grid.schema().file_schemas().get(file.schema())
                     .ok_or(MatcherError::MissingSchemaInGrid{ filename: file.filename().into(), index: file.schema()  })?;
 
-                writer.write_record(schema.columns().iter().map(|c|c.header()).collect::<Vec<&str>>())
+                writer.write_record(schema.columns().iter().map(|c| c.header()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteHeaders{ filename: file.filename().into(), source })?;
 
-                writer.write_record(schema.columns().iter().map(|c|c.data_type().to_str()).collect::<Vec<&str>>())
+                writer.write_record(schema.columns().iter().map(|c| c.data_type().to_str()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteSchema{ filename: file.filename().into(), source })?;
 
-                files.insert(file.original_filename().into(), UnmatchedFile{ full_filename, rows: 0, writer, schema: schema.clone() });
+                files.insert(file.original_filename().into(), UnmatchedFile{ full_filename, path: output_path.clone(), rows: 0, writer, schema: schema.clone() });
 
                 log::trace!("Created file {}", output_path.to_canoncial_string());
             }
@@ -247,8 +281,10 @@ impl UnmatchedHandler {
     pub fn append_group(&mut self, records: &[&Box<Record>], grid: &Grid) -> Result<(), MatcherError> {
         for record in records {
             // Get the unmatched-file for this record.
-            println!("R FI: {}, G F len: {}", record.file_idx(), grid.files().len());
-            let filename = grid.files().get(record.file_idx()).unwrap().filename(); // TODO: Dont unwrap.
+            let filename = grid.files().get(record.file_idx())
+                .ok_or(MatcherError::UnmatchedFileNotInGrid { file_idx: record.file_idx() })?
+                .filename();
+
             let mut unmatched = self.files.get_mut(filename)
                 .ok_or(MatcherError::UnmatchedFileNotInHandler { filename: filename.to_string() })?;
 
@@ -259,6 +295,7 @@ impl UnmatchedHandler {
             // original record to disc.
             let mut copy = record.inner().clone();
             copy.truncate(unmatched.schema.columns().len());
+
             unmatched.writer.write_byte_record(&copy)
                 .map_err(|source| MatcherError::CannotWriteUnmatchedRecord { filename: unmatched.full_filename.clone(), row: record.row(), source })?;
         }
@@ -266,14 +303,18 @@ impl UnmatchedHandler {
         Ok(())
     }
 
-    pub fn complete_files(&mut self) /* -> Result<(), MatcherError> */ {
+    pub fn complete_files(&mut self) -> Result<(), MatcherError> {
         // Delete any unmatched files we didn't write records to.
         for (_filename, unmatched) in self.files.iter() {
             if unmatched.rows == 0 {
-                folders::delete_empty_unmatched(&unmatched.full_filename).unwrap(); // TODO: Don't unwrap
+                folders::delete_empty_unmatched(&unmatched.full_filename)?;
+            } else {
+                // Rename any remaining .inprogress files.
+                folders::complete_file(&unmatched.path.to_canoncial_string())?;
             }
         }
-        // Rename any remaining .inprogress files.
-        // info log the creation of these files.
+
+        // TODO: info log the creation of these files.
+        Ok(())
     }
 }

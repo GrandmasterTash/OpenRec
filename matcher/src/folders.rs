@@ -151,10 +151,30 @@ pub fn rollback_incomplete() -> Result<(), MatcherError> {
     Ok(())
 }
 
+///
+/// Rename a file ending in .inprogress to remove the suffix.
+///
+pub fn complete_file(path: &str) -> Result<(), MatcherError> {
+    if !path.ends_with(IN_PROGRESS) {
+        return Err(MatcherError::FileNotInProgress { path: path.into() })
+    }
+
+    let from = Path::new(path);
+    let to = Path::new(path.strip_suffix(IN_PROGRESS).unwrap(/* Check above makes this sage */));
+
+    fs::rename(from, to)
+        .map_err(|source| MatcherError::CannotRenameFile { from: from.to_canoncial_string(), to: to.to_canoncial_string(), source })?;
+
+    log::debug!("Renaming {} -> {}", from.to_canoncial_string(), to.to_canoncial_string());
+    Ok(())
+}
+
 pub fn delete_empty_unmatched(filename: &str) -> Result<(), MatcherError> {
     log::debug!("Deleting empty unmatched file {}", filename);
     let path = unmatched().join(filename);
-    Ok(fs::remove_file(&path)?)
+
+    Ok(fs::remove_file(&path)
+        .map_err(|source| MatcherError::CannotDeleteFile { filename: filename.into(), source })?)
 }
 
 pub fn waiting() -> PathBuf {

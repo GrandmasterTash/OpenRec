@@ -46,10 +46,10 @@ impl DataFile {
         &self.original_filename
     }
 
-    ///
-    /// Indicates if this file contains previously unmatched data. false if this is a newly arrived file.
-    ///
-    pub fn is_unmatched(&self) -> bool {
-        self.filename.ends_with(folders::UNMATCHED)
-    }
+    // ///
+    // /// Indicates if this file contains previously unmatched data. false if this is a newly arrived file.
+    // ///
+    // pub fn is_unmatched(&self) -> bool {
+    //     self.filename.ends_with(folders::UNMATCHED)
+    // }
 }
