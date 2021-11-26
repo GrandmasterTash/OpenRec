@@ -1,16 +1,15 @@
-use std::time::Duration;
-
-use humantime::format_duration;
 use rlua::Context;
+use std::time::Duration;
 use rust_decimal::Decimal;
+use humantime::format_duration;
 use crate::{data_type::DataType, error::MatcherError, lua, record::Record, schema::GridSchema};
 
 #[derive(Debug)]
 pub struct Charter {
     name: String,
     version: u64, // Epoch millis at UTC.
-    preview: bool,
-    base_currency: String,
+    debug: bool,
+    base_currency: String, // TODO: Is this required for matching?
     instructions: Vec<Instruction>,
     // TODO: Start at, end at
 }
@@ -25,6 +24,7 @@ pub enum Instruction {
     _UnFilter, // TODO: Remove an applied filter.
 }
 
+// TODO: Push constraint into own file.
 #[derive(Debug)]
 pub enum Constraint {
     NetsToZero { column: String, lhs: String, rhs: String, debug: bool }
@@ -33,17 +33,17 @@ pub enum Constraint {
 }
 
 impl Charter {
-    pub fn new(name: String, preview: bool, base_currency: String, version: u64, instructions: Vec<Instruction>) -> Self {
-        Self { name, preview, base_currency, version, instructions }
+    pub fn new(name: String, debug: bool, base_currency: String, version: u64, instructions: Vec<Instruction>) -> Self {
+        Self { name, debug, base_currency, version, instructions }
     }
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    // pub fn preview(&self) -> bool {
-    //     self.preview
-    // }
+    pub fn debug(&self) -> bool {
+        self.debug
+    }
 
     pub fn version(&self) -> u64 {
         self.version
@@ -63,8 +63,9 @@ impl Constraint {
         -> Result<bool, rlua::Error> {
 
         match self {
+            // TODO: Push into fn.
             Constraint::NetsToZero { column, lhs, rhs, debug } => {
-                // Validate column exists and is a DECIMAL.
+                // Validate NET column exists and is a DECIMAL (we can relax the type resiction if needed).
                 if !schema.headers().contains(column) {
                     return Err(rlua::Error::external(MatcherError::ConstraintColumnMissing{ column: column.into() }))
                 }
@@ -73,7 +74,7 @@ impl Constraint {
                     return Err(rlua::Error::external(MatcherError::ConstraintColumnNotDecimal{ column: column.into() }))
                 }
 
-                // Collect records in the group which match lhs.
+                // Collect records in the group which match lhs and rhs filters.
                 let lhs_recs = lua_filter(records, lhs, lua_ctx, schema)?;
                 let rhs_recs = lua_filter(records, rhs, lua_ctx, schema)?;
 
@@ -82,7 +83,7 @@ impl Constraint {
                 let rhs_sum: Decimal = rhs_recs.iter().map(|r| r.get_decimal(column, schema).unwrap_or(Decimal::ZERO)).sum();
                 let net = (lhs_sum - rhs_sum) == Decimal::ZERO;
 
-                // If the records don't net, then output the group values.
+                // If the records don't net then, if we're debugging the constraint, output the group values.
                 if !net && *debug {
                     let mut dbg = format!("{}\n", column);
                     lhs_recs.iter().for_each(|r| dbg += &format!("{:<30}: {}\n", r.get_decimal(column, schema).unwrap_or(Decimal::ZERO), lhs) );

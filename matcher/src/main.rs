@@ -9,16 +9,16 @@ mod datafile;
 mod data_type;
 mod instructions;
 
-use std::time::Instant;
-
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
+use std::time::Instant;
 use error::MatcherError;
-use crate::{charter::{Charter, Constraint, Instruction, formatted_duration_rate}, data_type::DataType, folders::ToCanoncialString, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, instructions::source_data::source_data};
+use crate::{charter::{Charter, Constraint, Instruction, formatted_duration_rate}, data_type::DataType, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, instructions::source_data::source_data};
 
 // TODO: Unit tests. Lots.
-// TODO: Refactor to work with data streamed from files.
+// TODO: Yaml charter deserialization.
+// TODO: Alter source_data to only retain columns required for matching. This will mean unmatched data will be written in a different way.
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
     log::info!("{}", BANNER);
 
     // Build a charter model to match our three files with.
-    let charter = Charter::new("test invoices".into(), false, "EUR".into(), chrono::Utc::now().timestamp_millis() as u64, vec!(
+    let charter = Charter::new("test invoices".into(), true, "EUR".into(), chrono::Utc::now().timestamp_millis() as u64, vec!(
         Instruction::SourceData { filename: ".*invoices\\.csv".into() },
         Instruction::SourceData { filename: ".*payments\\.csv".into() },
         Instruction::SourceData { filename: ".*receipts\\.csv".into() },
@@ -37,17 +37,18 @@ fn main() -> Result<()> {
         Instruction::MergeColumns { name: "AMOUNT_BASE".into(), source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
         Instruction::MergeColumns { name: "DBG_REF".into(), source: vec!("invoices.Reference".into(), "payments.Reference".into(), "receipts.Reference".into() ) },
         Instruction::MatchGroups { group_by: vec!("SETTLEMENT_DATE".into()), constraints: vec!(
-                Constraint::NetsToZero { column: "AMOUNT_BASE".into(), lhs: r#"meta["prefix"] == 'payments'"#.into(), rhs: r#"meta["prefix"] == 'invoices'"#.into(), debug: true },
-                Constraint::NetsToZero { column: "AMOUNT_BASE".into(), lhs: r#"meta["prefix"] == 'receipts'"#.into(), rhs: r#"meta["prefix"] == 'invoices'"#.into(), debug: true },
+                Constraint::NetsToZero { column: "AMOUNT_BASE".into(), lhs: r#"meta["prefix"] == 'payments'"#.into(), rhs: r#"meta["prefix"] == 'invoices'"#.into(), debug: false },
+                Constraint::NetsToZero { column: "AMOUNT_BASE".into(), lhs: r#"meta["prefix"] == 'receipts'"#.into(), rhs: r#"meta["prefix"] == 'invoices'"#.into(), debug: false },
             )
         },
     ));
 
+    // TODO: move to run_match_job()
     let start = Instant::now();
     let job_id = Uuid::new_v4();
     log::info!("Starting match job {}", job_id);
 
-    folders::ensure_exist()?;
+    folders::ensure_exist(charter.debug())?;
 
     // On start-up, any matching files should log warning and be moved to waiting.
     folders::rollback_incomplete()?;
@@ -98,31 +99,10 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
             ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.0}", grid.memory_usage().bytes())));
     }
 
-    dump_grid(&grid);
-
+    // dump_grid(&grid);
 
     Ok(())
 }
-
-fn dump_grid(grid: &Grid) {
-    // TODO: BufWriter
-    // Output a new result csv file.
-    let output_path = std::path::Path::new("./tmp/output.csv");
-    let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(output_path).unwrap();
-    wtr.write_record(grid.schema().headers()).unwrap();
-
-    for record in grid.records() {
-        let data: Vec<&[u8]> = grid.record_data(record)
-            .iter()
-            .map(|v| v.unwrap_or(b""))
-            .collect();
-        wtr.write_byte_record(&data.into()).unwrap();
-    }
-
-    wtr.flush().unwrap();
-    log::info!("{} rows written to {}", grid.records().len(), output_path.to_canoncial_string());
-}
-
 
 const BANNER: &str = r#"
   ___                   ____  _____ ____

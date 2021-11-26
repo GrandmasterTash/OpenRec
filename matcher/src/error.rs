@@ -4,8 +4,20 @@ use crate::data_type::DataType;
 #[derive(Error, Debug)]
 pub enum MatcherError {
 
+    #[error("Path {path} is not a file and has no filename")]
+    PathNotAFile { path: String },
+
     #[error("Unable to create directory {path}")]
     CannotCreateDir { path: String, source: std::io::Error },
+
+    #[error("Unable to create unmatched file {path}")]
+    CannotCreateUnmatchedFile { path: String, source: csv::Error },
+
+    #[error("The schema for file {filename} {index} was not in the data grid")]
+    MissingSchemaInGrid { filename: String, index: usize },
+
+    #[error("The file {filename} doesn't have a valid timestamp prefix")]
+    InvalidTimestampPrefix { filename: String },
 
     #[error("Unable to open file {path}")]
     CannotOpenCsv { path: String, source: csv::Error },
@@ -17,7 +29,16 @@ pub enum MatcherError {
     NoSchemaRow { source: csv::Error },
 
     #[error("Cannot read CSV headers")]
-    CannotReadHeaders { source: csv::Error },
+    CannotReadHeaders { source: csv::Error }, // TODO: filename?
+
+    #[error("Unable to write headers to {filename}")]
+    CannotWriteHeaders { filename: String, source: csv::Error },
+
+    #[error("Unable to write schema to {filename}")]
+    CannotWriteSchema { filename: String, source: csv::Error },
+
+    #[error("Unable to write unmatched record row {row} to {filename}")]
+    CannotWriteUnmatchedRecord { filename: String, row: usize, source: csv::Error },
 
     #[error("Unknown data type specified in column {column}")]
     UnknownDataTypeInColumn { column: usize },
@@ -60,6 +81,9 @@ pub enum MatcherError {
 
     #[error("Failed to write the match job header {job_header} to {path}")]
     FailedToWriteJobHeader { job_header: String, path: String, source: serde_json::Error },
+
+    #[error("Unmatched file {filename} was not found in the unmatched handler")]
+    UnmatchedFileNotInHandler { filename: String },
 
     #[error(transparent)]
     LuaError(#[from] rlua::Error),

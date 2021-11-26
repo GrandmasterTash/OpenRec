@@ -8,6 +8,8 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
     // Because all files of the same record type will need the same schema for any single match run.
     let mut last_schema_idx = None;
 
+    // TODO: Include .unmatched.csv files in this sourcing.
+
     for file in folders::files_in_matching(filename)? {
         log::info!("Reading file {}", file.path().to_string_lossy());
 
@@ -26,7 +28,7 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
         last_schema_idx = validate_schema(schema_idx, &last_schema_idx, &schema, &grid, filename)?;
 
         // Register the data file with the grid.
-        let file_idx = grid.add_file(DataFile::new(&file, schema_idx));
+        let file_idx = grid.add_file(DataFile::new(&file, schema_idx)?);
 
         // Load the data as bytes into memory.
         for result in rdr.byte_records() {
@@ -34,7 +36,7 @@ pub fn source_data(filename: &str, grid: &mut Grid) -> Result<(), MatcherError> 
                 .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
 
             count += 1;
-            grid.add_record(Record::new(count + /* 2 header rows */ 2, file_idx, schema_idx, record));
+            grid.add_record(Record::new(file_idx, schema_idx, count + /* 2 header rows */ 2, record));
         }
 
         log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
