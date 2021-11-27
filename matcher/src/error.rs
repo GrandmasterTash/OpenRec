@@ -4,6 +4,12 @@ use crate::data_type::DataType;
 #[derive(Error, Debug)]
 pub enum MatcherError {
 
+    #[error("Charter {path} not found")]
+    CharterFileNotFound { path: String, source: std::io::Error },
+
+    #[error("Charter {path} contains invalid configuration")]
+    InvalidCharter { path: String, source: serde_yaml::Error },
+
     #[error("Path {path} is not a file and has no filename")]
     PathNotAFile { path: String },
 

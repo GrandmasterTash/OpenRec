@@ -1,5 +1,5 @@
 use std::time::Instant;
-use crate::{charter::formatted_duration_rate, data_type::DataType, error::MatcherError, grid::Grid, lua, schema::Column};
+use crate::{data_type::DataType, error::MatcherError, formatted_duration_rate, grid::Grid, lua, schema::Column};
 
 ///
 /// Use a script (eval) to calculate a value for a new column in each record.

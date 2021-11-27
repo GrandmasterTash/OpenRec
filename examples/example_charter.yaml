@@ -1,0 +1,40 @@
+name: Three-way invoice match
+debug: true
+version: 1637208553000
+instructions:
+  - source_data:
+      file_patterns: ['.*invoices\.csv', '.*payments\.csv', '.*receipts\.csv']
+  - project:
+      column: PAYMENT_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["payments.Amount"] * record["payments.FXRate"]
+      when: meta["prefix"] == "payments"
+  - project:
+      column: RECEIPT_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["receipts.Amount"] * record["receipts.FXRate"]
+      when: meta["prefix"] == "receipts"
+  - project:
+      column: TOTAL_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["invoices.TotalAmount"] * record["invoices.FXRate"]
+      when: meta["prefix"] == "invoices"
+  - merge_columns:
+      from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
+      into: AMOUNT_BASE
+  - merge_columns:
+      from: ['invoices.SettlementDate', 'payments.PaymentDate', 'receipts.ReceiptDate']
+      into: SETTLEMENT_DATE
+  - match_groups:
+      group_by: ['SETTLEMENT_DATE']
+      constraints:
+        - nets_to_zero:
+            column: AMOUNT_BASE
+            lhs: meta["prefix"] == "payments"
+            rhs: meta["prefix"] == "invoices"
+            debug: true
+        - nets_to_zero:
+            column: AMOUNT_BASE
+            lhs: meta["prefix"] == "receipts"
+            rhs: meta["prefix"] == "invoices"
+            debug: true

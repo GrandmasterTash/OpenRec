@@ -12,36 +12,21 @@ mod instructions;
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
-use std::time::Instant;
 use error::MatcherError;
-use crate::{charter::{Charter, Constraint, Instruction, formatted_duration_rate}, data_type::DataType, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, instructions::source_data::source_data};
+use std::time::{Duration, Instant};
+use crate::{charter::{Charter, Instruction}, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, instructions::source_data::source_data};
 
-// TODO: Unit tests. Lots.
-// TODO: Yaml charter deserialization.
+// TODO: Create a 2-stage match charter and example data files and implement stages.
 // TODO: Alter source_data to only retain columns required for matching. This will mean unmatched data will be written in a different way.
+// TODO: Unit tests. Lots.
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
     env_logger::init();
     log::info!("{}", BANNER);
 
-    // Build a charter model to match our three files with.
-    let charter = Charter::new("test invoices".into(), true, "EUR".into(), chrono::Utc::now().timestamp_millis() as u64, vec!(
-        Instruction::SourceData { filename: ".*invoices\\.csv".into() },
-        Instruction::SourceData { filename: ".*payments\\.csv".into() },
-        Instruction::SourceData { filename: ".*receipts\\.csv".into() },
-        Instruction::ProjectColumn { name: "PAYMENT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["payments.Amount"] * record["payments.FXRate"]"#.into(), when: r#"meta["prefix"] == "payments""#.into() },
-        Instruction::ProjectColumn { name: "RECEIPT_AMOUNT_BASE".into(), data_type: DataType::DECIMAL, eval: r#"record["receipts.Amount"] * record["receipts.FXRate"]"#.into(), when: r#"meta["prefix"] == "receipts""#.into() },
-        Instruction::ProjectColumn { name: "TOTAL_AMOUNT_BASE".into(),   data_type: DataType::DECIMAL, eval: r#"record["invoices.TotalAmount"] * record["invoices.FXRate"]"#.into(), when: r#"meta["prefix"] == "invoices""#.into() },
-        Instruction::MergeColumns { name: "SETTLEMENT_DATE".into(), source: vec!("invoices.SettlementDate".into(), "payments.PaymentDate".into(), "receipts.ReceiptDate".into() )},
-        Instruction::MergeColumns { name: "AMOUNT_BASE".into(), source: vec!("PAYMENT_AMOUNT_BASE".into(), "RECEIPT_AMOUNT_BASE".into(), "TOTAL_AMOUNT_BASE".into() )},
-        Instruction::MergeColumns { name: "DBG_REF".into(), source: vec!("invoices.Reference".into(), "payments.Reference".into(), "receipts.Reference".into() ) },
-        Instruction::MatchGroups { group_by: vec!("SETTLEMENT_DATE".into()), constraints: vec!(
-                Constraint::NetsToZero { column: "AMOUNT_BASE".into(), lhs: r#"meta["prefix"] == 'payments'"#.into(), rhs: r#"meta["prefix"] == 'invoices'"#.into(), debug: false },
-                Constraint::NetsToZero { column: "AMOUNT_BASE".into(), lhs: r#"meta["prefix"] == 'receipts'"#.into(), rhs: r#"meta["prefix"] == 'invoices'"#.into(), debug: false },
-            )
-        },
-    ));
+    // TODO: Clap interface and a lib interface.
+    let charter = Charter::load("../examples/example_charter.yaml")?;
 
     // TODO: move to run_match_job()
     let start = Instant::now();
@@ -79,17 +64,16 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
     // Create Lua engine bindings.
     let lua = rlua::Lua::new();
 
-    log::info!("Running charter [{}] v{:?} using BASE [{}]",
+    log::info!("Running charter [{}] v{:?}",
         charter.name(),
-        charter.version(),
-        charter.base_currency());
+        charter.version());
 
     for inst in charter.instructions() {
         // BUG: Skip instructions if the grid is empty.
         match inst {
-            Instruction::SourceData { filename } => source_data(filename, &mut grid)?,
-            Instruction::ProjectColumn { name, data_type, eval, when } => project_column(name, *data_type, eval, when, &mut grid, &lua)?,
-            Instruction::MergeColumns { name, source } => merge_cols(name, source, &mut grid)?,
+            Instruction::SourceData { file_patterns } => source_data(file_patterns, &mut grid)?,
+            Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when, &mut grid, &lua)?,
+            Instruction::MergeColumns { into, from } => merge_cols(into, from, &mut grid)?,
             Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, &mut grid, &lua, job_id, charter)?,
             Instruction::_Filter   => todo!(),
             Instruction::_UnFilter => todo!(),
@@ -102,6 +86,20 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
     // dump_grid(&grid);
 
     Ok(())
+}
+
+///
+/// Provide a consistent formatting for durations and rates.
+///
+/// The format_duration will show micro and nano seconds but we typically only need to see ms.
+///
+pub fn formatted_duration_rate(amount: usize, elapsed: Duration) -> (String, String) {
+    let duration = Duration::new(elapsed.as_secs(), elapsed.subsec_millis() * 1000000); // Keep precision to ms.
+    let rate = (elapsed.as_millis() as f64 / amount as f64) as f64;
+    (
+        humantime::format_duration(duration).to_string(),
+        format!("{:.3}ms", rate)
+    )
 }
 
 const BANNER: &str = r#"

@@ -5,9 +5,7 @@ use serde_json::json;
 use itertools::Itertools;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, collections::HashMap, fs::File, io::{BufWriter, Write}, path::PathBuf, time::{Duration, Instant}};
-use crate::{charter::{Charter, Constraint, formatted_duration_rate}, error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::{FileSchema, GridSchema}};
-
-// TODO: Create a 2-stage match charter and example data files.
+use crate::{charter::{Charter, Constraint}, error::MatcherError, folders::{self, ToCanoncialString}, formatted_duration_rate, grid::Grid, record::Record, schema::{FileSchema, GridSchema}};
 
 ///
 /// Bring groups of records together using the columns specified.

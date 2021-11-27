@@ -1,7 +1,9 @@
+use serde::Deserialize;
+
 ///
 /// Logical/business data-type for any given csv column.
 ///
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum DataType {
     UNKNOWN,  // Unable to map short-code to a known value.
     BOOLEAN,  // 1,0 - uses byte.
