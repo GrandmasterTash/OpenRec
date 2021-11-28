@@ -1,4 +1,6 @@
 use std::time::Instant;
+use itertools::Itertools;
+
 use crate::{data_type::DataType, error::MatcherError, formatted_duration_rate, grid::Grid, lua, schema::Column};
 
 ///
@@ -10,14 +12,20 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
 
     let start = Instant::now();
 
-    log::info!("Projecting column {}", name);
+    log::info!("Projecting column {} as {:?}", name, data_type);
 
     // Add the projected column to the schema.
     grid.schema_mut().add_projected_column(Column::new(name.into(), data_type))?;
 
     // Snapshot the schema so we can iterate mutable records in a mutable grid.
     let schema = grid.schema().clone();
-    let script_cols = lua::script_columns(eval, &schema);
+
+    // Collect a unique list of all the columns we need to make available to the Lua script.
+    let script_cols = vec!(lua::script_columns(eval, &schema), lua::script_columns(when, &schema))
+        .concat()
+        .into_iter()
+        .unique()
+        .collect::<Vec<Column>>();
     let mut row = 0;
 
     // TODO: Consider rayon when we're streaming from files.

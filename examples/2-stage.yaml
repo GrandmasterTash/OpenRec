@@ -7,27 +7,30 @@ description: |
   TYP1 and TYP2 should be brought together into matches.
   TYP3 and TYP4 should be brought together into matches.
 version: 1637208553000
+# TODO: Copy this example and use to demonstrate filtering.
+# TODO: Change the 2-stage example to first group on a ref code and then mop-up by grouping on a date.
+# TODO: Add a UUID to each example record.
+
+# After sourcing the data our loaded memory grid looks like this (the description column from the
+# example file has been ommitted): -
+#
+# Type Amount_1 Amount_2 Date_1        Date_2
+# TYP1   100.00   ------ 1623110400000 -------------
+# TYP2   ------   100.00 1623110400000 -------------
+# TYP1   100.00   ------ 1633110400000 -------------
+# TYP2   ------   100.00 1633110400000 -------------
+# TYP3   250.00   ------ 1643110400000 -------------
+# TYP4   250.00   ------ ------------- 1643110400000
+file_patterns: ['2-stage\.csv']
+
+# Disable field prefixes. Without this, all the fields would be prefixed with '2-stage.' for
+# example '2-stage.Amount_1'. Instead, by suppressing them we can use 'Amount_1' instead.
+# This is useful when there is no chance of different columns having the same header (due to
+# multiple files being involved).
+field_prefixes: false
+
+debug: true
 instructions:
-  - source_data:
-      file_patterns: ['2-stage\.csv']
-
-      # Disable field prefixes. Without this, all the fields would be prefixed with '2-stage.' for
-      # example '2-stage.Amount_1'. Instead, by suppressing them we can use 'Amount_1' instead.
-      # This is useful when there is no chance of different columns having the same header (due to
-      # multiple files being involved).
-      field_prefixes: false
-
-  # After sourcing the data our loaded memory grid looks like this (the description column from the
-  # example file has been ommitted): -
-  #
-  # Type Amount_1 Amount_2 Date_1        Date_2
-  # TYP1   100.00   ------ 1623110400000 -------------
-  # TYP2   ------   100.00 1623110400000 -------------
-  # TYP1   100.00   ------ 1633110400000 -------------
-  # TYP2   ------   100.00 1633110400000 -------------
-  # TYP3   250.00   ------ 1643110400000 -------------
-  # TYP4   250.00   ------ ------------- 1643110400000
-
   # Stage 1
 
   # We will be forming groups of TYP1 and TYP2 by grouping the data by the Date_1 column.
@@ -46,7 +49,7 @@ instructions:
       column: 'Stage1_Date'
       as_type: DATE
       from: record["Date_1"]
-      when: record["type"] == "TYP1" or record["type"] == "TYP2"
+      when: record["Type"] == "TYP1" or record["Type"] == "TYP2"
 
   # Our data will now look like this: -
   #
@@ -81,6 +84,8 @@ instructions:
             lhs: record["Type"] == "TYP1"
             rhs: record["Type"] == "TYP2"
 
+# TODO: These headers are wrong - should be Stage1_Date, AMOUNT
+
   # Our data will now look like this as TYP1 and TYP2 have passed the above match and constraints: -
   #
   # AMOUNT Stage1_Date   Type Amount_1 Amount_2 Date_1        Date_2
@@ -93,7 +98,9 @@ instructions:
       column: 'Stage2_Date'
       as_type: DATE
       from: record["Date_1"] or record["Date_2"]
-      when: record["type"] == "TYP3" or record["type"] == "TYP4"
+      when: record["Type"] == "TYP3" or record["Type"] == "TYP4"
+
+# TODO: These headers are wrong - should be Stage1_Date, Stage2_Date, AMOUNT
 
   # Our data will now look like this: -
   #

@@ -8,14 +8,18 @@ pub struct Charter {
     description: Option<String>,
     version: u64, // Epoch millis at UTC.
     debug: Option<bool>,
+    file_patterns: Vec<String>,
+    field_prefixes: Option<bool>,
     instructions: Vec<Instruction>,
     // TODO: Start at, end at
 }
 
+// TODO: Validate - only one SourceData instruction. Maybe even move to charter-level?
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Instruction {
-    SourceData { file_patterns: Vec<String>, field_prefixes: Option<bool> }, // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
+    // SourceData { file_patterns: Vec<String>, field_prefixes: Option<bool> }, // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
     Project { column: String, as_type: DataType, from: String, when: String }, // Create a derived column from one or more other columns.
     // TODO: Make when above option
     MergeColumns { into: String, from: Vec<String> }, // Merge the contents of columns together.
@@ -50,6 +54,14 @@ impl Charter {
 
     pub fn version(&self) -> u64 {
         self.version
+    }
+
+    pub fn file_patterns(&self) -> &[String] {
+        &self.file_patterns
+    }
+
+    pub fn field_prefixes(&self) -> bool {
+        self.field_prefixes.unwrap_or(true)
     }
 
     pub fn instructions(&self) -> &[Instruction] {

@@ -8,10 +8,9 @@ description: |
   Each record contains it's own currency amount along with an FXRate column denoting the exchange
   rate to conert that to a common currency.
 version: 1637208553000
+file_patterns: ['.*invoices\.csv', '.*payments\.csv', '.*receipts\.csv']
+debug: true
 instructions:
-  - source_data:
-      file_patterns: ['.*invoices\.csv', '.*payments\.csv', '.*receipts\.csv']
-      debug: true
   - project:
       column: PAYMENT_AMOUNT_BASE
       as_type: DECIMAL

@@ -4,8 +4,10 @@ mod error;
 mod schema;
 mod record;
 mod folders;
+mod matched;
 mod charter;
 mod datafile;
+mod unmatched;
 mod data_type;
 mod instructions;
 
@@ -14,9 +16,8 @@ use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::MatcherError;
 use std::time::{Duration, Instant};
-use crate::{charter::{Charter, Instruction}, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, instructions::source_data::source_data};
+use crate::{charter::{Charter, Instruction}, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
-// TODO: Create a 2-stage match charter and example data files and implement stages.
 // TODO: Alter source_data to only retain columns required for matching. This will mean unmatched data will be written in a different way.
 // TODO: Unit tests. Lots.
 
@@ -29,7 +30,6 @@ fn main() -> Result<()> {
     // let charter = Charter::load("../examples/3-way-match.yaml")?;
     let charter = Charter::load("../examples/2-stage.yaml")?;
 
-    // TODO: move to run_match_job()
     let start = Instant::now();
     let job_id = Uuid::new_v4();
     log::info!("Starting match job {}", job_id);
@@ -45,7 +45,7 @@ fn main() -> Result<()> {
     // Iterate alphabetically matching files.
     process_charter(&charter, job_id)?;
 
-    // TODO: Finalise matched and unmatched. (remove .inprogress suffix).
+    // Move matching files to the archive.
     folders::progress_to_archive()?;
 
     // TODO: Log how many records processed, rate, MB size, etc.
@@ -58,7 +58,12 @@ fn main() -> Result<()> {
 /// Process the matching instructions.
 ///
 fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> {
-    //TODO: Move this to charter.rs
+
+    log::info!("Running charter [{}] v{:?}",
+        charter.name(),
+        charter.version());
+
+    let ts = folders::new_timestamp();
 
     // Load all data into memory (for now).
     let mut grid = Grid::new();
@@ -66,26 +71,44 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
     // Create Lua engine bindings.
     let lua = rlua::Lua::new();
 
-    log::info!("Running charter [{}] v{:?}",
-        charter.name(),
-        charter.version());
+    // Source data now to build the grid schema.
+    grid.source_data(charter.file_patterns(), charter.field_prefixes())?;
 
-    for inst in charter.instructions() {
-        // BUG: Skip instructions if the grid is empty.
+    // Create a match file containing job details and giving us a place to append match results.
+    let mut matched = MatchedHandler::new(job_id, charter, &grid)?;
+
+    // Create unmatched files for each sourced file.
+    let mut unmatched = UnmatchedHandler::new(&grid)?;
+
+    // If charter.debug - dump the grid with instr idx in filename.
+    if charter.debug() {
+        grid.debug_grid(&format!("0_{}output.csv", ts));
+    }
+
+    for (idx, inst) in charter.instructions().iter().enumerate() {
         match inst {
-            Instruction::SourceData { file_patterns, field_prefixes } => source_data(file_patterns, &mut grid, field_prefixes.unwrap_or(true))?,
             Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when, &mut grid, &lua)?,
             Instruction::MergeColumns { into, from } => merge_cols(into, from, &mut grid)?,
-            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, &mut grid, &lua, job_id, charter)?,
+            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, &mut grid, &lua, &mut matched)?,
             Instruction::_Filter   => todo!(),
             Instruction::_UnFilter => todo!(),
         };
+
+        // If charter.debug - dump the grid with instr idx in filename.
+        if charter.debug() {
+            grid.debug_grid(&format!("{}_{}output.csv", idx + 1, ts));
+        }
 
         log::info!("Grid Memory Size: {}",
             ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.0}", grid.memory_usage().bytes())));
     }
 
-    // dump_grid(&grid);
+    // Complete the matched JSON file.
+    matched.complete_files()?;
+
+    // Write all unmatched records now - this will be optimised at a later stage to be a single call.
+    unmatched.write_records(grid.records(), &grid)?;
+    unmatched.complete_files()?;
 
     Ok(())
 }

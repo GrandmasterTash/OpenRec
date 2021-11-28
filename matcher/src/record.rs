@@ -1,4 +1,5 @@
 use uuid::Uuid;
+use std::cell::Cell;
 use rust_decimal::Decimal;
 use bytes::{BufMut, BytesMut};
 use crate::{data_type::{self, TRUE}, schema::GridSchema};
@@ -9,11 +10,12 @@ pub struct Record {
     file_idx: usize,
     schema_idx: usize,
     inner: csv::ByteRecord,
+    matched: Cell<bool>,
 }
 
 impl Record {
     pub fn new(file_idx: usize, schema_idx: usize, row: usize, inner: csv::ByteRecord) -> Self {
-        Self { row, file_idx, schema_idx, inner }
+        Self { row, file_idx, schema_idx, inner, matched: Cell::new(false) }
     }
 
     pub fn row(&self) -> usize {
@@ -30,6 +32,14 @@ impl Record {
 
     pub fn inner(&self) -> &csv::ByteRecord {
         &self.inner
+    }
+
+    pub fn matched(&self) -> bool {
+        self.matched.get()
+    }
+
+    pub fn set_matched(&self) {
+        self.matched.set(true);
     }
 
     pub fn get_bool(&self, header: &str, schema: &GridSchema) -> Option<bool> {

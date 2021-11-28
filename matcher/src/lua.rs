@@ -17,6 +17,8 @@ pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
     for cap in HEADER_REGEX.captures_iter(script) {
         if let Some(data_type) = schema.data_type(&cap[1]) {
             columns.push(Column::new(cap[1].into(), *data_type));
+        } else {
+            log::warn!("Record field [{}] was not found, potential typo in Lua script?\n{}", &cap[1], script);
         }
     }
 

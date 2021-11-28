@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs};
 use crate::{data_type::DataType, error::MatcherError, record::Record};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Column {
     header: String,
     data_type: DataType,
@@ -33,8 +33,7 @@ pub struct GridSchema {
     file_schemas: Vec<FileSchema>,
 
     // Artificial columns.
-    projected_columns: Vec<Column>,
-    merged_columns: Vec<Column>,
+    artificial_columns: Vec<Column>,
 }
 
 impl Column {
@@ -53,7 +52,6 @@ impl Column {
 
 impl FileSchema {
     pub fn prefix(&self) -> Option<&str> {
-        // self.prefix.as_ref().map(|x| &**x) // &String -> str -> &str
         self.prefix.as_ref().map(String::as_str)
     }
 }
@@ -65,8 +63,7 @@ impl GridSchema {
             type_map: HashMap::new(),
             position_map: HashMap::new(),
             file_schemas: Vec::new(),
-            projected_columns: Vec::new(),
-            merged_columns: Vec::new(),
+            artificial_columns: Vec::new(),
         }
     }
 
@@ -89,26 +86,27 @@ impl GridSchema {
     /// Added the projected column or error if it already exists.
     ///
     pub fn add_projected_column(&mut self, column: Column) -> Result<usize, MatcherError> {
-        if self.projected_columns.contains(&column) {
+        if self.artificial_columns.contains(&column) {
+            // TODO: This and merged should also check real columns for clashes.
             return Err(MatcherError::ProjectedColumnExists { header: column.header })
         }
 
-        self.projected_columns.push(column);
+        self.artificial_columns.push(column);
         self.rebuild_cache();
-        Ok(self.projected_columns.len() - 1)
+        Ok(self.artificial_columns.len() - 1)
     }
 
     ///
     /// Added the merged column or error if it already exists.
     ///
     pub fn add_merged_column(&mut self, column: Column) -> Result<usize, MatcherError> {
-        if self.merged_columns.contains(&column) {
+        if self.artificial_columns.contains(&column) {
             return Err(MatcherError::MergedColumnExists { header: column.header })
         }
 
-        self.merged_columns.push(column);
+        self.artificial_columns.push(column);
         self.rebuild_cache();
-        Ok(self.merged_columns.len() - 1)
+        Ok(self.artificial_columns.len() - 1)
     }
 
     pub fn file_schemas(&self) -> &[FileSchema] {
@@ -142,12 +140,12 @@ impl GridSchema {
             .for_each(|(idx, _fsc)| { position_map.insert(idx, HashMap::new()); });
 
         // Cache all the projected columns. They start as the left-most column in the main grid.
-        self.projected_columns
+        self.artificial_columns
             .iter()
             .enumerate()
-            .for_each(|(idx, pc)| {
-                headers.push(pc.header.clone());
-                type_map.insert(pc.header.clone(), pc.data_type);
+            .for_each(|(idx, col)| {
+                headers.push(col.header.clone());
+                type_map.insert(col.header.clone(), col.data_type);
                 self.file_schemas
                     .iter()
                     .enumerate()
@@ -156,26 +154,7 @@ impl GridSchema {
                         position_map
                             .get_mut(&sdx)
                             .unwrap()
-                            .insert(pc.header.clone(), fsc.columns().len() + idx);
-                    });
-            });
-
-        // Cache all the merged columns. They follow immediately after projected columns in the main grid.
-        self.merged_columns
-            .iter()
-            .enumerate()
-            .for_each(|(idx, mc)| {
-                headers.push(mc.header.clone());
-                type_map.insert(mc.header.clone(), mc.data_type);
-                self.file_schemas
-                    .iter()
-                    .enumerate()
-                    .for_each(|(sdx, fsc)| {
-                        // Merged columns map to the right-most set of columns (after projected) in the underlying Record/File schema.
-                        position_map
-                            .get_mut(&sdx)
-                            .unwrap()
-                            .insert(mc.header.clone(), fsc.columns().len() + self.projected_columns.len() + idx);
+                            .insert(col.header.clone(), fsc.columns().len() + idx);
                     });
             });
 
