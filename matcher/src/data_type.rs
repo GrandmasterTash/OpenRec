@@ -4,7 +4,7 @@ use serde::Deserialize;
 /// Logical/business data-type for any given csv column.
 ///
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash)]
-pub enum DataType {
+pub enum DataType { // TODO: Not using memory compaction so consider rolling up all the ints into INTEGER by using i64
     UNKNOWN,  // Unable to map short-code to a known value.
     BOOLEAN,  // 1,0 - uses byte.
     BYTE,     // -128 <-> 127.

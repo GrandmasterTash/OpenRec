@@ -87,7 +87,7 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
 
     for (idx, inst) in charter.instructions().iter().enumerate() {
         match inst {
-            Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when, &mut grid, &lua)?,
+            Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when.as_ref().map(String::as_ref), &mut grid, &lua)?,
             Instruction::MergeColumns { into, from } => merge_cols(into, from, &mut grid)?,
             Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, &mut grid, &lua, &mut matched)?,
             Instruction::_Filter   => todo!(),

@@ -11,24 +11,20 @@ pub struct Charter {
     file_patterns: Vec<String>,
     field_prefixes: Option<bool>,
     instructions: Vec<Instruction>,
-    // TODO: Start at, end at
+    // TODO: Start at, end at, schema difference handling.
 }
 
-// TODO: Validate - only one SourceData instruction. Maybe even move to charter-level?
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Instruction {
-    // SourceData { file_patterns: Vec<String>, field_prefixes: Option<bool> }, // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
-    Project { column: String, as_type: DataType, from: String, when: String }, // Create a derived column from one or more other columns.
-    // TODO: Make when above option
+    Project { column: String, as_type: DataType, from: String, when: Option<String> }, // Create a derived column from one or more other columns.
     MergeColumns { into: String, from: Vec<String> }, // Merge the contents of columns together.
     MatchGroups { group_by: Vec<String>, constraints: Vec<Constraint> }, // Group the data by one or more columns (header-names)
     _Filter, // TODO: Apply a filter so only data matching the filter is currently available.
     _UnFilter, // TODO: Remove an applied filter.
 }
 
-// TODO: Push constraint into own file.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Constraint {
@@ -40,10 +36,6 @@ pub enum Constraint {
 }
 
 impl Charter {
-    // pub fn _new(name: String, debug: bool, version: u64, instructions: Vec<Instruction>) -> Self {
-    //     Self { name, debug, version, instructions, description: None, }
-    // }
-
     pub fn name(&self) -> &str {
         &self.name
     }

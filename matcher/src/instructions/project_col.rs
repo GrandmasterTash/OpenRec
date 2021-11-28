@@ -8,7 +8,13 @@ use crate::{data_type::DataType, error::MatcherError, formatted_duration_rate, g
 ///
 /// The script can reference any other value in the same record.
 ///
-pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, grid: &mut Grid, lua: &rlua::Lua) -> Result<(), MatcherError> {
+pub fn project_column(
+    name: &str,
+    data_type: DataType,
+    eval: &str,
+    when: Option<&str>,
+    grid: &mut Grid,
+    lua: &rlua::Lua) -> Result<(), MatcherError> {
 
     let start = Instant::now();
 
@@ -21,8 +27,10 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
     let schema = grid.schema().clone();
 
     // Collect a unique list of all the columns we need to make available to the Lua script.
-    let script_cols = vec!(lua::script_columns(eval, &schema), lua::script_columns(when, &schema))
-        .concat()
+    let script_cols = match when {
+        Some(when) => vec!(lua::script_columns(eval, &schema), lua::script_columns(when, &schema)),
+        None => vec!(lua::script_columns(eval, &schema)),
+    }.concat()
         .into_iter()
         .unique()
         .collect::<Vec<Column>>();
@@ -43,7 +51,7 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
 
             // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip
             // attempting to calulate values that are not relevant to the record without having to write verbose scripts.
-            if lua_ctx.load(&when).eval::<bool>()? {
+            if when.is_none() || lua_ctx.load(&when.unwrap()).eval::<bool>()? {
                 // Now calculate the column value and append it to the underlying ByteRecord.
                 match data_type {
                     DataType::UNKNOWN  => {},
@@ -70,7 +78,7 @@ pub fn project_column(name: &str, data_type: DataType, eval: &str, when: &str, g
     })
     .map_err(|source| MatcherError::ProjectColScriptError {
         eval: eval.into(),
-        when: when.into(),
+        when: when.unwrap_or("(no when script)").into(),
         data_type: data_type.to_str().into(),
         record: grid.record_as_string(row).unwrap_or("(no record)".into()),
         source
