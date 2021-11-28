@@ -5,8 +5,9 @@ use crate::{data_type::DataType, error::MatcherError};
 #[derive(Debug, Deserialize)]
 pub struct Charter {
     name: String,
+    description: Option<String>,
     version: u64, // Epoch millis at UTC.
-    debug: bool,
+    debug: Option<bool>,
     instructions: Vec<Instruction>,
     // TODO: Start at, end at
 }
@@ -14,7 +15,7 @@ pub struct Charter {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Instruction {
-    SourceData { file_patterns: Vec<String> }, // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
+    SourceData { file_patterns: Vec<String>, field_prefixes: Option<bool> }, // Open a file of data by filename (wildcards allowed, eg. ('*_invoice.csv')
     Project { column: String, as_type: DataType, from: String, when: String }, // Create a derived column from one or more other columns.
     // TODO: Make when above option
     MergeColumns { into: String, from: Vec<String> }, // Merge the contents of columns together.
@@ -27,22 +28,24 @@ pub enum Instruction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Constraint {
-    NetsToZero { column: String, lhs: String, rhs: String, debug: bool }
+    NetsToZero { column: String, lhs: String, rhs: String, debug: Option<bool> }
     // TODO: NETS_WITH_TOLERANCE
+    // TODO: Count is required!
+    // TODO: Sum, Min, Max, Avg
     // Custom Lua with access to Count, Sum and all records in the group (so table of tables): records[1]["invoices.blah"]
 }
 
 impl Charter {
-    pub fn _new(name: String, debug: bool, version: u64, instructions: Vec<Instruction>) -> Self {
-        Self { name, debug, version, instructions }
-    }
+    // pub fn _new(name: String, debug: bool, version: u64, instructions: Vec<Instruction>) -> Self {
+    //     Self { name, debug, version, instructions, description: None, }
+    // }
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
     pub fn debug(&self) -> bool {
-        self.debug
+        self.debug.unwrap_or(false)
     }
 
     pub fn version(&self) -> u64 {

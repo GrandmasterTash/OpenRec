@@ -10,6 +10,7 @@ pub fn merge_cols(name: &str, source: &[String], grid: &mut Grid) -> Result<(), 
     // Validate - ensure all source columns exist and have the same data-type.
     let data_type = validate(source, grid)?;
     // BUG: Errors if no rows exist - should skip.
+    // BUG: If column doesn't exist error is very weak.
 
     // Add the projected column to the schema.
     grid.schema_mut().add_merged_column(Column::new(name.into(), data_type))?;

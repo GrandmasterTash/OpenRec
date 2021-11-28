@@ -12,7 +12,7 @@ pub struct Column {
 ///
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileSchema {
-    prefix: String,         // The short part of the filename - see folders::shortname() for details. Each header name
+    prefix: Option<String>, // The short part of the filename - see folders::shortname() for details. Each header name
     columns: Vec<Column>,   // is prefixed by this. So 'invoices.amount' for example.
 }
 
@@ -52,8 +52,9 @@ impl Column {
 }
 
 impl FileSchema {
-    pub fn prefix(&self) -> &str {
-        &self.prefix
+    pub fn prefix(&self) -> Option<&str> {
+        // self.prefix.as_ref().map(|x| &**x) // &String -> str -> &str
+        self.prefix.as_ref().map(String::as_str)
     }
 }
 
@@ -208,7 +209,7 @@ impl FileSchema {
     /// Build a hashmap of column header to parsed data-types. The data types should be on the first
     /// csv row after the headers.
     ///
-    pub fn new(prefix: String, rdr: &mut csv::Reader<fs::File>) -> Result<Self, MatcherError> {
+    pub fn new(prefix: Option<String>, rdr: &mut csv::Reader<fs::File>) -> Result<Self, MatcherError> {
         let mut type_record = csv::StringRecord::new();
 
         if let Err(source) = rdr.read_record(&mut type_record) {
@@ -217,6 +218,7 @@ impl FileSchema {
 
         let hdrs = rdr.headers()
             .map_err(|source| MatcherError::CannotReadHeaders { source })?;
+
         let mut columns = Vec::new();
 
         for (idx, hdr) in hdrs.iter().enumerate() {
@@ -231,7 +233,11 @@ impl FileSchema {
                 None => return Err(MatcherError::NoSchemaTypeForColumn { column: idx }),
             };
 
-            let header = format!("{}.{}", prefix, hdr);
+            let header = match &prefix {
+                None => hdr.into(),
+                Some(prefix) => format!("{}.{}", prefix, hdr),
+            };
+
             columns.push(Column { header, data_type });
         }
 
@@ -241,18 +247,6 @@ impl FileSchema {
     pub fn columns(&self) -> &[Column] {
         &self.columns
     }
-
-    // pub fn prefix(&self) -> &str {
-    //     &self.prefix
-    // }
-
-    // pub fn headers(&self) -> &[String] {
-    //     &self.headers
-    // }
-
-    // pub fn data_type(&self, header: &str) -> Option<DataType> {
-    //     self.type_map.get(header).map(|dt|*dt)
-    // }
 
     pub fn to_short_string(&self) -> String {
         self.columns

@@ -106,7 +106,6 @@ pub fn progress_to_archive() -> Result<(), MatcherError> {
                     dest = dest.parent().unwrap().to_string_lossy());
                 fs::rename(entry.path(), dest)?;
             }
-            // TODO: Delete matching/ *.unmatched files.
         }
     }
 
@@ -247,6 +246,8 @@ pub fn timestamp<'a>(filename: &'a str) -> Result<&'a str, MatcherError> {
 ///
 /// Remove the timestamp prefix and the file-extension suffix from the filename.
 ///
+/// e.g. 20191209_020405000_INV.unmatched.csv -> INV
+///
 pub fn shortname<'a>(filename: &'a str) -> &'a str {
     match FILENAME_REGEX.captures(filename) {
         Some(captures) if captures.len() == 3 => captures.get(2).map_or(filename, |m| m.as_str()),
@@ -257,6 +258,8 @@ pub fn shortname<'a>(filename: &'a str) -> &'a str {
 
 ///
 /// Remove the timestamp prefix and the file-extension suffix from the filename.
+///
+/// e.g. 20191209_020405000_INV.unmatched.csv -> INV
 ///
 pub fn entry_shortname<'a>(entry: &'a DirEntry) -> String {
     let filename: String = entry.file_name().to_string_lossy().into();

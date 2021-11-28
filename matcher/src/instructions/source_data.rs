@@ -1,6 +1,6 @@
 use crate::{datafile::DataFile, error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::FileSchema};
 
-pub fn source_data(file_patterns: &[String], grid: &mut Grid) -> Result<(), MatcherError> {
+pub fn source_data(file_patterns: &[String], grid: &mut Grid, field_prefixes: bool) -> Result<(), MatcherError> {
 
     for pattern in file_patterns {
         log::info!("Sourcing data with pattern [{}]", pattern);
@@ -22,7 +22,11 @@ pub fn source_data(file_patterns: &[String], grid: &mut Grid) -> Result<(), Matc
                 .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
 
             // Build a schema from the file's header rows.
-            let schema = FileSchema::new(folders::entry_shortname(&file), &mut rdr)?;
+            let prefix = match field_prefixes {
+                true => Some(folders::entry_shortname(&file)),
+                false => None,
+            };
+            let schema = FileSchema::new(prefix, &mut rdr)?;
 
             // Use an existing schema from the grid, if there is one, otherwise add this one.
             let schema_idx = grid.schema_mut().add_file_schema(schema.clone());

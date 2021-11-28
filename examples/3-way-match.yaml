@@ -1,9 +1,17 @@
 name: Three-way invoice match
-debug: true
+description: |
+  This charter demonstrates how to perform a 3-way match against data from 3 different sources.
+  In this example a single INVOICE will match against one or more PAYMENTS and one or more RECEIPTS.
+  Relevant dates on each type of the record must be the same and the total amounts from each type of
+  record must NET exactly to zero.
+
+  Each record contains it's own currency amount along with an FXRate column denoting the exchange
+  rate to conert that to a common currency.
 version: 1637208553000
 instructions:
   - source_data:
       file_patterns: ['.*invoices\.csv', '.*payments\.csv', '.*receipts\.csv']
+      debug: true
   - project:
       column: PAYMENT_AMOUNT_BASE
       as_type: DECIMAL
@@ -32,9 +40,7 @@ instructions:
             column: AMOUNT_BASE
             lhs: meta["prefix"] == "payments"
             rhs: meta["prefix"] == "invoices"
-            debug: true
         - nets_to_zero:
             column: AMOUNT_BASE
             lhs: meta["prefix"] == "receipts"
             rhs: meta["prefix"] == "invoices"
-            debug: true

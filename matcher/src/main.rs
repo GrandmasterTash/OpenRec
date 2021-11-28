@@ -26,7 +26,8 @@ fn main() -> Result<()> {
     log::info!("{}", BANNER);
 
     // TODO: Clap interface and a lib interface.
-    let charter = Charter::load("../examples/example_charter.yaml")?;
+    // let charter = Charter::load("../examples/3-way-match.yaml")?;
+    let charter = Charter::load("../examples/2-stage.yaml")?;
 
     // TODO: move to run_match_job()
     let start = Instant::now();
@@ -47,6 +48,7 @@ fn main() -> Result<()> {
     // TODO: Finalise matched and unmatched. (remove .inprogress suffix).
     folders::progress_to_archive()?;
 
+    // TODO: Log how many records processed, rate, MB size, etc.
     log::info!("Completed match job {} in {}", job_id, ansi_term::Colour::RGB(70, 130, 180).paint(formatted_duration_rate(1, start.elapsed()).0));
 
     Ok(())
@@ -71,7 +73,7 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
     for inst in charter.instructions() {
         // BUG: Skip instructions if the grid is empty.
         match inst {
-            Instruction::SourceData { file_patterns } => source_data(file_patterns, &mut grid)?,
+            Instruction::SourceData { file_patterns, field_prefixes } => source_data(file_patterns, &mut grid, field_prefixes.unwrap_or(true))?,
             Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when, &mut grid, &lua)?,
             Instruction::MergeColumns { into, from } => merge_cols(into, from, &mut grid)?,
             Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, &mut grid, &lua, job_id, charter)?,

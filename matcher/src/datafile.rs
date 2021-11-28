@@ -45,11 +45,4 @@ impl DataFile {
     pub fn original_filename(&self) -> &str {
         &self.original_filename
     }
-
-    // ///
-    // /// Indicates if this file contains previously unmatched data. false if this is a newly arrived file.
-    // ///
-    // pub fn is_unmatched(&self) -> bool {
-    //     self.filename.ends_with(folders::UNMATCHED)
-    // }
 }

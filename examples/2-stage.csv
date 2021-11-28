@@ -1,0 +1,8 @@
+"Type","Amount_1","Amount_2","Date_1","Date_2","description"
+"ST","DE","DE","DA",DA","ST"
+"TYP1","100.00","","1623110400000","","stage-1 match, grp 'a' by Date_1"
+"TYP2","","100.00","1623110400000","","stage-1 match, grp 'a' by Date_1"
+"TYP1","100.00","","1633110400000","","stage-1 match, grp 'b' by Date_1"
+"TYP2","","100.00","1633110400000","","stage-1 match, grp 'b' by Date_1"
+"TYP3","250.00","","1643110400000","","stage-2 match, grp 'c' by merged date"
+"TYP4","250.00","","","1643110400000","stage-2 match, grp 'c' by merged date"
