@@ -126,6 +126,7 @@ impl Grid {
 
         for pattern in file_patterns {
             log::info!("Sourcing data with pattern [{}]", pattern);
+            // TODO: Validate the source path is canonicalised in the rec base.
 
             // Track schema's added for this source instruction - if any do not equal, return a validation error.
             // Because all files of the same record type will need the same schema for any single match run.

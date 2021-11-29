@@ -1,3 +1,15 @@
+# The file data used in this charter.
+#
+# "Type","Amount_1","Amount_2","Date_1","Date_2","description"
+# "ST","DE","DE","DA","DA","ST"
+# "TYP1","100.00","","1623110400000","","stage-1 match, grp 'a' by Date_1"
+# "TYP2","","100.00","1623110400000","","stage-1 match, grp 'a' by Date_1"
+# "TYP1","100.01","","1633110400000","","stage-1 match, grp 'b' by Date_1"
+# "TYP2","","100.00","1633110400000","","stage-1 match, grp 'b' by Date_1"
+# "TYP3","250.00","","1643110400000","","stage-2 match, grp 'c' by merged date"
+# "TYP4","250.00","","","1643110400000","stage-2 match, grp 'c' by merged date"
+
+
 name: Two-stage match
 description: |
   This charter demonstrates how to perform a multi-stage match. Multi-stage matches can be used when
@@ -21,7 +33,7 @@ version: 1637208553000
 # TYP2   ------   100.00 1633110400000 -------------
 # TYP3   250.00   ------ 1643110400000 -------------
 # TYP4   250.00   ------ ------------- 1643110400000
-file_patterns: ['2-stage\.csv']
+file_patterns: ['05-2-stage\.csv']
 
 # Disable field prefixes. Without this, all the fields would be prefixed with '2-stage.' for
 # example '2-stage.Amount_1'. Instead, by suppressing them we can use 'Amount_1' instead.

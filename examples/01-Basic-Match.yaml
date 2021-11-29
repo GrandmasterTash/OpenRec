@@ -1,0 +1,40 @@
+name: Basic Match
+description: |
+  This charter demonstrates how to set-up a basic match between a single invoice and one or more payments
+  for that invoice. There no complexities in this match, a unique reference ('Ref') is present for both sets
+  of data.
+
+  TODO: Document qualified field names and how data is loaded into memory.
+
+# 20211129_043300000_01-invoices.csv
+#
+# "Invoice No","Ref","Invoice Date","Amount"
+# "ST","ST","DA","DE"
+# "0001","INV0001","1637814968000","1050.99"
+# "0002","INV0002","1637901368000","500.00"
+
+# 20211129_043300000_01-payments.csv
+#
+# "PaymentId","Ref","Amount","Payment Date"
+# "ST","ST","DE","DA"
+# "P1","INV0001","50.99","1637987768000"
+# "P2","INV0002","500.00","1637987768000"
+# "P1","INV0001","1000.00","1638074168000"
+
+version: 1
+file_patterns: ['.*01-invoices\.csv', '.*01-payments\.csv']
+debug: true
+instructions:
+  - merge_columns:
+      from: ['01-invoices.Amount', '01-payments.Amount']
+      into: AMOUNT
+  - merge_columns:
+      from: ['01-invoices.Ref', '01-payments.Ref']
+      into: REF
+  - match_groups:
+      group_by: ['REF']
+      constraints:
+        - nets_to_zero:
+            column: AMOUNT
+            lhs: meta["prefix"] == "01-payments"
+            rhs: meta["prefix"] == "01-invoices"

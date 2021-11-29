@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use crate::{charter::{Charter, Instruction}, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
 // TODO: Alter source_data to only retain columns required for matching. This will mean unmatched data will be written in a different way.
+// TODO: Change dates to use ISO8601 UTC format for clarity.
 // TODO: Unit tests. Lots.
 
 fn main() -> Result<()> {
@@ -28,7 +29,8 @@ fn main() -> Result<()> {
 
     // TODO: Clap interface and a lib interface.
     // let charter = Charter::load("../examples/3-way-match.yaml")?;
-    let charter = Charter::load("../examples/2-stage.yaml")?;
+    // let charter = Charter::load("../examples/2-stage.yaml")?;
+    let charter = Charter::load("../examples/03-Net-With-Tolerance.yaml")?;
 
     let start = Instant::now();
     let job_id = Uuid::new_v4();

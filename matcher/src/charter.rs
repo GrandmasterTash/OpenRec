@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::io::BufReader;
 use crate::{data_type::DataType, error::MatcherError};
@@ -26,10 +27,16 @@ pub enum Instruction {
 }
 
 #[derive(Debug, Deserialize)]
+pub enum ToleranceType {
+    Amount,
+    Percent
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Constraint {
-    NetsToZero { column: String, lhs: String, rhs: String, debug: Option<bool> }
-    // TODO: NETS_WITH_TOLERANCE
+    NetsToZero { column: String, lhs: String, rhs: String, debug: Option<bool> },
+    NetsWithTolerance { column: String, lhs: String, rhs: String, tol_type: ToleranceType, tolerance: Decimal, debug: Option<bool> },
     // TODO: Count is required!
     // TODO: Sum, Min, Max, Avg
     // Custom Lua with access to Count, Sum and all records in the group (so table of tables): records[1]["invoices.blah"]

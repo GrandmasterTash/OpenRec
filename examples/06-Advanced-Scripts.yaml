@@ -1,0 +1,100 @@
+name: Three-way invoice match
+description: |
+  This charter demonstrates how to perform a 3-way match against data from 3 different sources.
+  In this example a single INVOICE will match against one or more PAYMENTS and one or more RECEIPTS.
+  Relevant dates on each type of the record must be the same and the total amounts from each type of
+  record must NET exactly to zero.
+
+  Each record contains it's own currency amount along with an FXRate column denoting the exchange
+  rate to conert that to a common currency.
+version: 1637208553000
+file_patterns: ['.*invoices\.csv', '.*payments\.csv', '.*receipts\.csv']
+debug: true
+instructions:
+  - project:
+      column: PAYMENT_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["payments.Amount"] * record["payments.FXRate"]
+      when: meta["prefix"] == "payments"
+  - project:
+      column: RECEIPT_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["receipts.Amount"] * record["receipts.FXRate"]
+      when: meta["prefix"] == "receipts"
+  - project:
+      column: TOTAL_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["invoices.TotalAmount"] * record["invoices.FXRate"]
+      when: meta["prefix"] == "invoices"
+  - merge_columns:
+      from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
+      into: AMOUNT_BASE
+  - merge_columns:
+      from: ['invoices.SettlementDate', 'payments.PaymentDate', 'receipts.ReceiptDate']
+      into: SETTLEMENT_DATE
+  - match_groups:
+      group_by: ['SETTLEMENT_DATE']
+      constraints:
+        - nets_to_zero:
+            column: AMOUNT_BASE
+            lhs: meta["prefix"] == "payments"
+            rhs: meta["prefix"] == "invoices"
+        - nets_to_zero:
+            column: AMOUNT_BASE
+            lhs: meta["prefix"] == "receipts"
+            rhs: meta["prefix"] == "invoices"
+        - custom:
+            # Constraints can also be implemented using bespoke Lua script which will
+            # have access to the record data and certain aggregate functions (see below).
+            script: |
+              -- The records table contains all the records in the potential group.
+              -- You can iterate them with standard Lua script.
+              for idx, record in ipairs(records) do
+                -- Each record is a table of field values which you can also reference or iterate.
+                for field, value in pairs(record) do
+                    print("F ["..field.."] V ["..value.."]")
+                end
+              end
+
+              -- For every record in the group there is a corresponding meta data table item
+              -- which contains record context details, such as the 'prefix' a value extracted
+              -- from the record's original filename.
+              for idx, meta in ipairs(metas) do
+                for field, value in pairs(meta) do
+                    print("F ["..field.."] V ["..value.."]")
+                end
+              end
+
+              -- Don't match we just wanted to debug some record values.
+              return false
+        # Custom constraint scripts have access to these aggregate functions which operate a group of
+        # records being evaluated for a match: -
+        # sum
+        # count
+        # min
+        # max
+        # avg
+        - custom:
+            # This is an example of writing a nets-to-zero constaint manually in Lua script.
+            script: |
+                -- We start by creating 3 anonymous functions used to filter data in the group of records.
+                local inv_filter = function (_record, meta) return meta["prefix"] == "invoices" end
+                local pay_filter = function (_record, meta) return meta["prefix"] == "payments" end
+                local rec_filter = function (_record, meta) return meta["prefix"] == "receipts" end
+
+                -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
+                -- the second is a filter to apply to the records in the group.
+                local inv_sum = sum("AMOUNT_BASE", inv_filter)
+                local pay_sum = sum("AMOUNT_BASE", pay_filter)
+                local rec_sum = sum("AMOUNT_BASE", rec_filter)
+
+                -- count is a function that takes a filter as an argument and counts the number
+                -- of records in the group matching the filter.
+                local has_records = count(inv_filter) > 0 and count(pay_filter) > 0 and count(rec_filter) > 0
+
+                -- Finally, our group matches if it has all types of records and invoices net to zero with
+                -- the other two types in the match.
+                return has_records
+                    and (math.abs(inv_sum) - math.abs(pay_sum)) == 0
+                    and (math.abs(inv_sum) - math.abs(rec_sum)) == 0
+
