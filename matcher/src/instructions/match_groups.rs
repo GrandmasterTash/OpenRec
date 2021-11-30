@@ -89,8 +89,10 @@ fn is_match(group: &[&Box<Record>], constraints: &[Constraint], schema: &GridSch
     let mut failed = vec!();
     let start = Instant::now();
 
-    for constraint in constraints {
-        if !constraint.passes(&group, schema, lua_ctx)? {
+    for (index, constraint) in constraints.iter().enumerate() {
+        if !constraint.passes(&group, schema, lua_ctx)
+            .map_err(|source| rlua::Error::external(MatcherError::ConstraintError { index, source }))? {
+
             failed.push(constraint);
         }
     }

@@ -21,6 +21,9 @@ description: |
 # "P2","INV0002","500.00","1637987768000"
 # "P1","INV0001","1000.00","1638074168000"
 
+# TODO: Document that all waiting files must have a particular file format.
+# TODO: Document that fields are case-sensitive.
+
 version: 1
 file_patterns: ['.*01-invoices\.csv', '.*01-payments\.csv']
 debug: true

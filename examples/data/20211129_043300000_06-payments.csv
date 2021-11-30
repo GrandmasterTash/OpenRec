@@ -1,0 +1,5 @@
+"PaymentId","PaymentRef","PaymentAmount","PaymentDate"
+"ST","ST","DE","DA"
+"P1","INV0001","50.99","1637987768000"
+"P2","INV0002","500.00","1637987768000"
+"P1","INV0001","1000.00","1638074168000"

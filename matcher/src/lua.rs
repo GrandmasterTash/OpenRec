@@ -11,12 +11,14 @@ lazy_static! {
 ///
 /// Return all the columns referenced in the script specified.
 ///
-pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
+pub fn script_columns<'a>(script: &str, schema: &'a GridSchema) -> Vec<&'a Column> {
     let mut columns = Vec::new();
 
     for cap in HEADER_REGEX.captures_iter(script) {
-        if let Some(data_type) = schema.data_type(&cap[1]) {
-            columns.push(Column::new(cap[1].into(), *data_type));
+        // if let Some(data_type) = schema.data_type(&cap[1]) {
+        //     columns.pus
+        if let Some(col) = schema.column(&cap[1]) {
+            columns.push(col);
         } else {
             log::warn!("Record field [{}] was not found, potential typo in Lua script?\n{}", &cap[1], script);
         }
@@ -28,7 +30,7 @@ pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
 ///
 /// Convert all the specified column/fields of the record into a Lua table.
 ///
-pub fn lua_record<'a>(record: &Record, script_cols: &[Column], schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
+pub fn lua_record<'a>(record: &Record, script_cols: &[&Column], schema: &GridSchema, lua_ctx: &Context<'a>) -> Result<Table<'a>, rlua::Error> {
     let lua_record = lua_ctx.create_table()?;
 
     for col in script_cols {
@@ -83,6 +85,7 @@ impl rlua::UserData for LuaDecimal {
         methods.add_meta_method(rlua::MetaMethod::Lt,  |_, this, other: LuaDecimal| { Ok(this.0 < other.0) });
         methods.add_meta_method(rlua::MetaMethod::Le,  |_, this, other: LuaDecimal| { Ok(this.0 <= other.0) });
         methods.add_meta_method(rlua::MetaMethod::Eq,  |_, this, other: LuaDecimal| { Ok(this.0 == other.0) });
+        methods.add_meta_method(rlua::MetaMethod::Concat,   |_, this, other: String| { Ok(format!("{}{}", this.0, other)) });
         methods.add_meta_method(rlua::MetaMethod::ToString, |_, this, _: ()| { Ok(this.0.to_string()) });
         // Arithmetic operations between a Decimal and other types can go here...
     }

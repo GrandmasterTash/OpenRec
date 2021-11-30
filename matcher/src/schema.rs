@@ -24,9 +24,10 @@ pub struct FileSchema {
 ///
 #[derive(Clone, Debug)]
 pub struct GridSchema {
-    // Cached column details.
+    // Cached column details. The position map is used to get to the correct grid column from a header for a
+    // specific record - as records may have different underlying FileSchemas.
     headers: Vec<String>,
-    type_map: HashMap<String, DataType>,
+    col_map: HashMap<String, Column>,
     position_map: HashMap<usize /* file_schema idx */, HashMap<String /* header */, usize /* column idx */>>,
 
     // Schemas from the files.
@@ -60,7 +61,7 @@ impl GridSchema {
     pub fn new() -> Self {
         Self {
             headers: Vec::new(),
-            type_map: HashMap::new(),
+            col_map: HashMap::new(),
             position_map: HashMap::new(),
             file_schemas: Vec::new(),
             artificial_columns: Vec::new(),
@@ -117,8 +118,19 @@ impl GridSchema {
         &self.headers
     }
 
+    pub fn column(&self, header: &str) -> Option<&Column> {
+        self.col_map.get(header)
+    }
+
+    pub fn columns(&self) -> Vec<&Column> {
+        self.col_map.values().collect()
+    }
+
     pub fn data_type(&self, header: &str) -> Option<&DataType> {
-        self.type_map.get(header)
+        match self.col_map.get(header) {
+            Some(col) => Some(col.data_type()),
+            None => None,
+        }
     }
 
     pub fn position_in_record(&self, header: &str, record: &Record) -> Option<&usize> {
@@ -130,7 +142,7 @@ impl GridSchema {
 
     fn rebuild_cache(&mut self) {
         let mut headers = Vec::new();
-        let mut type_map = HashMap::new();
+        let mut col_map = HashMap::new();
         let mut position_map = HashMap::new();
 
         // Initialise the position map of maps.
@@ -145,7 +157,7 @@ impl GridSchema {
             .enumerate()
             .for_each(|(idx, col)| {
                 headers.push(col.header.clone());
-                type_map.insert(col.header.clone(), col.data_type);
+                col_map.insert(col.header.clone(), col.clone());
                 self.file_schemas
                     .iter()
                     .enumerate()
@@ -168,7 +180,7 @@ impl GridSchema {
                     .enumerate()
                     .for_each(|(cdx, col)| {
                         headers.push(col.header.clone());
-                        type_map.insert(col.header.clone(), col.data_type);
+                        col_map.insert(col.header.clone(), col.clone());
                          // File schema columns map to the left-most set of columns in the underlying Record/File schema.
                          position_map
                             .get_mut(&sdx)
@@ -178,7 +190,7 @@ impl GridSchema {
             } );
 
         self.headers = headers;
-        self.type_map = type_map;
+        self.col_map = col_map;
         self.position_map = position_map;
     }
 }

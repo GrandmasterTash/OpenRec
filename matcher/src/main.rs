@@ -28,9 +28,10 @@ fn main() -> Result<()> {
     log::info!("{}", BANNER);
 
     // TODO: Clap interface and a lib interface.
-    // let charter = Charter::load("../examples/3-way-match.yaml")?;
-    // let charter = Charter::load("../examples/2-stage.yaml")?;
-    let charter = Charter::load("../examples/03-Net-With-Tolerance.yaml")?;
+    // let charter = Charter::load("../examples/03-Net-With-Tolerance.yaml")?;
+    // let charter = Charter::load("../examples/04-3-Way-Match.yaml")?;
+    // let charter = Charter::load("../examples/06-Advanced-Scripts.yaml")?;
+    let charter = Charter::load("../examples/09-3-Way-Performance.yaml")?;
 
     let start = Instant::now();
     let job_id = Uuid::new_v4();
@@ -48,6 +49,7 @@ fn main() -> Result<()> {
     process_charter(&charter, job_id)?;
 
     // Move matching files to the archive.
+    // BUG: ONLY progress processed files by the charter, not everything in the waiting folder.
     folders::progress_to_archive()?;
 
     // TODO: Log how many records processed, rate, MB size, etc.

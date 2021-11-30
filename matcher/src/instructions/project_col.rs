@@ -33,7 +33,7 @@ pub fn project_column(
     }.concat()
         .into_iter()
         .unique()
-        .collect::<Vec<Column>>();
+        .collect::<Vec<&Column>>();
     let mut row = 0;
 
     // TODO: Consider rayon when we're streaming from files.

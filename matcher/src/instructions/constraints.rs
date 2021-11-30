@@ -1,6 +1,6 @@
 use rlua::Context;
 use rust_decimal::Decimal;
-use crate::{charter::{Constraint, ToleranceType}, data_type::DataType, error::MatcherError, lua, record::Record, schema::GridSchema};
+use crate::{charter::{Constraint, ToleranceType}, data_type::DataType, error::MatcherError, lua, record::Record, schema::{Column, GridSchema}};
 
 impl Constraint {
     pub fn passes(&self, records: &[&Box<Record>], schema: &GridSchema, lua_ctx: &Context)
@@ -25,6 +25,8 @@ impl Constraint {
 
                 net(column, lhs, rhs, sum_checker, debug, records, schema, lua_ctx)
             },
+
+            Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, lua_ctx),
         }
     }
 }
@@ -106,4 +108,37 @@ fn lua_filter<'a, 'b>(records: &[&'a Box<Record>], lua_script: &str, lua_ctx: &'
     }
 
     Ok(results)
+}
+
+///
+/// Allow entirely custom Lua script to be evaluated for a group constraint.
+///
+fn custom_constraint(script: &str, fields: &Option<Vec<String>>, records: &[&Box<Record>], schema: &GridSchema, lua_ctx: &Context) -> Result<bool, rlua::Error> {
+    let script_cols = match fields {
+        Some(fields) => {
+            let fields = fields.iter().map(|f|f.as_str()).collect::<Vec<&str>>();
+
+            schema.columns()
+                .into_iter()
+                .filter(|col| fields.contains(&col.header()))
+                .collect::<Vec<&Column>>()
+            },
+        None => schema.columns(), // No restriction, provide all columns to the Lua script.
+    };
+
+    let globals = lua_ctx.globals();
+    let lua_metas = lua_ctx.create_table()?;
+    let lua_records = lua_ctx.create_table()?;
+
+    for (idx, record) in records.iter().enumerate() {
+        let lua_record = lua::lua_record(record, &script_cols, &schema, lua_ctx)?;
+        lua_records.set(idx + 1, lua_record)?;
+
+        let lua_meta = lua::lua_meta(record, &schema, lua_ctx)?;
+        lua_metas.set(idx + 1, lua_meta)?;
+    }
+
+    globals.set("metas", lua_metas)?;
+    globals.set("records", lua_records)?;
+    lua_ctx.load(&script).eval::<bool>()
 }

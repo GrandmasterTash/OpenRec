@@ -1,0 +1,60 @@
+name: Three-way Performance
+description: |
+  This charter is intended to demonstrate the low resource requirements for large match jobs.
+  You will have to run the generator to generate the data though and this can take 45+mins.
+  Use these arguments for a fairly extreme example: -
+
+    --invoice-columns 50 --payment-columns 50 --receipt-columns 50 --rows 1000000
+
+  This should create around 5GB of data across 3 files. You should then rename the files to
+  include the '09-BIG-' segment - this will ensure only this charter is going to use those
+  files. e.g.
+
+    20211130_041659150_invoices.csv -> 20211130_041659150_09-BIG-invoices.csv
+    20211130_041659150_payments.csv -> 20211130_041659150_09-BIG-payments.csv
+    20211130_041659150_receipts.csv -> 20211130_041659150_09-BIG-receipts.csv
+
+  You should also only use a --release build of the matcher to run on these large files, debug
+  builds are an order-of-magnitude slower than release builds.
+
+  The above is a fairly extreme example, if you're impatient you can scale back the number of
+  rows and/or columnes to create smaller datasets.
+version: 1637208553000
+file_patterns: ['.*09-BIG-invoices\.csv', '.*09-BIG-payments\.csv', '.*09-BIG-receipts\.csv']
+# TODO: prefix_aliases: ['INV', 'PAY', 'REC']
+# Ensure debug is false - there is significant overhead when true as the matcher will be writing all
+# data out to multiple files after each instruction if it's set to true.
+debug: false
+instructions:
+  - project:
+      column: PAYMENT_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["09-BIG-payments.Amount"] * record["09-BIG-payments.FXRate"]
+      when: meta["prefix"] == "09-BIG-payments"
+  - project:
+      column: RECEIPT_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["09-BIG-receipts.Amount"] * record["09-BIG-receipts.FXRate"]
+      when: meta["prefix"] == "09-BIG-receipts"
+  - project:
+      column: TOTAL_AMOUNT_BASE
+      as_type: DECIMAL
+      from: record["09-BIG-invoices.TotalAmount"] * record["09-BIG-invoices.FXRate"]
+      when: meta["prefix"] == "09-BIG-invoices"
+  - merge_columns:
+      from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
+      into: AMOUNT_BASE
+  - merge_columns:
+      from: ['09-BIG-invoices.Reference', '09-BIG-payments.Reference', '09-BIG-receipts.Reference']
+      into: REFERENCE
+  - match_groups:
+      group_by: ['REFERENCE']
+      constraints:
+        - nets_to_zero:
+            column: AMOUNT_BASE
+            lhs: meta["prefix"] == "09-BIG-payments"
+            rhs: meta["prefix"] == "09-BIG-invoices"
+        - nets_to_zero:
+            column: AMOUNT_BASE
+            lhs: meta["prefix"] == "09-BIG-receipts"
+            rhs: meta["prefix"] == "09-BIG-invoices"

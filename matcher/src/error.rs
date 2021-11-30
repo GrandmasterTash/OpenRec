@@ -109,6 +109,9 @@ pub enum MatcherError {
     #[error("Unmatched file {filename} was not found in the unmatched handler")]
     UnmatchedFileNotInHandler { filename: String },
 
+    #[error("Constraint {index} evaluation failed")]
+    ConstraintError { index: usize, source: rlua::Error },
+
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 

@@ -2,7 +2,6 @@
 A blazingly fast reconciliation server written in Rust with an emphasis on low system resource usage regardless of data volume.
 
 
-
 ## Experimentation around a Rust reconcilliation engine and gRPC server.
 TODO: Tool to generate psuedo realistic CSVs.
 TODO: Load files into memory with string compaction.
