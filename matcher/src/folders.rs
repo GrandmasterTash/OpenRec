@@ -214,6 +214,12 @@ pub fn new_unmatched_file(ctx: &Context, file: &DataFile) -> PathBuf {
 /// Return a new timestamp in the file prefix format.
 ///
 pub fn new_timestamp() -> String {
+
+    // This behaviour can be overriden by the tests.
+    if let Ok(ts) = std::env::var("OPENREC_FIXED_TS") {
+        return ts
+    }
+
     Utc::now().format("%Y%m%d_%H%M%S%3f_").to_string()
 }
 
