@@ -1,6 +1,6 @@
 use csv::Writer;
 use std::{collections::HashMap, fs::File, path::PathBuf};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::FileSchema};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::FileSchema, Context};
 
 
 ///
@@ -27,7 +27,7 @@ impl UnmatchedHandler {
     /// The unmatched files will be ready to have unmatched data appended to them. At the end of the job,
     /// if there are any files that didn't have data appended, they are deleted.
     ///
-    pub fn new(grid: &Grid) -> Result<Self, MatcherError> {
+    pub fn new(ctx: &Context, grid: &Grid) -> Result<Self, MatcherError> {
         let mut files: HashMap<String, UnmatchedFile> = HashMap::new();
 
         // Create an unmatched file for each original sourced data file (i.e. there may be )
@@ -36,7 +36,7 @@ impl UnmatchedHandler {
             // files 'x.unmatched.unmatched.csv'.
             if !files.contains_key(file.original_filename()) {
                 // Create an new unmatched file.
-                let output_path = folders::new_unmatched_file(file); // $REC_HOME/unmatched/timestamp_invoices.unmatched.csv
+                let output_path = folders::new_unmatched_file(ctx, file); // $REC_HOME/unmatched/timestamp_invoices.unmatched.csv
                 let full_filename = folders::filename(&output_path)?; // timestamp_invoices.unmatched.csv
 
                 let mut writer = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path)
@@ -88,11 +88,11 @@ impl UnmatchedHandler {
         Ok(())
     }
 
-    pub fn complete_files(&mut self) -> Result<(), MatcherError> {
+    pub fn complete_files(&mut self, ctx: &Context) -> Result<(), MatcherError> {
         // Delete any unmatched files we didn't write records to.
         for (_filename, unmatched) in self.files.iter() {
             if unmatched.rows == 0 {
-                folders::delete_empty_unmatched(&unmatched.full_filename)?;
+                folders::delete_empty_unmatched(ctx, &unmatched.full_filename)?;
             } else {
                 // Rename any remaining .inprogress files.
                 folders::complete_file(&unmatched.path.to_canoncial_string())?;

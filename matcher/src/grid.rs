@@ -1,4 +1,4 @@
-use crate::{datafile::DataFile, error::MatcherError, folders::{self, ToCanoncialString}, record::Record, schema::{FileSchema, GridSchema}};
+use crate::{datafile::DataFile, error::MatcherError, folders::{self, ToCanoncialString}, record::Record, schema::{FileSchema, GridSchema}, Context};
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -122,9 +122,9 @@ impl Grid {
     ///
     /// Load data into the grid.
     ///
-    pub fn source_data(&mut self, file_patterns: &[String], field_prefixes: bool) -> Result<(), MatcherError> {
+    pub fn source_data(&mut self, ctx: &Context) -> Result<(), MatcherError> {
 
-        for pattern in file_patterns {
+        for pattern in ctx.charter().file_patterns() {
             log::info!("Sourcing data with pattern [{}]", pattern);
             // TODO: PRint grid memory after each file is sourced.
             // TODO: Validate the source path is canonicalised in the rec base.
@@ -135,7 +135,7 @@ impl Grid {
 
             // TODO: Include .unmatched.csv files in this sourcing.
 
-            for file in folders::files_in_matching(pattern)? {
+            for file in folders::files_in_matching(ctx, pattern)? {
                 log::info!("Reading file {}", file.path().to_string_lossy());
 
                 // For now, just count all the records in a file and log them.
@@ -146,7 +146,7 @@ impl Grid {
                     .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
 
                 // Build a schema from the file's header rows.
-                let prefix = match field_prefixes {
+                let prefix = match ctx.charter().field_prefixes() {
                     true => Some(folders::entry_shortname(&file)),
                     false => None,
                 };
@@ -191,8 +191,8 @@ impl Grid {
     ///
     /// Writes all the grid's data to a file at this point
     ///
-    pub fn debug_grid(&self, filename: &str) {
-        let output_path = folders::debug_path().join(filename);
+    pub fn debug_grid(&self, ctx: &Context, filename: &str) {
+        let output_path = folders::debug_path(ctx).join(filename);
         // let output_path = folders::debug_path().join(format!("{}output.csv", folders::new_timestamp()));
         log::info!("Creating grid debug file {}...", output_path.to_canoncial_string());
 

@@ -1,8 +1,8 @@
 use chrono::Utc;
 use regex::Regex;
 use lazy_static::lazy_static;
-use crate::{datafile::DataFile, error::MatcherError};
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
+use crate::{datafile::DataFile, error::MatcherError, Context};
 
 /*
     Files are processed alphabetically - hence the human-readable timestamp prefix - to ensure consistent ordering.
@@ -40,7 +40,6 @@ use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
 */
 
 // The root folder under which all data files are processed. In future this may become a mandatory command-line arg.
-pub const REC_HOME: &str = "./tmp";
 pub const IN_PROGRESS: &str = ".inprogress";
 pub const UNMATCHED: &str = ".unmatched.csv";
 
@@ -51,14 +50,14 @@ lazy_static! {
 ///
 /// Ensure the folders exist to process files for this reconcilliation.
 ///
-pub fn ensure_exist(debug: bool) -> Result<(), MatcherError> {
-    let home = Path::new(REC_HOME);
+pub fn ensure_exist(ctx: &Context) -> Result<(), MatcherError> {
+    let home = Path::new(ctx.base_dir());
 
     log::info!("Using folder REC_HOME [{}]", home.to_canoncial_string());
 
-    let mut folders = vec!(waiting(), matching(), matched(), unmatched(), archive());
-    if debug {
-        folders.push(debug_path());
+    let mut folders = vec!(waiting(ctx), matching(ctx), matched(ctx), unmatched(ctx), archive(ctx));
+    if ctx.charter().debug() {
+        folders.push(debug_path(ctx));
     }
 
     for folder in folders {
@@ -72,12 +71,12 @@ pub fn ensure_exist(debug: bool) -> Result<(), MatcherError> {
 ///
 /// Move any waiting files to the matching folder.
 ///
-pub fn progress_to_matching() -> Result<(), MatcherError> {
+pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
     // TODO: Any unmatched files as well.
-    for entry in waiting().read_dir()? {
+    for entry in waiting(ctx).read_dir()? {
         if let Ok(entry) = entry {
             if is_data_file(&entry) {
-                let dest = matching().join(entry.file_name());
+                let dest = matching(ctx).join(entry.file_name());
 
                 log::info!("Moving file [{file}] from [{src}] to [{dest}]",
                     file = entry.file_name().to_string_lossy(),
@@ -94,11 +93,11 @@ pub fn progress_to_matching() -> Result<(), MatcherError> {
 ///
 /// Move any matching files to the archive folder.
 ///
-pub fn progress_to_archive() -> Result<(), MatcherError> {
-    for entry in matching().read_dir()? {
+pub fn progress_to_archive(ctx: &Context) -> Result<(), MatcherError> {
+    for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
             if is_data_file(&entry) {
-                let dest = archive().join(entry.file_name());
+                let dest = archive(ctx).join(entry.file_name());
 
                 log::info!("Moving file [{file}] from [{src}] to [{dest}]",
                     file = entry.file_name().to_string_lossy(),
@@ -115,10 +114,10 @@ pub fn progress_to_archive() -> Result<(), MatcherError> {
 ///
 /// Return all the files in the matching folder which match the filename (wildcard) specified.
 ///
-pub fn files_in_matching(filename: &str) -> Result<Vec<DirEntry>, MatcherError> {
-    let wildcard = Regex::new(filename).map_err(|source| MatcherError::InvalidSourceFileRegEx { source })?;
+pub fn files_in_matching(ctx: &Context, file_pattern: &str) -> Result<Vec<DirEntry>, MatcherError> {
+    let wildcard = Regex::new(file_pattern).map_err(|source| MatcherError::InvalidSourceFileRegEx { source })?;
     let mut files = vec!();
-    for entry in matching().read_dir()? {
+    for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
             if is_data_file(&entry) && wildcard.is_match(&entry.file_name().to_string_lossy()) {
                 files.push(entry);
@@ -135,8 +134,8 @@ pub fn files_in_matching(filename: &str) -> Result<Vec<DirEntry>, MatcherError> 
 ///
 /// Any .inprogress files should be deleted.
 ///
-pub fn rollback_incomplete() -> Result<(), MatcherError> {
-    for folder in vec!(matched(), unmatched()) {
+pub fn rollback_incomplete(ctx: &Context) -> Result<(), MatcherError> {
+    for folder in vec!(matched(ctx), unmatched(ctx)) {
         for entry in folder.read_dir()? {
             if let Ok(entry) = entry {
                 if entry.file_name().to_string_lossy().ends_with(IN_PROGRESS) {
@@ -168,47 +167,47 @@ pub fn complete_file(path: &str) -> Result<(), MatcherError> {
     Ok(())
 }
 
-pub fn delete_empty_unmatched(filename: &str) -> Result<(), MatcherError> {
+pub fn delete_empty_unmatched(ctx: &Context, filename: &str) -> Result<(), MatcherError> {
     log::debug!("Deleting empty unmatched file {}", filename);
-    let path = unmatched().join(filename);
+    let path = unmatched(ctx).join(filename);
 
     Ok(fs::remove_file(&path)
         .map_err(|source| MatcherError::CannotDeleteFile { filename: filename.into(), source })?)
 }
 
-pub fn waiting() -> PathBuf {
-    Path::new(REC_HOME).join("waiting/")
+pub fn waiting(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("waiting/")
 }
 
-pub fn matching() -> PathBuf {
-    Path::new(REC_HOME).join("matching/")
+pub fn matching(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("matching/")
 }
 
-pub fn matched() -> PathBuf {
-    Path::new(REC_HOME).join("matched/")
+pub fn matched(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("matched/")
 }
 
-pub fn unmatched() -> PathBuf {
-    Path::new(REC_HOME).join("unmatched/")
+pub fn unmatched(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("unmatched/")
 }
 
-pub fn archive() -> PathBuf {
-    Path::new(REC_HOME).join("archive/")
+pub fn archive(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("archive/")
 }
 
-pub fn debug_path() -> PathBuf {
-    Path::new(REC_HOME).join("debug/")
+pub fn debug_path(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("debug/")
 }
 
-pub fn new_matched_file() -> PathBuf {
-    matched().join(format!("{}_matched.json{}", new_timestamp(), IN_PROGRESS))
+pub fn new_matched_file(ctx: &Context) -> PathBuf {
+    matched(ctx).join(format!("{}_matched.json{}", new_timestamp(), IN_PROGRESS))
 }
 
 ///
 /// e.g. 20201118_053000000_invoices.unmatched.csv
 ///
-pub fn new_unmatched_file(file: &DataFile) -> PathBuf {
-    unmatched().join(format!("{}_{}{}{}", file.timestamp(), file.shortname(), UNMATCHED, IN_PROGRESS))
+pub fn new_unmatched_file(ctx: &Context, file: &DataFile) -> PathBuf {
+    unmatched(ctx).join(format!("{}_{}{}{}", file.timestamp(), file.shortname(), UNMATCHED, IN_PROGRESS))
 }
 
 ///

@@ -1,7 +1,6 @@
-use uuid::Uuid;
 use serde_json::json;
 use std::{fs::File, io::{BufWriter, Write}};
-use crate::{charter::Charter, error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, Context};
 
 ///
 /// Manages the matched job file and appends matched groups to it.
@@ -17,8 +16,8 @@ impl MatchedHandler {
     ///
     /// Open a matched output file to write Json groups to. We'll add job details to the top of the file.
     ///
-    pub fn new(job_id: Uuid, charter: &Charter, grid: &Grid) -> Result<Self, MatcherError> {
-        let path = folders::new_matched_file();
+    pub fn new(ctx: &Context, grid: &Grid) -> Result<Self, MatcherError> {
+        let path = folders::new_matched_file(ctx);
         let file = File::create(&path)?;
         let mut writer = BufWriter::new(file);
 
@@ -26,9 +25,9 @@ impl MatchedHandler {
 
         let job_header = json!(
         {
-            "job_id": job_id.to_hyphenated().to_string(),
-            "charter_name": charter.name(),
-            "charter_version": charter.version(),
+            "job_id": ctx.job_id().to_hyphenated().to_string(),
+            "charter_name": ctx.charter().name(),
+            "charter_version": ctx.charter().version(),
             "files": grid.files().iter().map(|f|f.original_filename()).collect::<Vec<&str>>()
         });
 

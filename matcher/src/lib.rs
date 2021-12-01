@@ -27,38 +27,63 @@ use crate::{charter::{Charter, Instruction}, grid::Grid, instructions::merge_col
 //   Also - consider memory compaction, string table, etc.
 // TODO: Flesh-out examples.
 
-fn main() -> Result<()> {
+///
+/// Created for each match job. Used to pass the main top-level things around.
+///
+pub struct Context {
+    job_id: Uuid,
+    charter: Charter,
+    base_dir: String,
+}
+
+impl Context {
+    pub fn new(charter: Charter, base_dir: String) -> Self {
+        Self {
+            job_id: Uuid::new_v4(),
+            charter,
+            base_dir,
+        }
+    }
+
+    pub fn job_id(&self) -> &Uuid {
+        &self.job_id
+    }
+
+    pub fn charter(&self) -> &Charter {
+        &self.charter
+    }
+
+    pub fn base_dir(&self) -> &str {
+        &self.base_dir
+    }
+}
+
+pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     dotenv::dotenv().ok();
     env_logger::init();
     log::info!("{}", BANNER);
 
-    // TODO: Clap interface and a lib interface.
-    // let charter = Charter::load("../examples/03-Net-With-Tolerance.yaml")?;
-    // let charter = Charter::load("../examples/04-3-Way-Match.yaml")?;
-    // let charter = Charter::load("../examples/06-Advanced-Scripts.yaml")?;
-    let charter = Charter::load("../examples/09-3-Way-Performance.yaml")?;
-
     let start = Instant::now();
-    let job_id = Uuid::new_v4();
-    log::info!("Starting match job {}", job_id);
+    let ctx = Context::new(Charter::load(charter)?, base_dir);
+    log::info!("Starting match job {}", ctx.job_id());
 
-    folders::ensure_exist(charter.debug())?;
+    folders::ensure_exist(&ctx)?;
 
     // On start-up, any matching files should log warning and be moved to waiting.
-    folders::rollback_incomplete()?;
+    folders::rollback_incomplete(&ctx)?;
 
     // Move any waiting files to the matching folder.
-    folders::progress_to_matching()?;
+    folders::progress_to_matching(&ctx)?;
 
     // Iterate alphabetically matching files.
-    process_charter(&charter, job_id)?;
+    process_charter(&ctx)?;
 
     // Move matching files to the archive.
     // BUG: ONLY progress processed files by the charter, not everything in the waiting folder.
-    folders::progress_to_archive()?;
+    folders::progress_to_archive(&ctx)?;
 
     // TODO: Log how many records processed, rate, MB size, etc.
-    log::info!("Completed match job {} in {}", job_id, ansi_term::Colour::RGB(70, 130, 180).paint(formatted_duration_rate(1, start.elapsed()).0));
+    log::info!("Completed match job {} in {}", ctx.job_id(), ansi_term::Colour::RGB(70, 130, 180).paint(formatted_duration_rate(1, start.elapsed()).0));
 
     Ok(())
 }
@@ -66,11 +91,11 @@ fn main() -> Result<()> {
 ///
 /// Process the matching instructions.
 ///
-fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> {
+fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
 
     log::info!("Running charter [{}] v{:?}",
-        charter.name(),
-        charter.version());
+        ctx.charter().name(),
+        ctx.charter().version());
 
     let ts = folders::new_timestamp();
 
@@ -81,20 +106,20 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
     let lua = rlua::Lua::new();
 
     // Source data now to build the grid schema.
-    grid.source_data(charter.file_patterns(), charter.field_prefixes())?;
+    grid.source_data(ctx)?;
 
     // Create a match file containing job details and giving us a place to append match results.
-    let mut matched = MatchedHandler::new(job_id, charter, &grid)?;
+    let mut matched = MatchedHandler::new(ctx, &grid)?;
 
     // Create unmatched files for each sourced file.
-    let mut unmatched = UnmatchedHandler::new(&grid)?;
+    let mut unmatched = UnmatchedHandler::new(ctx, &grid)?;
 
     // If charter.debug - dump the grid with instr idx in filename.
-    if charter.debug() {
-        grid.debug_grid(&format!("0_{}output.csv", ts));
+    if ctx.charter().debug() {
+        grid.debug_grid(ctx, &format!("0_{}output.csv", ts));
     }
 
-    for (idx, inst) in charter.instructions().iter().enumerate() {
+    for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
         match inst {
             Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when.as_ref().map(String::as_ref), &mut grid, &lua)?,
             Instruction::MergeColumns { into, from } => merge_cols(into, from, &mut grid)?,
@@ -104,8 +129,8 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
         };
 
         // If charter.debug - dump the grid with instr idx in filename.
-        if charter.debug() {
-            grid.debug_grid(&format!("{}_{}output.csv", idx + 1, ts));
+        if ctx.charter().debug() {
+            grid.debug_grid(ctx, &format!("{}_{}output.csv", idx + 1, ts));
         }
 
         log::info!("Grid Memory Size: {}",
@@ -117,7 +142,7 @@ fn process_charter(charter: &Charter, job_id: Uuid) -> Result<(), MatcherError> 
 
     // Write all unmatched records now - this will be optimised at a later stage to be a single call.
     unmatched.write_records(grid.records(), &grid)?;
-    unmatched.complete_files()?;
+    unmatched.complete_files(ctx)?;
 
     Ok(())
 }
