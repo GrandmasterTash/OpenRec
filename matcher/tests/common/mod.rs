@@ -87,7 +87,7 @@ pub fn assert_matched_ok(data_files: &Vec<PathBuf>, base_dir: &PathBuf) -> PathB
         assert_eq!(md5(source), md5(&archive), "Data file {} has changed", archive.to_string_lossy());
     }
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).expect("Unable to count unmatched files").files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).expect("Unable to count unmatched files").files.len(), 0, "Unmatched files exist, expected none");
 
     matched
 }

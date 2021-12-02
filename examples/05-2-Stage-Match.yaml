@@ -18,7 +18,7 @@ description: |
   In this example all data comes from a single file. We have four types of transaction, TYP1...TYP4.
   TYP1 and TYP2 should be brought together into matches.
   TYP3 and TYP4 should be brought together into matches.
-version: 1637208553000
+version: 1
 # TODO: Copy this example and use to demonstrate filtering.
 # TODO: Change the 2-stage example to first group on a ref code and then mop-up by grouping on a date.
 # TODO: Add a UUID to each example record.
