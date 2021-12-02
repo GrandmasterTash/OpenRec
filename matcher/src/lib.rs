@@ -57,6 +57,7 @@ impl Context {
     }
 }
 
+// TODO: Make these parameters consistent.
 pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     log::info!("{}", BANNER);
 

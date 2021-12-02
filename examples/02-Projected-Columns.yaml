@@ -10,6 +10,8 @@ file_patterns: ['.*02-invoices\.csv', '.*02-payments\.csv']
 # record loaded from the '.*02-invoices\.csv' pattern would have fieldnames prefixed with 'INV' rather
 # than '02-invoices' and likewise, anything loaded from the pattern '.*02-payments\.csv' would use
 # a field prefix of 'PAY'.
+#
+# Now, rather than having to refer to '02-invoices.Amount' we can use 'INV.Amount' for example.
 field_aliases: ['INV', 'PAY']
 debug: true
 instructions:
@@ -46,16 +48,19 @@ instructions:
       when: meta["prefix"] == "PAY"
 
   - project:
-      # In this example our payment records have an invoice reference but the values contain additional
-      # 'X' characters through-out which are not in the invoice's own reference. So we'll project a column
-      # for each payment that removes these characters.
+      # In this example our payment records have an invoice reference but it's embedded in the payment reference
+      # in the format '<pay ref>XX<inv ref>XX'. So we'll project a column for each payment that can extract the
+      # invoice reference from the payment reference.
       column: PAYMENT_INV_REF
       # Our output column will be a string data-type.
       as_type: STRING
-      # Here we use the Lua gsub function (https://www.lua.org/pil/20.1.html) to replace all Xs with an
-      # empty string, effectivley removing them Xs.
-      from: string.gsub(record["PAY.InvRef"], "X", "")
-      # Against, we only want to evaluate this against payment records, not invoices.
+      # Here we use the Lua function (https://www.lua.org/pil/20.3.html) to capture the portion of the field
+      # we require into a variable called inv_ref then return that variable. Note, the '_' represent values
+      # returned from string.find that we do not need (in this case the start and end position of the match).
+      from: |
+        local _start, _end, inv_ref = string.find(record["PAY.Reference"], ".*XX(.*)XX.*")
+        return inv_ref
+      # Again, we only want to evaluate this against payment records, not invoices.
       when: meta["prefix"] == "PAY"
 
   - merge_columns:
@@ -67,7 +72,7 @@ instructions:
   - merge_columns:
       # Now we'll merge the invoice reference and our projected payment's invoice reference (with the Xs
       # removed) into a column to group records together with.
-      from: ['INV.InvoiceReference', 'PAYMENT_INV_REF']
+      from: ['INV.Reference', 'PAYMENT_INV_REF']
       into: REFERENCE
 
   - match_groups:

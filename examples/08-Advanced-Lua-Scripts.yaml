@@ -4,7 +4,7 @@ description: |
   TODO: Implement and document custom constraint logic.
 
 version: 1637208553000
-file_patterns: ['.*06-invoices\.csv', '.*06-payments\.csv']
+file_patterns: ['.*08-invoices\.csv', '.*08-payments\.csv']
 use_field_prefixes: false
 debug: false
 instructions:

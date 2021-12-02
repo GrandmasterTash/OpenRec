@@ -1,4 +1,4 @@
-name: Three-way Performance
+name: Performance
 description: |
   This charter is intended to demonstrate the low resource requirements for large match jobs.
   You will have to run the generator to generate the data though and this can take 45+mins.
