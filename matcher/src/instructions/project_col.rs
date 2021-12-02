@@ -1,7 +1,6 @@
 use std::time::Instant;
 use itertools::Itertools;
-
-use crate::{data_type::DataType, error::MatcherError, formatted_duration_rate, grid::Grid, lua, schema::Column};
+use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, data_type::DataType, schema::Column}, lua, blue};
 
 ///
 /// Use a script (eval) to calculate a value for a new column in each record.
@@ -21,7 +20,7 @@ pub fn project_column(
     log::info!("Projecting column {} as {:?}", name, data_type);
 
     // Add the projected column to the schema.
-    grid.schema_mut().add_projected_column(Column::new(name.into(), data_type))?;
+    grid.schema_mut().add_projected_column(Column::new(name.into(), None, data_type))?;
 
     // Snapshot the schema so we can iterate mutable records in a mutable grid.
     let schema = grid.schema().clone();
@@ -86,9 +85,9 @@ pub fn project_column(
 
     let (duration, rate) = formatted_duration_rate(row, start.elapsed());
     log::info!("Projection took {} for {} rows ({}/row)",
-        duration,
+        blue(&duration),
         row,
-        ansi_term::Colour::RGB(70, 130, 180).paint(rate));
+        rate);
 
     Ok(())
 }

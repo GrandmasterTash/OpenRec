@@ -2,7 +2,7 @@ use rlua::Context;
 use itertools::Itertools;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}};
-use crate::{charter::Constraint, error::MatcherError, formatted_duration_rate, grid::Grid, matched::MatchedHandler, record::Record, schema::{GridSchema}};
+use crate::{error::MatcherError, formatted_duration_rate, model::{charter::Constraint, grid::Grid, record::Record, schema::GridSchema}, matched::MatchedHandler, blue};
 
 ///
 /// Bring groups of records together using the columns specified.
@@ -59,10 +59,10 @@ pub fn match_groups(
 
     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
-        match_count,
-        group_count,
-        duration,
-        ansi_term::Colour::RGB(70, 130, 180).paint(rate));
+        blue(&format!("{}", match_count)),
+        blue(&format!("{}", group_count)),
+        blue(&duration),
+        rate);
 
     Ok(())
 }

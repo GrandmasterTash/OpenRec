@@ -1,6 +1,6 @@
 use rlua::Context;
 use rust_decimal::Decimal;
-use crate::{charter::{Constraint, ToleranceType}, data_type::DataType, error::MatcherError, lua, record::Record, schema::{Column, GridSchema}};
+use crate::{model::{charter::{Constraint, ToleranceType}, data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua, blue};
 
 impl Constraint {
     pub fn passes(&self, records: &[&Box<Record>], schema: &GridSchema, lua_ctx: &Context)
@@ -74,10 +74,10 @@ fn net<F>(
     if !net && debug.unwrap_or(false) {
         let mut dbg = format!("{}\n", column);
         lhs_recs.iter().for_each(|r| dbg += &format!("{:<30}: {}\n", r.get_decimal(column, schema).unwrap_or(Decimal::ZERO), lhs) );
-        dbg += &format!("{}: SUM\n", ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:<30}", lhs_sum)));
+        dbg += &format!("{}: SUM\n", blue(&format!("{:<30}", lhs_sum)));
 
         rhs_recs.iter().for_each(|r| dbg += &format!("{:<30}: {}\n", r.get_decimal(column, schema).unwrap_or(Decimal::ZERO), rhs) );
-        dbg += &format!("{}: SUM", ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:<30}", rhs_sum)));
+        dbg += &format!("{}: SUM", blue(&format!("{:<30}", rhs_sum)));
         log::info!("NetToZero constraint failed for group\n{}", dbg);
     }
 

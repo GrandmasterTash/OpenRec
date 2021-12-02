@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::{fs::File, io::{BufWriter, Write}};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, Context};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context};
 
 ///
 /// Manages the matched job file and appends matched groups to it.

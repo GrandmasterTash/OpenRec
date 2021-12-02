@@ -1,9 +1,12 @@
-use crate::{data_type::DataType, error::MatcherError, grid::Grid, schema::Column};
+use std::time::Instant;
+use crate::{error::MatcherError, model::{data_type::DataType, grid::Grid, schema::Column}, formatted_duration_rate, blue};
 
 ///
 /// Create a new column whose value comes from the first non-empty source column specified.
 ///
 pub fn merge_cols(name: &str, source: &[String], grid: &mut Grid) -> Result<(), MatcherError> {
+
+    let start = Instant::now();
 
     log::info!("Merging columns into {}", name);
 
@@ -13,7 +16,7 @@ pub fn merge_cols(name: &str, source: &[String], grid: &mut Grid) -> Result<(), 
     // BUG: If column doesn't exist error is very weak.
 
     // Add the projected column to the schema.
-    grid.schema_mut().add_merged_column(Column::new(name.into(), data_type))?;
+    grid.schema_mut().add_merged_column(Column::new(name.into(), None, data_type))?;
 
     // Snapshot the schema so we can iterate mutable records in a mutable grid.
     let schema = grid.schema().clone();
@@ -21,6 +24,9 @@ pub fn merge_cols(name: &str, source: &[String], grid: &mut Grid) -> Result<(), 
     for record in grid.records_mut() {
         record.merge_from(source, &schema);
     }
+
+    let (duration, _rate) = formatted_duration_rate(1, start.elapsed());
+    log::info!("Merging took {}", blue(&duration));
 
     Ok(())
 }

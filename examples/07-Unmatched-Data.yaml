@@ -1,0 +1,38 @@
+name: Unatched Data
+description: |
+  This charter demonstrates what occurs when not all data is matched. Start by only copying
+  these files into the waiting folder: -
+
+    20211129_043300000_07-invoices
+    20211129_043300000_07-payments-a.csv
+
+  If run it will result in an invoice being written to an unmatched file. The file will share the
+  same name as the original data file that loaded the invoice and reside in the unmatched folder.
+
+  Next, copy this file into the waiting folder: -
+
+    20211129_043300000_07-payments-b.csv
+
+  Re-running the charter should match the outstanding payment to the unmatched invoice. You
+  should now see 2 matched.json files and no files left in the unmatched folder.
+version: 1
+# Note, in-order to re-process un-matched records, the file pattern must allow for files that
+# have the name format yyyymmdd_hhmmssmmm_XXXXXX.unmatched.csv. These files contain previously
+# unmatched data and are moved back into the matching folder during subsequent match jobs.
+file_patterns: ['.*07-invoices.*\.csv', '.*07-payments.*\.csv']
+field_aliases: ['I', 'P']
+debug: true
+instructions:
+  - merge_columns:
+      from: ['I.InvoiceAmount', 'P.PaymentAmount']
+      into: AMOUNT
+  - merge_columns:
+      from: ['I.InvoiceRef', 'P.PaymentRef']
+      into: REF
+  - match_groups:
+      group_by: ['REF']
+      constraints:
+        - nets_to_zero:
+            column: AMOUNT
+            lhs: meta["prefix"] == "I"
+            rhs: meta["prefix"] == "P"

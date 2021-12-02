@@ -1,14 +1,9 @@
 mod lua;
-mod grid;
 mod error;
-mod schema;
-mod record;
+mod model;
 mod folders;
 mod matched;
-mod charter;
-mod datafile;
 mod unmatched;
-mod data_type;
 mod instructions;
 
 use uuid::Uuid;
@@ -16,15 +11,15 @@ use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::MatcherError;
 use std::time::{Duration, Instant};
-use crate::{charter::{Charter, Instruction}, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, matched::MatchedHandler, unmatched::UnmatchedHandler};
+use crate::{model::{charter::{Charter, Instruction}, grid::Grid}, instructions::merge_col::merge_cols, instructions::project_col::project_column, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
-// TODO: Change dates to use ISO8601 UTC format for clarity.
-// TODO: Unit/integration tests. Lots.
-// TODO: Check code coverage.
 // TODO: Alter source_data to only retain columns required for matching.
 //   This will mean unmatched data will be written in a different way.
 //   Also - consider memory compaction, string table, etc.
 // TODO: Flesh-out examples.
+// TODO: Unit/integration tests. Lots.
+// TODO: Check code coverage.
+// TODO: Clippy!
 
 ///
 /// Created for each match job. Used to pass the main top-level things around.
@@ -67,6 +62,8 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
 
     folders::ensure_exist(&ctx)?;
 
+    // TODO: Ensure nothing in waiting folder is already in the archive folder.
+
     // On start-up, any matching files should log warning and be moved to waiting.
     folders::rollback_incomplete(&ctx)?;
 
@@ -81,7 +78,7 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     folders::progress_to_archive(&ctx)?;
 
     // TODO: Log how many records processed, rate, MB size, etc.
-    log::info!("Completed match job {} in {}", ctx.job_id(), ansi_term::Colour::RGB(70, 130, 180).paint(formatted_duration_rate(1, start.elapsed()).0));
+    log::info!("Completed match job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, start.elapsed()).0));
 
     Ok(())
 }
@@ -114,7 +111,7 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
 
     // If charter.debug - dump the grid with instr idx in filename.
     if ctx.charter().debug() {
-        grid.debug_grid(ctx, &format!("0_{}output.csv", ts));
+        grid.debug_grid(ctx, &format!("0_{}.output.csv", ts));
     }
 
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
@@ -128,11 +125,11 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
 
         // If charter.debug - dump the grid with instr idx in filename.
         if ctx.charter().debug() {
-            grid.debug_grid(ctx, &format!("{}_{}output.csv", idx + 1, ts));
+            grid.debug_grid(ctx, &format!("{}_{}.output.csv", idx + 1, ts));
         }
 
         log::info!("Grid Memory Size: {}",
-            ansi_term::Colour::RGB(70, 130, 180).paint(format!("{:.0}", grid.memory_usage().bytes())));
+            blue(&format!("{:.0}", grid.memory_usage().bytes())));
     }
 
     // Complete the matched JSON file.
@@ -157,6 +154,13 @@ pub fn formatted_duration_rate(amount: usize, elapsed: Duration) -> (String, Str
         humantime::format_duration(duration).to_string(),
         format!("{:.3}ms", rate)
     )
+}
+
+///
+/// Highlight some log output with ansi colour codes.
+///
+pub fn blue(msg: &str) -> ansi_term::ANSIGenericString<'_, str> {
+    ansi_term::Colour::RGB(70, 130, 180).paint(msg)
 }
 
 const BANNER: &str = r#"

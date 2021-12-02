@@ -11,3 +11,5 @@ Cargo.lock
 
 # Generated data files
 **/tmp/
+
+lcov.info

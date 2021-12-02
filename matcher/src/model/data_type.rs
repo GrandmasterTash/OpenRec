@@ -4,12 +4,12 @@ use serde::Deserialize;
 /// Logical/business data-type for any given csv column.
 ///
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash)]
-pub enum DataType { // TODO: Not using memory compaction so consider rolling up all the ints into INTEGER by using i64
+pub enum DataType {
     UNKNOWN,  // Unable to map short-code to a known value.
     BOOLEAN,  // 1,0 - uses byte.
     BYTE,     // -128 <-> 127.
     CHAR,     // 2-byte single unicode character.
-    DATE,     // 8-byte, long, millis-since epoch (time set to 00:00:00.000).
+    DATE,     // 8-byte, long, millis-since epoch (time set to 00:00:00.000). // TODO: Suspect this can go.
     DATETIME, // 8-byte, long, millis-since epoch.
     DECIMAL,  // 8-byte (rust-decimal).
     INTEGER,  // 4-byte (-2^31 <-> 2^31-1).

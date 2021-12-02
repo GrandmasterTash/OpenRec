@@ -59,7 +59,7 @@ instructions:
 
   - project:
       column: 'Stage1_Date'
-      as_type: DATE
+      as_type: DATETIME
       from: record["Date_1"]
       when: record["Type"] == "TYP1" or record["Type"] == "TYP2"
 
@@ -108,7 +108,7 @@ instructions:
 
   - project:
       column: 'Stage2_Date'
-      as_type: DATE
+      as_type: DATETIME
       from: record["Date_1"] or record["Date_2"]
       when: record["Type"] == "TYP3" or record["Type"] == "TYP4"
 

@@ -1,9 +1,10 @@
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::io::BufReader;
-use crate::{data_type::DataType, error::MatcherError};
+use crate::{model::data_type::DataType, error::MatcherError};
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Charter {
     name: String,
     description: Option<String>,
@@ -18,7 +19,7 @@ pub struct Charter {
 
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum Instruction {
     Project { column: String, as_type: DataType, from: String, when: Option<String> }, // Create a derived column from one or more other columns.
     MergeColumns { into: String, from: Vec<String> }, // Merge the contents of columns together.
@@ -34,7 +35,7 @@ pub enum ToleranceType {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum Constraint {
     NetsToZero { column: String, lhs: String, rhs: String, debug: Option<bool> },
     NetsWithTolerance { column: String, lhs: String, rhs: String, tol_type: ToleranceType, tolerance: Decimal, debug: Option<bool> },

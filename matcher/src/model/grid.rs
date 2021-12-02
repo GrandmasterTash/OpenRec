@@ -1,5 +1,6 @@
 use std::fs::DirEntry;
-use crate::{datafile::DataFile, error::MatcherError, folders::{self, ToCanoncialString}, record::Record, schema::{FileSchema, GridSchema}, Context};
+use ubyte::ToByteUnit;
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue};
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -134,10 +135,8 @@ impl Grid {
             // Because all files of the same record type will need the same schema for any single match run.
             let mut last_schema_idx = None;
 
-            // TODO: Include .unmatched.csv files in this sourcing.
-
             for file in folders::files_in_matching(ctx, pattern)? {
-                log::info!("Reading file {}", file.path().to_string_lossy());
+                log::info!("Reading file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
 
                 // For now, just count all the records in a file and log them.
                 let mut count = 0;
@@ -167,6 +166,8 @@ impl Grid {
                 }
 
                 log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
+                log::info!("Grid Memory Size: {}",
+                    blue(&format!("{:.0}", self.memory_usage().bytes())));
             }
         }
 

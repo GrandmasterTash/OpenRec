@@ -1,9 +1,10 @@
 use std::{collections::HashMap, fs};
-use crate::{data_type::DataType, error::MatcherError, record::Record};
+use crate::{model::{data_type::DataType, record::Record}, error::MatcherError};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Column {
     header: String,
+    header_no_prefix: String,
     data_type: DataType,
 }
 
@@ -38,12 +39,23 @@ pub struct GridSchema {
 }
 
 impl Column {
-    pub fn new(header: String, data_type: DataType) -> Self {
-        Self { header, data_type, }
+    pub fn new(header: String, prefix: Option<String>, data_type: DataType) -> Self {
+        Self {
+            header: match prefix {
+                Some(prefix) => format!("{}.{}", prefix, header),
+                None => header.clone(),
+            },
+            header_no_prefix: header,
+            data_type
+        }
     }
 
     pub fn header(&self) -> &str {
         &self.header
+    }
+
+    pub fn header_no_prefix(&self) -> &str {
+        &self.header_no_prefix
     }
 
     pub fn data_type(&self) -> &DataType {
@@ -224,12 +236,7 @@ impl FileSchema {
                 None => return Err(MatcherError::NoSchemaTypeForColumn { column: idx }),
             };
 
-            let header = match &prefix {
-                None => hdr.into(),
-                Some(prefix) => format!("{}.{}", prefix, hdr),
-            };
-
-            columns.push(Column { header, data_type });
+            columns.push(Column::new(hdr.into(), prefix.clone(), data_type));
         }
 
         Ok(Self { prefix, columns })

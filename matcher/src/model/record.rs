@@ -1,8 +1,9 @@
+use chrono::DateTime;
 use uuid::Uuid;
 use std::cell::Cell;
 use rust_decimal::Decimal;
 use bytes::{BufMut, BytesMut};
-use crate::{data_type::{self, TRUE}, schema::GridSchema};
+use crate::model::{data_type::{self, TRUE}, schema::GridSchema};
 
 #[derive(Debug)]
 pub struct Record {
@@ -81,7 +82,11 @@ impl Record {
     pub fn get_datetime(&self, header: &str, schema: &GridSchema) -> Option<u64> {
         if let Some(column) = schema.position_in_record(header, self) {
             if let Some(bytes) = self.inner.get(*column) {
-                return String::from_utf8_lossy(bytes).parse().ok()
+                let raw = String::from_utf8_lossy(bytes);
+                return match DateTime::parse_from_rfc3339(&raw) {
+                    Ok(dt) => Some(dt.timestamp_millis() as u64),
+                    Err(_) => None,
+                }
             }
         }
         None

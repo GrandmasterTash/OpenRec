@@ -2,7 +2,7 @@ use regex::Regex;
 use rust_decimal::Decimal;
 use rlua::{Context, Table};
 use lazy_static::lazy_static;
-use crate::{data_type::DataType, record::Record, schema::{Column, GridSchema}};
+use crate::model::{data_type::DataType, record::Record, schema::{Column, GridSchema}};
 
 lazy_static! {
     static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();

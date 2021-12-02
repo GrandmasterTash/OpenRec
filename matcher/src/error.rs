@@ -1,5 +1,5 @@
 use thiserror::Error;
-use crate::data_type::DataType;
+use crate::model::data_type::DataType;
 
 #[derive(Error, Debug)]
 pub enum MatcherError {

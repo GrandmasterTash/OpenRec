@@ -1,7 +1,13 @@
 use csv::Writer;
 use std::{collections::HashMap, fs::File, path::PathBuf};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, grid::Grid, record::Record, schema::FileSchema, Context};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record, schema::FileSchema}, Context};
 
+///
+/// Manages the unmatched files for the current job.
+///
+pub struct UnmatchedHandler {
+    files: HashMap<String /* ORIGINAL filename, e.g. 20211126_072400000_invoices.csv. */, UnmatchedFile>,
+}
 
 ///
 /// Represents an unmatched file potentially being written to as part of the current job.
@@ -12,13 +18,6 @@ struct UnmatchedFile {
     full_filename: String, // CURRENT filename, e.g. 20211126_072400000_invoices.unmatched.csv.
     schema: FileSchema,    // A copy of the original fileschema.
     writer: Writer<File>,
-}
-
-///
-/// Manages the unmatched files for the current job.
-///
-pub struct UnmatchedHandler {
-    files: HashMap<String /* ORIGINAL filename, e.g. 20211126_072400000_invoices.csv. */, UnmatchedFile>,
 }
 
 impl UnmatchedHandler {
@@ -46,7 +45,7 @@ impl UnmatchedHandler {
                 let schema = grid.schema().file_schemas().get(file.schema())
                     .ok_or(MatcherError::MissingSchemaInGrid{ filename: file.filename().into(), index: file.schema()  })?;
 
-                writer.write_record(schema.columns().iter().map(|c| c.header()).collect::<Vec<&str>>())
+                writer.write_record(schema.columns().iter().map(|c| c.header_no_prefix()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteHeaders{ filename: file.filename().into(), source })?;
 
                 writer.write_record(schema.columns().iter().map(|c| c.data_type().to_str()).collect::<Vec<&str>>())

@@ -2,7 +2,7 @@ use chrono::Utc;
 use regex::Regex;
 use lazy_static::lazy_static;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
-use crate::{datafile::DataFile, error::MatcherError, Context};
+use crate::{model::datafile::DataFile, error::MatcherError, Context};
 
 /*
     Files are processed alphabetically - hence the human-readable timestamp prefix - to ensure consistent ordering.
@@ -45,6 +45,7 @@ pub const UNMATCHED: &str = ".unmatched.csv";
 
 lazy_static! {
     static ref FILENAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.csv$").unwrap();
+    static ref UNMATCHED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.unmatched\.csv$").unwrap();
 }
 
 ///
@@ -72,7 +73,22 @@ pub fn ensure_exist(ctx: &Context) -> Result<(), MatcherError> {
 /// Move any waiting files to the matching folder.
 ///
 pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
-    // TODO: Any unmatched files as well.
+    // Move files from the unmatched folder to the matching folder.
+    for entry in unmatched(ctx).read_dir()? {
+        if let Ok(entry) = entry {
+            if is_unmatched_data_file(&entry) {
+                let dest = matching(ctx).join(entry.file_name());
+
+                log::info!("Moving file [{file}] from [{src}] to [{dest}]",
+                    file = entry.file_name().to_string_lossy(),
+                    src = entry.path().parent().unwrap().to_string_lossy(),
+                    dest = dest.parent().unwrap().to_string_lossy());
+                fs::rename(entry.path(), dest)?;
+            }
+        }
+    }
+
+    // Move waiting files to the matching folder.
     for entry in waiting(ctx).read_dir()? {
         if let Ok(entry) = entry {
             if is_data_file(&entry) {
@@ -96,7 +112,12 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
 pub fn progress_to_archive(ctx: &Context) -> Result<(), MatcherError> {
     for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
-            if is_data_file(&entry) {
+            if is_unmatched_data_file(&entry) {
+                // Delete .unmatched files don't move them to archive.
+                fs::remove_file(entry.path())?;
+                log::info!("Deleted unmatched file [{}]", entry.path().to_string_lossy())
+
+            } else  if is_data_file(&entry) {
                 let dest = archive(ctx).join(entry.file_name());
 
                 log::info!("Moving file [{file}] from [{src}] to [{dest}]",
@@ -224,7 +245,9 @@ pub fn new_timestamp() -> String {
 }
 
 ///
-/// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and a '.csv' suffix.
+/// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
+/// a '.csv' suffix.
+///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
 fn is_data_file(entry: &DirEntry) -> bool {
@@ -232,6 +255,22 @@ fn is_data_file(entry: &DirEntry) -> bool {
         Ok(metadata) => metadata.is_file() && FILENAME_REGEX.is_match(&entry.file_name().to_string_lossy()),
         Err(err) => {
             log::warn!("Skipping file, failed to get metadata for {}: {}", entry.path().to_canoncial_string(), err);
+            false
+        }
+    }
+}
+
+///
+/// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
+/// a '.unmatched.csv' suffix.
+///
+/// Logs a warning if we couldn't get a file's metadata and returns false.
+///
+fn is_unmatched_data_file(entry: &DirEntry) -> bool {
+    match entry.metadata() {
+        Ok(metadata) => metadata.is_file() && UNMATCHED_REGEX.is_match(&entry.file_name().to_string_lossy()),
+        Err(err) => {
+            log::warn!("Skipping unmatched file, failed to get metadata for {}: {}", entry.path().to_canoncial_string(), err);
             false
         }
     }
