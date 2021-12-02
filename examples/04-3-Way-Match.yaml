@@ -7,7 +7,7 @@ description: |
 
   Each record contains it's own currency amount along with an FXRate column denoting the exchange
   rate to conert that to a common currency.
-version: 1637208553000
+version: 1
 file_patterns: ['.*invoices\.csv', '.*payments\.csv', '.*receipts\.csv']
 debug: true
 instructions:

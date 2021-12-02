@@ -39,7 +39,7 @@ file_patterns: ['05-2-stage\.csv']
 # example '2-stage.Amount_1'. Instead, by suppressing them we can use 'Amount_1' instead.
 # This is useful when there is no chance of different columns having the same header (due to
 # multiple files being involved).
-field_prefixes: false
+use_field_prefixes: false
 
 debug: true
 instructions:

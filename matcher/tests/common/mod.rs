@@ -4,6 +4,12 @@ use fs_extra::{dir::{CopyOptions, remove}, copy_items};
 use md5::Digest;
 use serde_json::Value;
 
+pub fn init_test() {
+    dotenv::dotenv().ok();
+    let _ = env_logger::builder().is_test(true).try_init();
+    use_fixed_timestamp();
+}
+
 ///
 /// Create a worker folder structure under the base_dir specified.
 ///
@@ -46,4 +52,14 @@ pub fn md5(path: PathBuf) -> Digest {
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).expect(&format!("Cannot read {}", path.to_string_lossy()));
     md5::compute(buffer)
+}
+
+///
+/// Ensure matched files are created with a deterministic filename.
+///
+/// Important: Use the same value across all tests otherwise we can't run them in parrallel as they would
+/// corrupt each other's expected ENV value.
+///
+fn use_fixed_timestamp() {
+    std::env::set_var("OPENREC_FIXED_TS", "20211201_053700000");
 }

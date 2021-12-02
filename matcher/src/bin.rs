@@ -3,6 +3,9 @@ use anyhow::Result;
 pub fn main() -> Result<()> {
     // TODO: Clap this up!
 
+    dotenv::dotenv().ok();
+    let _ = env_logger::try_init();
+
     // TODO: Clap interface and a lib interface.
     // let charter = Charter::load("../examples/03-Net-With-Tolerance.yaml")?;
     let charter = "../examples/04-3-Way-Match.yaml";

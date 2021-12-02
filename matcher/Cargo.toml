@@ -6,6 +6,7 @@ edition = "2018"
 [lib]
 name = "matcher"
 path = "src/lib.rs"
+doctest = false
 
 [[bin]]
 name = "matcher"

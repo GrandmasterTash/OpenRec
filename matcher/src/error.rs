@@ -112,6 +112,9 @@ pub enum MatcherError {
     #[error("Constraint {index} evaluation failed")]
     ConstraintError { index: usize, source: rlua::Error },
 
+    #[error("Chart configuration is invalid - {reason}")]
+    CharterValidationError { reason: String },
+
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 

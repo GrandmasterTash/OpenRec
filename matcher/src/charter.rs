@@ -10,7 +10,8 @@ pub struct Charter {
     version: u64, // Epoch millis at UTC.
     debug: Option<bool>,
     file_patterns: Vec<String>,
-    field_prefixes: Option<bool>,
+    field_aliases: Option<Vec<String>>,
+    use_field_prefixes: Option<bool>,
     instructions: Vec<Instruction>,
     // TODO: Start at, end at, schema difference handling.
 }
@@ -59,8 +60,12 @@ impl Charter {
         &self.file_patterns
     }
 
-    pub fn field_prefixes(&self) -> bool {
-        self.field_prefixes.unwrap_or(true)
+    pub fn field_aliases(&self) -> &Option<Vec<String>> {
+        &self.field_aliases
+    }
+
+    pub fn use_field_prefixes(&self) -> bool {
+        self.use_field_prefixes.unwrap_or(true)
     }
 
     pub fn instructions(&self) -> &[Instruction] {
@@ -71,7 +76,17 @@ impl Charter {
         let rdr = BufReader::new(std::fs::File::open(path)
             .map_err(|source| MatcherError::CharterFileNotFound { path: path.into(), source })?);
 
-        Ok(serde_yaml::from_reader(rdr)
-            .map_err(|source| MatcherError::InvalidCharter { path: path.into(), source })?)
+
+        let charter: Self = serde_yaml::from_reader(rdr)
+            .map_err(|source| MatcherError::InvalidCharter { path: path.into(), source })?;
+
+        // If field_aliases are defined, there should be one for every file_pattern.
+        if let Some(aliases) = charter.field_aliases() {
+            if aliases.len() != charter.file_patterns().len() {
+                return Err(MatcherError::CharterValidationError { reason: "If field_aliases are defined, there must be one for each defined file_pattern".into() })
+            }
+        }
+
+        Ok(charter)
     }
 }

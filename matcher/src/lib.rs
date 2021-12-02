@@ -18,7 +18,6 @@ use error::MatcherError;
 use std::time::{Duration, Instant};
 use crate::{charter::{Charter, Instruction}, grid::Grid, instructions::merge_col::merge_cols, instructions::project_col::project_column, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
-// TODO: Build as lib and bin - lib to launch tests from.
 // TODO: Change dates to use ISO8601 UTC format for clarity.
 // TODO: Unit/integration tests. Lots.
 // TODO: Check code coverage.
@@ -59,8 +58,6 @@ impl Context {
 }
 
 pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
-    dotenv::dotenv().ok();
-    env_logger::init();
     log::info!("{}", BANNER);
 
     let start = Instant::now();

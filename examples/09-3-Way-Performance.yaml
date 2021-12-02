@@ -21,6 +21,7 @@ description: |
   rows and/or columnes to create smaller datasets.
 version: 1637208553000
 file_patterns: ['.*09-BIG-invoices\.csv', '.*09-BIG-payments\.csv', '.*09-BIG-receipts\.csv']
+field_aliases: ['INV', 'PAY', 'REC']
 # TODO: prefix_aliases: ['INV', 'PAY', 'REC']
 # Ensure debug is false - there is significant overhead when true as the matcher will be writing all
 # data out to multiple files after each instruction if it's set to true.
@@ -29,32 +30,32 @@ instructions:
   - project:
       column: PAYMENT_AMOUNT_BASE
       as_type: DECIMAL
-      from: record["09-BIG-payments.Amount"] * record["09-BIG-payments.FXRate"]
-      when: meta["prefix"] == "09-BIG-payments"
+      from: record["PAY.Amount"] * record["PAY.FXRate"]
+      when: meta["prefix"] == "PAY"
   - project:
       column: RECEIPT_AMOUNT_BASE
       as_type: DECIMAL
-      from: record["09-BIG-receipts.Amount"] * record["09-BIG-receipts.FXRate"]
-      when: meta["prefix"] == "09-BIG-receipts"
+      from: record["REC.Amount"] * record["REC.FXRate"]
+      when: meta["prefix"] == "REC"
   - project:
       column: TOTAL_AMOUNT_BASE
       as_type: DECIMAL
-      from: record["09-BIG-invoices.TotalAmount"] * record["09-BIG-invoices.FXRate"]
-      when: meta["prefix"] == "09-BIG-invoices"
+      from: record["INV.TotalAmount"] * record["INV.FXRate"]
+      when: meta["prefix"] == "INV"
   - merge_columns:
       from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
       into: AMOUNT_BASE
   - merge_columns:
-      from: ['09-BIG-invoices.Reference', '09-BIG-payments.Reference', '09-BIG-receipts.Reference']
+      from: ['INV.Reference', 'PAY.Reference', 'REC.Reference']
       into: REFERENCE
   - match_groups:
       group_by: ['REFERENCE']
       constraints:
         - nets_to_zero:
             column: AMOUNT_BASE
-            lhs: meta["prefix"] == "09-BIG-payments"
-            rhs: meta["prefix"] == "09-BIG-invoices"
+            lhs: meta["prefix"] == "PAY"
+            rhs: meta["prefix"] == "INV"
         - nets_to_zero:
             column: AMOUNT_BASE
-            lhs: meta["prefix"] == "09-BIG-receipts"
-            rhs: meta["prefix"] == "09-BIG-invoices"
+            lhs: meta["prefix"] == "REC"
+            rhs: meta["prefix"] == "INV"

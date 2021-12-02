@@ -1,3 +1,4 @@
+use std::fs::DirEntry;
 use crate::{datafile::DataFile, error::MatcherError, folders::{self, ToCanoncialString}, record::Record, schema::{FileSchema, GridSchema}, Context};
 
 ///
@@ -124,7 +125,7 @@ impl Grid {
     ///
     pub fn source_data(&mut self, ctx: &Context) -> Result<(), MatcherError> {
 
-        for pattern in ctx.charter().file_patterns() {
+        for (idx, pattern) in ctx.charter().file_patterns().iter().enumerate() {
             log::info!("Sourcing data with pattern [{}]", pattern);
             // TODO: PRint grid memory after each file is sourced.
             // TODO: Validate the source path is canonicalised in the rec base.
@@ -146,10 +147,7 @@ impl Grid {
                     .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
 
                 // Build a schema from the file's header rows.
-                let prefix = match ctx.charter().field_prefixes() {
-                    true => Some(folders::entry_shortname(&file)),
-                    false => None,
-                };
+                let prefix = field_prefix(ctx, &file, idx, pattern)?;
                 let schema = FileSchema::new(prefix, &mut rdr)?;
 
                 // Use an existing schema from the grid, if there is one, otherwise add this one.
@@ -211,4 +209,20 @@ impl Grid {
         wtr.flush().expect("Unable to flush the debug file");
         log::info!("...{} rows written to {}", self.records.len(), output_path.to_canoncial_string());
     }
+}
+
+
+fn field_prefix(ctx: &Context, file: &DirEntry, pattern_idx: usize, pattern: &str) -> Result<Option<String>, MatcherError> {
+    Ok(match ctx.charter().use_field_prefixes() {
+        true => {
+            match ctx.charter().field_aliases() {
+                Some(aliases) => match aliases.get(pattern_idx) {
+                    Some(alias) => Some(alias.clone()),
+                    None => return Err(MatcherError::CharterValidationError { reason: format!("No alias for file pattern {} idx {}", pattern, pattern_idx)}),
+                },
+                None => Some(folders::entry_shortname(&file)),
+            }
+        },
+        false => None,
+    })
 }

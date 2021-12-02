@@ -1,0 +1,79 @@
+name: Projected Columns
+description: |
+  This charter demonstrates how to create (project) new columns from data taken from existing columns.
+  Projected columns are created by using Lua script. The script can reference any other field on the record.
+  This new projected column can then be used, for example as part of the grouping criteria.
+version: 1
+file_patterns: ['.*02-invoices\.csv', '.*02-payments\.csv']
+# In 01-Basic-Match.yaml the fields in the charter were prefixed from the filename (01-invoices, etc).
+# We can use the field_aliases to define aliases for each file_pattern above. So in this case, any
+# record loaded from the '.*02-invoices\.csv' pattern would have fieldnames prefixed with 'INV' rather
+# than '02-invoices' and likewise, anything loaded from the pattern '.*02-payments\.csv' would use
+# a field prefix of 'PAY'.
+field_aliases: ['INV', 'PAY']
+debug: true
+instructions:
+  # All of the invoices records are using GBP currency, where-as the payments for those invoices are
+  # being provided in a variety of currencies. Fortuantely, the loading of the data has populated an
+  # exchange rate against each payment, accurate on the payment date.
+  #
+  # Because we want perform a net-to-zero operation on the data (see 01-Basic-Match.yaml) we need the
+  # payment and invoice amounts to match and therefore we use a project to convert the payment amount
+  # into the GBP currency equivalent.
+  - project:
+      # The column field denotes the name for the new projected column. This can be referenced in any
+      # subsequent instruction in this charter.
+      column: PAYMENT_AMOUNT_BASE
+      # We must define the type of this column.
+      as_type: DECIMAL
+      # The Lua script below has access to a table called 'record' which is populated with the values of
+      # each column on the underlying record. In this case, we are multipling the Amount by the FXRate
+      # for the payment to derive a GBP value in a new column called PAYMENT_AMOUNT_BASE.
+      #
+      # NOTE: Decimal amounts use a precise backing data-type, something not normally possible with standard
+      # Lua - which uses floating point numbers without the aid of additional libraries.
+      from: record["PAY.Amount"] * record["PAY.FXRate"]
+      # Because we have loaded both invoices and payments into our virtual grid of data
+      # (see 01-Basic-Match.yaml), we need to ensure the above Lua is not evaluated against an invoice
+      # record in a grid, and only evaluated against a payment record. We can do this either by checking
+      # a field on the record which denotes it's type or, if this isn't available, we can use the 'meta'
+      # Lua table and use the 'prefix' field. This is a special field set to the (short) filename where
+      # the record originated from or, in our case, the field_alias defined above.
+      #
+      # NOTE: If we didn't have theh following when clause (which is optional), then our from script
+      # above, would cause an error as soon as it was evaluated against an invoice record, because
+      # invoices don't have a field called 'PAY.Amount' or 'PAY.FXRate'.
+      when: meta["prefix"] == "PAY"
+
+  - project:
+      # In this example our payment records have an invoice reference but the values contain additional
+      # 'X' characters through-out which are not in the invoice's own reference. So we'll project a column
+      # for each payment that removes these characters.
+      column: PAYMENT_INV_REF
+      # Our output column will be a string data-type.
+      as_type: STRING
+      # Here we use the Lua gsub function (https://www.lua.org/pil/20.1.html) to replace all Xs with an
+      # empty string, effectivley removing them Xs.
+      from: string.gsub(record["PAY.InvRef"], "X", "")
+      # Against, we only want to evaluate this against payment records, not invoices.
+      when: meta["prefix"] == "PAY"
+
+  - merge_columns:
+      # We're merging the (converted) paymount amount and the invoice's total amount into a new column
+      # called AMOUNT which we'll use in our group constraints to NET on.
+      from: ['PAYMENT_AMOUNT_BASE', 'INV.TotalAmount']
+      into: AMOUNT
+
+  - merge_columns:
+      # Now we'll merge the invoice reference and our projected payment's invoice reference (with the Xs
+      # removed) into a column to group records together with.
+      from: ['INV.InvoiceReference', 'PAYMENT_INV_REF']
+      into: REFERENCE
+
+  - match_groups:
+      group_by: ['REFERENCE']
+      constraints:
+        - nets_to_zero:
+            column: AMOUNT
+            lhs: meta["prefix"] == "PAY"
+            rhs: meta["prefix"] == "INV"

@@ -5,7 +5,7 @@ description: |
 
 version: 1637208553000
 file_patterns: ['.*06-invoices\.csv', '.*06-payments\.csv']
-field_prefixes: false
+use_field_prefixes: false
 debug: false
 instructions:
   - merge_columns:

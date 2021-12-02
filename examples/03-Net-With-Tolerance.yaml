@@ -18,21 +18,22 @@ description: |
 
 version: 1
 file_patterns: ['.*03-invoices\.csv', '.*03-payments\.csv']
+field_aliases: ['INV', 'PAY']
 debug: true
 instructions:
   - merge_columns:
-      from: ['03-invoices.Amount', '03-payments.Amount']
+      from: ['INV.Amount', 'PAY.Amount']
       into: AMOUNT
   - merge_columns:
-      from: ['03-invoices.Ref', '03-payments.Ref']
+      from: ['INV.Ref', 'PAY.Ref']
       into: REF
   - match_groups:
       group_by: ['REF']
       constraints:
         - nets_with_tolerance:
             column: AMOUNT
-            lhs: meta["prefix"] == "03-invoices"
-            rhs: meta["prefix"] == "03-payments"
+            lhs: meta["prefix"] == "INV"
+            rhs: meta["prefix"] == "PAY"
             tol_type: Amount
             tolerance: 1.00
             # tol_type can also be Percent. In whice case the rhs sum must be with in

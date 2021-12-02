@@ -9,7 +9,7 @@ pub fn merge_cols(name: &str, source: &[String], grid: &mut Grid) -> Result<(), 
 
     // Validate - ensure all source columns exist and have the same data-type.
     let data_type = validate(source, grid)?;
-    // BUG: Errors if no rows exist - should skip.
+    // BUG: Errors if no rows exist - should skip. Fix when optimised to stream through the data.
     // BUG: If column doesn't exist error is very weak.
 
     // Add the projected column to the schema.
