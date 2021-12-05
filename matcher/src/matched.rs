@@ -28,7 +28,7 @@ impl MatchedHandler {
             "job_id": ctx.job_id().to_hyphenated().to_string(),
             "charter_name": ctx.charter().name(),
             "charter_version": ctx.charter().version(),
-            "files": grid.files().iter().map(|f|f.original_filename()).collect::<Vec<&str>>()
+            "files": grid.schema().files().iter().map(|f|f.original_filename()).collect::<Vec<&str>>()
         });
 
         if let Err(source) = serde_json::to_writer_pretty(&mut writer, &job_header) {

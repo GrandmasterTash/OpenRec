@@ -26,7 +26,7 @@ impl DataFile {
         })
     }
 
-    pub fn schema(&self) -> usize {
+    pub fn schema_idx(&self) -> usize {
         self.schema
     }
 
@@ -40,6 +40,10 @@ impl DataFile {
 
     pub fn timestamp(&self) -> &str {
         &self.timestamp
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
     }
 
     pub fn original_filename(&self) -> &str {

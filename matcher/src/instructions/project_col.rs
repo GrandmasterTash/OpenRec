@@ -25,6 +25,10 @@ pub fn project_column(
     // Snapshot the schema so we can iterate mutable records in a mutable grid.
     let schema = grid.schema().clone();
 
+    // Get file readers to read source csv data as required.
+    let mut rdrs = grid.readers();
+
+    // TODO: Push into a fn.
     // Collect a unique list of all the columns we need to make available to the Lua script.
     let script_cols = match when {
         Some(when) => vec!(lua::script_columns(eval, &schema), lua::script_columns(when, &schema)),
@@ -33,19 +37,20 @@ pub fn project_column(
         .into_iter()
         .unique()
         .collect::<Vec<&Column>>();
-    let mut row = 0;
 
-    // TODO: Consider rayon when we're streaming from files.
+    let mut row = 0;
 
     lua.context(|lua_ctx| {
         let globals = lua_ctx.globals();
 
         // Calculate the column value for every record.
         for record in grid.records_mut() {
-            let lua_record = lua::lua_record(record, &script_cols, &schema, &lua_ctx)?;
+            let lua_record = lua::lua_record(record, &script_cols, &schema, &mut rdrs[record.file_idx()], &lua_ctx)
+                .map_err(|source| rlua::Error::external(source))?;
             globals.set("record", lua_record)?;
 
-            let lua_meta = lua::lua_meta(record, &schema, &lua_ctx)?;
+            let lua_meta = lua::lua_meta(record, &schema, &lua_ctx)
+                .map_err(|source| rlua::Error::external(source))?;
             globals.set("meta", lua_meta)?;
 
             // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip
@@ -68,7 +73,7 @@ pub fn project_column(
                 };
             } else {
                 // Put a blank value in the projected column if we're not evaluating it.
-                record.append_string("");
+                record.append_string(""); // TODO: Create a 'pad' fn for this, to avoid dt confusion.
             }
 
             row += 1;
@@ -79,7 +84,7 @@ pub fn project_column(
         eval: eval.into(),
         when: when.unwrap_or("(no when script)").into(),
         data_type: data_type.to_str().into(),
-        record: grid.record_as_string(row).unwrap_or("(no record)".into()),
+        row,
         source
     })?;
 

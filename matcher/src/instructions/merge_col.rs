@@ -14,6 +14,7 @@ pub fn merge_cols(name: &str, source: &[String], grid: &mut Grid) -> Result<(), 
     let data_type = validate(source, grid)?;
     // BUG: Errors if no rows exist - should skip. Fix when optimised to stream through the data.
     // BUG: If column doesn't exist error is very weak.
+    // merge column not working look at output debug (or output debug not working)
 
     // Add the projected column to the schema.
     grid.schema_mut().add_merged_column(Column::new(name.into(), None, data_type))?;
@@ -21,8 +22,11 @@ pub fn merge_cols(name: &str, source: &[String], grid: &mut Grid) -> Result<(), 
     // Snapshot the schema so we can iterate mutable records in a mutable grid.
     let schema = grid.schema().clone();
 
+    // Get readers for the source data.
+    let mut rdrs = grid.readers();
+
     for record in grid.records_mut() {
-        record.merge_from(source, &schema);
+        record.merge_col_from(source, &schema, &mut rdrs[record.file_idx()])?;
     }
 
     let (duration, _rate) = formatted_duration_rate(1, start.elapsed());

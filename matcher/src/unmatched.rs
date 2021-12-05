@@ -1,6 +1,6 @@
 use csv::Writer;
 use std::{collections::HashMap, fs::File, path::PathBuf};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record, schema::FileSchema}, Context};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context};
 
 ///
 /// Manages the unmatched files for the current job.
@@ -16,7 +16,6 @@ struct UnmatchedFile {
     rows: usize,
     path: PathBuf,
     full_filename: String, // CURRENT filename, e.g. 20211126_072400000_invoices.unmatched.csv.
-    schema: FileSchema,    // A copy of the original fileschema.
     writer: Writer<File>,
 }
 
@@ -30,7 +29,7 @@ impl UnmatchedHandler {
         let mut files: HashMap<String, UnmatchedFile> = HashMap::new();
 
         // Create an unmatched file for each original sourced data file (i.e. there may be )
-        for file in grid.files() {
+        for file in grid.schema().files() {
             // We're using original_filename here to ensure files like 'x.unmatched.csv' don't create
             // files 'x.unmatched.unmatched.csv'.
             if !files.contains_key(file.original_filename()) {
@@ -42,8 +41,8 @@ impl UnmatchedHandler {
                     .map_err(|source| MatcherError::CannotCreateUnmatchedFile{ path: output_path.to_canoncial_string(), source })?;
 
                 // Add the column header and schema rows.
-                let schema = grid.schema().file_schemas().get(file.schema())
-                    .ok_or(MatcherError::MissingSchemaInGrid{ filename: file.filename().into(), index: file.schema()  })?;
+                let schema = grid.schema().file_schemas().get(file.schema_idx())
+                    .ok_or(MatcherError::MissingSchemaInGrid{ filename: file.filename().into(), index: file.schema_idx()  })?;
 
                 writer.write_record(schema.columns().iter().map(|c| c.header_no_prefix()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteHeaders{ filename: file.filename().into(), source })?;
@@ -51,7 +50,7 @@ impl UnmatchedHandler {
                 writer.write_record(schema.columns().iter().map(|c| c.data_type().to_str()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteSchema{ filename: file.filename().into(), source })?;
 
-                files.insert(file.original_filename().into(), UnmatchedFile{ full_filename, path: output_path.clone(), rows: 0, writer, schema: schema.clone() });
+                files.insert(file.original_filename().into(), UnmatchedFile{ full_filename, path: output_path.clone(), rows: 0, writer });
 
                 log::trace!("Created file {}", output_path.to_canoncial_string());
             }
@@ -61,11 +60,17 @@ impl UnmatchedHandler {
     }
 
     pub fn write_records(&mut self, records: &[Box<Record>], grid: &Grid) -> Result<(), MatcherError> {
-        // TODO: This can be optimised but wait unti we're streaming data.
+        // TODO: This can be optimised but wait unti we're streaming data. don't need write_records AND complete file.
+
+        // Open readers for each sourced file of data.
+        let mut readers: Vec<csv::Reader<File>> = grid.schema().files()
+            .iter()
+            .map(|f| csv::ReaderBuilder::new().from_path(f.path()).unwrap())
+            .collect();
 
         for record in records {
             // Get the unmatched-file for this record.
-            let filename = grid.files().get(record.file_idx())
+            let filename = grid.schema().files().get(record.file_idx())
                 .ok_or(MatcherError::UnmatchedFileNotInGrid { file_idx: record.file_idx() })?
                 .filename();
 
@@ -75,13 +80,14 @@ impl UnmatchedHandler {
             // Track how many records are written to each unmatched file.
             unmatched.rows += 1;
 
-            // Copy the record and truncate any projected or merged fields from it so we only write the
-            // original record to disc.
-            let mut copy = record.inner().clone();
-            copy.truncate(unmatched.schema.columns().len());
+            // Copy the original CSV record to the unmatched file.
+            let csv_data = record.read_csv_record(&mut readers[record.file_idx()])?;
 
-            unmatched.writer.write_byte_record(&copy)
-                .map_err(|source| MatcherError::CannotWriteUnmatchedRecord { filename: unmatched.full_filename.clone(), row: record.row(), source })?;
+            unmatched.writer.write_byte_record(&csv_data)
+                .map_err(|source| MatcherError::CannotWriteUnmatchedRecord {
+                    filename: unmatched.full_filename.clone(),
+                    row: record.row(), source
+                })?;
         }
 
         Ok(())

@@ -37,8 +37,8 @@ pub enum ToleranceType {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum Constraint {
-    NetsToZero { column: String, lhs: String, rhs: String, debug: Option<bool> },
-    NetsWithTolerance { column: String, lhs: String, rhs: String, tol_type: ToleranceType, tolerance: Decimal, debug: Option<bool> },
+    NetsToZero { column: String, lhs: String, rhs: String },
+    NetsWithTolerance { column: String, lhs: String, rhs: String, tol_type: ToleranceType, tolerance: Decimal },
     Custom { script: String, fields: Option<Vec<String>> }
     // TODO: Count, Sum, Min, Max, Avg is required!
     // Custom Lua with access to Count, Sum and all records in the group (so table of tables): records[1]["invoices.blah"]

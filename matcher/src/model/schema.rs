@@ -1,10 +1,12 @@
 use std::{collections::HashMap, fs};
 use crate::{model::{data_type::DataType, record::Record}, error::MatcherError};
 
+use super::datafile::DataFile;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Column {
-    header: String,
-    header_no_prefix: String,
+    header: String,            // For example, INV.Amount
+    header_no_prefix: String,  // For example, Amount
     data_type: DataType,
 }
 
@@ -13,8 +15,8 @@ pub struct Column {
 ///
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileSchema {
-    prefix: Option<String>, // The short part of the filename - see folders::shortname() for details. Each header name
-    columns: Vec<Column>,   // is prefixed by this. So 'invoices.amount' for example.
+    prefix: Option<String>, // The prefix is appended to every header in this schema. So if the prefix is INV, 'INV.Amount'.
+    columns: Vec<Column>,   // Column headers from this file only.
 }
 
 ///
@@ -29,13 +31,31 @@ pub struct GridSchema {
     // specific record - as records may have different underlying FileSchemas.
     headers: Vec<String>,
     col_map: HashMap<String, Column>,
-    position_map: HashMap<usize /* file_schema idx */, HashMap<String /* header */, usize /* column idx */>>,
 
-    // Schemas from the files.
+    // A map of maps to resolve a column by it's header name and then resolve that for a specific sourced csv file.
+    // Column positions can be positive or negative.
+    //
+    // Positive positions run left-to-right and start to the right of negative positions. They represent real CSV columns
+    // and map 1-2-1 with the header position in the csv file. Indexes start at zero.
+    //
+    // Negative position run right-to-left and start to the left of positive positions. They represent dervice columns
+    // created from col projections and column mergers. Indexes start at -1.
+    //
+    // Eg. | AA | BB | CC | DD | EE | FF |
+    //     | -3 | -2 | -1 |  0 |  1 |  2 |
+    //
+    // In the above example AA, BB and CC are derived columns. DD, EE and FF represent real CSV columns.
+    //
+    position_map: HashMap<usize /* file_schema idx */, HashMap<String /* header */, isize /* column idx */>>,
+
+    // All of the files used to source records.
+    files: Vec<DataFile>,
+
+    // Schemas from the files. Multiple files may use the same schema.
     file_schemas: Vec<FileSchema>,
 
-    // Artificial columns.
-    artificial_columns: Vec<Column>,
+    // Columns created from projection and merge instructions.
+    derived_cols: Vec<Column>,
 }
 
 impl Column {
@@ -75,9 +95,15 @@ impl GridSchema {
             headers: Vec::new(),
             col_map: HashMap::new(),
             position_map: HashMap::new(),
+            files: Vec::new(),
             file_schemas: Vec::new(),
-            artificial_columns: Vec::new(),
+            derived_cols: Vec::new(),
         }
+    }
+
+    pub fn add_file(&mut self, file: DataFile) -> usize {
+        self.files.push(file);
+        self.files.len() - 1
     }
 
     ///
@@ -99,27 +125,31 @@ impl GridSchema {
     /// Added the projected column or error if it already exists.
     ///
     pub fn add_projected_column(&mut self, column: Column) -> Result<usize, MatcherError> {
-        if self.artificial_columns.contains(&column) {
+        if self.derived_cols.contains(&column) {
             // TODO: This and merged should also check real columns for clashes.
             return Err(MatcherError::ProjectedColumnExists { header: column.header })
         }
 
-        self.artificial_columns.push(column);
+        self.derived_cols.push(column);
         self.rebuild_cache();
-        Ok(self.artificial_columns.len() - 1)
+        Ok(self.derived_cols.len() - 1)
     }
 
     ///
     /// Added the merged column or error if it already exists.
     ///
     pub fn add_merged_column(&mut self, column: Column) -> Result<usize, MatcherError> {
-        if self.artificial_columns.contains(&column) {
+        if self.derived_cols.contains(&column) {
             return Err(MatcherError::MergedColumnExists { header: column.header })
         }
 
-        self.artificial_columns.push(column);
+        self.derived_cols.push(column);
         self.rebuild_cache();
-        Ok(self.artificial_columns.len() - 1)
+        Ok(self.derived_cols.len() - 1)
+    }
+
+    pub fn files(&self) -> &[DataFile] {
+        &self.files
     }
 
     pub fn file_schemas(&self) -> &[FileSchema] {
@@ -145,8 +175,8 @@ impl GridSchema {
         }
     }
 
-    pub fn position_in_record(&self, header: &str, record: &Record) -> Option<&usize> {
-        match self.position_map.get(&record.schema_idx()) {
+    pub fn position_in_record(&self, header: &str, record: &Record) -> Option<&isize> {
+        match self.position_map.get(&self.files[record.file_idx()].schema_idx()) {
             Some(position_map) => position_map.get(header),
             None => None,
         }
@@ -163,41 +193,39 @@ impl GridSchema {
             .enumerate()
             .for_each(|(idx, _fsc)| { position_map.insert(idx, HashMap::new()); });
 
-        // Cache all the projected columns. They start as the left-most column in the main grid.
-        self.artificial_columns
+        // Cache all the projected columns.
+        self.derived_cols
             .iter()
             .enumerate()
-            .for_each(|(idx, col)| {
+            .for_each(|(c_idx, col)| {
                 headers.push(col.header.clone());
                 col_map.insert(col.header.clone(), col.clone());
                 self.file_schemas
                     .iter()
                     .enumerate()
-                    .for_each(|(sdx, fsc)| {
-                        // Projected columns map to the right-most set of columns in the underlying Record/File schema.
+                    .for_each(|(fs_idx, _fsc)| {
                         position_map
-                            .get_mut(&sdx)
+                            .get_mut(&fs_idx)
                             .unwrap()
-                            .insert(col.header.clone(), fsc.columns().len() + idx);
+                            .insert(col.header.clone(), (c_idx + 1) as isize * -1); // Derived columns start at -1
                     });
             });
 
-        // Cache all the file schema columns. The first file forms the first set of columns, then the second file and so on.
+        // Cache all the file schema columns.
         self.file_schemas
             .iter()
             .enumerate()
-            .for_each(|(sdx, fsc)| {
+            .for_each(|(fs_idx, fsc)| {
                 fsc.columns()
                     .iter()
                     .enumerate()
-                    .for_each(|(cdx, col)| {
+                    .for_each(|(c_idx, col)| {
                         headers.push(col.header.clone());
                         col_map.insert(col.header.clone(), col.clone());
-                         // File schema columns map to the left-most set of columns in the underlying Record/File schema.
                          position_map
-                            .get_mut(&sdx)
+                            .get_mut(&fs_idx)
                             .unwrap()
-                            .insert(col.header.clone(), cdx);
+                            .insert(col.header.clone(), c_idx as isize);
                     } );
             } );
 
@@ -229,7 +257,7 @@ impl FileSchema {
                 Some(raw_type) => {
                     let parsed = raw_type.into();
                     if parsed == DataType::UNKNOWN {
-                        return Err(MatcherError::UnknownDataTypeInColumn { column: idx })
+                        return Err(MatcherError::UnknownDataTypeInColumn { column: idx as isize })
                     }
                     parsed
                 },

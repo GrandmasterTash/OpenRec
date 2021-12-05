@@ -1,5 +1,5 @@
-use std::fs::DirEntry;
 use ubyte::ToByteUnit;
+use std::fs::{DirEntry, File};
 use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue};
 
 ///
@@ -27,22 +27,16 @@ use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{dat
 /// Note: No memory is allocted for the empty cells shown above.
 ///
 pub struct Grid {
-    files: Vec<DataFile>,      // All of the files used to source records.
-    records: Vec<Box<Record>>, // Represents each row from each of the above files.
+    records: Vec<Box<Record>>, // Represents each row from one of the sourced files.
     schema: GridSchema,        // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
 
 impl Grid {
     pub fn new() -> Self {
         Self {
-            files: vec!(),
             records: vec!(),
             schema: GridSchema::new(),
         }
-    }
-
-    pub fn files(&self) -> &[DataFile] {
-        &self.files
     }
 
     pub fn schema(&self) -> &GridSchema {
@@ -53,13 +47,8 @@ impl Grid {
         &mut self.schema
     }
 
-    pub fn add_file(&mut self, file: DataFile) -> usize {
-        self.files.push(file);
-        self.files.len() - 1
-    }
-
-    pub fn add_record(&mut self, record: Record) {
-        self.records.push(Box::new(record));
+    pub fn add_record(&mut self, record: Box<Record>) {
+        self.records.push(record);
     }
 
     pub fn remove_matched(&mut self) {
@@ -74,51 +63,11 @@ impl Grid {
         self.records.iter_mut().collect()
     }
 
-    pub fn record_data<'a>(&self, record: &'a Record) -> Vec<Option<&'a [u8]>> {
-        let mut data = Vec::with_capacity(self.schema().headers().len());
-
-        for header in self.schema().headers() {
-            if let Some(col) = self.schema().position_in_record(header, record) {
-                if let Some(value) = record.inner().get(*col) {
-                    data.push(Some(value));
-                    continue;
-                }
-            }
-            data.push(None);
-        }
-
-        data
-    }
-
-    ///
-    /// Dump the record to a string
-    ///
-    pub fn record_as_string(&self, idx: usize) -> Option<String> {
-        let record = match self.records.get(idx) {
-            Some(rec) => rec,
-            None => return None,
-        };
-
-        let mut data = Vec::with_capacity(self.schema().headers().len());
-
-        for header in self.schema().headers() {
-            if let Some(col) = self.schema().position_in_record(header, record) {
-                if let Some(value) = record.inner().get(*col) {
-                    data.push(format!("{}: \"{}\"", header, String::from_utf8_lossy(value)));
-                    continue;
-                }
-            }
-            data.push(format!("{}: --", header));
-        }
-
-        Some(data.join(", "))
-    }
-
     ///
     /// Return how much memory all the ByteRecords are using.
     ///
     pub fn memory_usage(&self) -> usize {
-        self.records.iter().map(|r| r.inner().as_slice().len()).sum()
+        self.records.iter().map(|r| r.memory_usage()).sum()
     }
 
     ///
@@ -128,7 +77,6 @@ impl Grid {
 
         for (idx, pattern) in ctx.charter().file_patterns().iter().enumerate() {
             log::info!("Sourcing data with pattern [{}]", pattern);
-            // TODO: PRint grid memory after each file is sourced.
             // TODO: Validate the source path is canonicalised in the rec base.
 
             // Track schema's added for this source instruction - if any do not equal, return a validation error.
@@ -154,15 +102,18 @@ impl Grid {
                 last_schema_idx = self.validate_schema(schema_idx, &last_schema_idx, &schema, pattern)?;
 
                 // Register the data file with the grid.
-                let file_idx = self.add_file(DataFile::new(&file, schema_idx)?);
+                let file_idx = self.schema.add_file(DataFile::new(&file, schema_idx)?);
 
                 // Load the data as bytes into memory.
                 for result in rdr.byte_records() {
-                    let record = result
+                    let csv_record = result // Ensure we can read the record - but ignore it at this point.
                         .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
 
                     count += 1;
-                    self.add_record(Record::new(file_idx, schema_idx, count + /* 2 header rows */ 2, record));
+
+                    let record = Box::new(Record::new(file_idx as u16, &csv_record.position()
+                        .expect("No position for a record in a file?").clone()));
+                    self.add_record(record);
                 }
 
                 log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
@@ -188,23 +139,30 @@ impl Grid {
     }
 
     ///
+    /// Return a CSV reader for each source file.
+    ///
+    pub fn readers(&self) -> Vec<csv::Reader<File>> {
+        self.schema()
+            .files()
+            .iter()
+            .map(|f| csv::ReaderBuilder::new().from_path(f.path()).unwrap())
+            .collect()
+    }
+
+    ///
     /// Writes all the grid's data to a file at this point
     ///
     pub fn debug_grid(&self, ctx: &Context, filename: &str) {
         let output_path = folders::debug_path(ctx).join(filename);
-        // let output_path = folders::debug_path().join(format!("{}output.csv", folders::new_timestamp()));
         log::info!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
         let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
         wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
 
+        let mut rdrs = self.readers();
+
         for record in &self.records {
-            // self.record_as_string(idx)
-            let data: Vec<&[u8]> = self.record_data(record)
-                .iter()
-                .map(|v| v.unwrap_or(b""))
-                .collect();
-            wtr.write_byte_record(&data.into()).expect("Unable to write record");
+            wtr.write_record(record.as_strings(self.schema(), &mut rdrs[record.file_idx()])).expect("Unable to write record");
         }
 
         wtr.flush().expect("Unable to flush the debug file");

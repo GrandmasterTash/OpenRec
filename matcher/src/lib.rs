@@ -1,6 +1,7 @@
 mod lua;
 mod error;
 mod model;
+mod convert;
 mod folders;
 mod matched;
 mod unmatched;
@@ -14,12 +15,19 @@ use std::time::{Duration, Instant};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid}, instructions::merge_col::merge_cols, instructions::project_col::project_column, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
 // TODO: Alter source_data to only retain columns required for matching.
-//   This will mean unmatched data will be written in a different way.
 //   Also - consider memory compaction, string table, etc.
+//   After memory compaction appears any projection (even bools) add signigicant overhead.
+//   Will look at 2021-12-05_064000000_invoices.derived.csv files to store projections and merged columns.
+//   Writing new file very fast. Suggest new strategy. Write all projected and merged columns to .derived file.
+//   Record should source from that file instead. CREATE A FILE ACCESSOR type FIRST!!!!!!!!!!!!!!!
+//   Suggest derived vec used during all projections and mergers, then flushed to disk and dropped.
+
+
 // TODO: Flesh-out examples.
 // TODO: Unit/integration tests. Lots.
 // TODO: Check code coverage.
 // TODO: Clippy!
+// TODO: Investigate sled for disk based groupings...
 
 ///
 /// Created for each match job. Used to pass the main top-level things around.
@@ -70,6 +78,25 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     // Move any waiting files to the matching folder.
     folders::progress_to_matching(&ctx)?;
 
+    // Experiment....
+    // let rows = 1000000;
+    // let path = folders::matching(&ctx).join("write_test.csv");
+
+    // println!("Writing {} records to CSV {:?}", rows, path.to_str());
+    // let mut writer = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(path).unwrap();
+
+    // for idx in 1..1000 {
+    //     let mut record = csv::ByteRecord::new();
+    //     record.push_field(&Decimal::ONE_THOUSAND.serialize());
+    //     record.push_field(format!("REF{}", idx).as_bytes());
+    //     writer.write_record(&record).unwrap();
+    // }
+
+    // writer.flush().unwrap();
+
+    // println!("Sleeping for 8...");
+    // std::thread::sleep(std::time::Duration::from_secs(8));
+
     // Iterate alphabetically matching files.
     process_charter(&ctx)?;
 
@@ -115,6 +142,9 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
     }
 
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
+        // println!("Sleeping for 8...");
+        // std::thread::sleep(std::time::Duration::from_secs(8));
+
         match inst {
             Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when.as_ref().map(String::as_ref), &mut grid, &lua)?,
             Instruction::MergeColumns { into, from } => merge_cols(into, from, &mut grid)?,

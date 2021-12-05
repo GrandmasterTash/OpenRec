@@ -28,6 +28,9 @@ pub enum MatcherError {
     #[error("Unable to create unmatched file {path}")]
     CannotCreateUnmatchedFile { path: String, source: csv::Error },
 
+    #[error("A record indexed a file not in the schema/grid {index}")]
+    MissingFileInSchema { index: usize },
+
     #[error("The schema for file {filename} {index} was not in the data grid")]
     MissingSchemaInGrid { filename: String, index: usize },
 
@@ -39,6 +42,12 @@ pub enum MatcherError {
 
     #[error("Unable to read row from {path}")]
     CannotParseCsvRow { path: String, source: csv::Error },
+
+    #[error("Unable to read CSV {data_type} field from {bytes}")]
+    UnparseableCsvField { data_type: String, bytes: String },
+
+    #[error("Unable to parse type {data_type} field from {bytes}")]
+    UnparseableInternalBytesField { data_type: String, bytes: String },
 
     #[error("CSV file had no initial schema row")]
     NoSchemaRow { source: csv::Error },
@@ -62,7 +71,10 @@ pub enum MatcherError {
     CannotWriteUnmatchedRecord { filename: String, row: usize, source: csv::Error },
 
     #[error("Unknown data type specified in column {column}")]
-    UnknownDataTypeInColumn { column: usize },
+    UnknownDataTypeInColumn { column: isize },
+
+    #[error("Unknown data type specified for header {header}")]
+    UnknownDataTypeForHeader { header: String },
 
     #[error("No data type specified for column {column}")]
     NoSchemaTypeForColumn { column: usize },
@@ -79,8 +91,11 @@ pub enum MatcherError {
     #[error("Merged column {header} already exists")]
     MergedColumnExists { header: String },
 
-    #[error("Lua error in script\neval: {eval}\nreturn type: {data_type}\nwhen: {when}\nrecord: {record}")]
-    ProjectColScriptError { eval: String, when: String, data_type: String, record: String, source: rlua::Error },
+    #[error("Lua error in script\neval: {eval}\nreturn type: {data_type}\nwhen: {when}\row: {row}")]
+    ProjectColScriptError { eval: String, when: String, data_type: String, row: usize, source: rlua::Error },
+
+    #[error("Error in custom Lua constraint")]
+    CustomConstraintError { source: rlua::Error },
 
     #[error("Column {header} doesn't exist in the source data and cannot be used to merge")]
     MissingSourceColumn { header: String },
@@ -118,8 +133,9 @@ pub enum MatcherError {
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 
-    /// Represents all other cases of `std::io::Error`.
+    #[error(transparent)]
+    CSVError(#[from] csv::Error),
+
     #[error(transparent)]
     IOError(#[from] std::io::Error),
-
 }

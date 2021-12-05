@@ -1,18 +1,22 @@
+use std::fs::File;
 use rlua::Context;
 use rust_decimal::Decimal;
-use crate::{model::{charter::{Constraint, ToleranceType}, data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua, blue};
+use crate::{model::{charter::{Constraint, ToleranceType}, data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua};
 
 impl Constraint {
-    pub fn passes(&self, records: &[&Box<Record>], schema: &GridSchema, lua_ctx: &Context)
-        -> Result<bool, rlua::Error> {
+    pub fn passes(
+        &self, records: &[&Box<Record>],
+        schema: &GridSchema,
+        rdrs: &mut Vec<csv::Reader<File>>,
+        lua_ctx: &Context) -> Result<bool, MatcherError> {
 
         match self {
-            Constraint::NetsToZero { column, lhs, rhs, debug } => {
+            Constraint::NetsToZero { column, lhs, rhs } => {
                 let sum_checker = |lhs_sum, rhs_sum| (lhs_sum - rhs_sum) == Decimal::ZERO;
-                net(column, lhs, rhs, sum_checker, debug, records, schema, lua_ctx)
+                net(column, lhs, rhs, sum_checker, records, schema, rdrs, lua_ctx)
             },
 
-            Constraint::NetsWithTolerance {column, lhs, rhs, tol_type, tolerance, debug } => {
+            Constraint::NetsWithTolerance {column, lhs, rhs, tol_type, tolerance } => {
                 let sum_checker: Box<dyn Fn(Decimal, Decimal) -> bool> = match tol_type {
                     ToleranceType::Amount  => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| (lhs_sum - rhs_sum).abs() < *tolerance),
                     ToleranceType::Percent => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
@@ -23,10 +27,10 @@ impl Constraint {
                     }),
                 };
 
-                net(column, lhs, rhs, sum_checker, debug, records, schema, lua_ctx)
+                net(column, lhs, rhs, sum_checker, records, schema, rdrs, lua_ctx)
             },
 
-            Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, lua_ctx),
+            Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, rdrs, lua_ctx),
         }
     }
 }
@@ -43,43 +47,32 @@ fn net<F>(
     lhs: &str,
     rhs: &str,
     sum_checker: F,
-    debug: &Option<bool>,
     records: &[&Box<Record>],
     schema: &GridSchema,
-    lua_ctx: &Context) -> Result<bool, rlua::Error>
+    rdrs: &mut Vec<csv::Reader<File>>,
+    lua_ctx: &Context) -> Result<bool, MatcherError>
 
     where F: Fn(Decimal, Decimal) -> bool, {
 
     // Validate NET column exists and is a DECIMAL (we can relax the type resiction if needed).
     if !schema.headers().contains(column) {
-        return Err(rlua::Error::external(MatcherError::ConstraintColumnMissing{ column: column.into() }))
+        return Err(MatcherError::ConstraintColumnMissing{ column: column.into() })
     }
 
     if *schema.data_type(column).unwrap_or(&DataType::UNKNOWN) != DataType::DECIMAL {
-        return Err(rlua::Error::external(MatcherError::ConstraintColumnNotDecimal{ column: column.into() }))
+        return Err(MatcherError::ConstraintColumnNotDecimal{ column: column.into() })
     }
 
     // Collect records in the group which match lhs and rhs filters.
-    let lhs_recs = lua_filter(records, lhs, lua_ctx, schema)?;
-    let rhs_recs = lua_filter(records, rhs, lua_ctx, schema)?;
+    let lhs_recs = lua_filter(records, lhs, lua_ctx, schema, rdrs)?;
+    let rhs_recs = lua_filter(records, rhs, lua_ctx, schema, rdrs)?;
 
     // Sum the NETting column for records on both sides.
-    let lhs_sum: Decimal = lhs_recs.iter().map(|r| r.get_decimal(column, schema).unwrap_or(Decimal::ZERO)).sum();
-    let rhs_sum: Decimal = rhs_recs.iter().map(|r| r.get_decimal(column, schema).unwrap_or(Decimal::ZERO)).sum();
+    let lhs_sum: Decimal = lhs_recs.iter().map(|r| r.get_decimal(column, schema, &mut rdrs[r.file_idx()]).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
+    let rhs_sum: Decimal = rhs_recs.iter().map(|r| r.get_decimal(column, schema, &mut rdrs[r.file_idx()]).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
 
     // The constraint passes if the sides net to zero AND there is at least one record from each side.
     let net = sum_checker(lhs_sum, rhs_sum) && (lhs_recs.len() > 0 && rhs_recs.len() > 0);
-
-    // If the records don't net then, if we're debugging the constraint, output the group values.
-    if !net && debug.unwrap_or(false) {
-        let mut dbg = format!("{}\n", column);
-        lhs_recs.iter().for_each(|r| dbg += &format!("{:<30}: {}\n", r.get_decimal(column, schema).unwrap_or(Decimal::ZERO), lhs) );
-        dbg += &format!("{}: SUM\n", blue(&format!("{:<30}", lhs_sum)));
-
-        rhs_recs.iter().for_each(|r| dbg += &format!("{:<30}: {}\n", r.get_decimal(column, schema).unwrap_or(Decimal::ZERO), rhs) );
-        dbg += &format!("{}: SUM", blue(&format!("{:<30}", rhs_sum)));
-        log::info!("NetToZero constraint failed for group\n{}", dbg);
-    }
 
     // Do the records NET to zero?
     Ok(net)
@@ -88,15 +81,19 @@ fn net<F>(
 ///
 /// Filter the records using the Lua expression and return the filtered list.
 ///
-fn lua_filter<'a, 'b>(records: &[&'a Box<Record>], lua_script: &str, lua_ctx: &'b Context, schema: &GridSchema)
-    -> Result<Vec<&'a Box<Record>>, rlua::Error> {
+fn lua_filter<'a, 'b>(
+    records: &[&'a Box<Record>],
+    lua_script: &str,
+    lua_ctx: &'b Context,
+    schema: &GridSchema,
+    rdrs: &mut Vec<csv::Reader<File>>) -> Result<Vec<&'a Box<Record>>, MatcherError> {
 
     let mut results = vec!();
     let script_cols = lua::script_columns(lua_script, &schema);
     let globals = lua_ctx.globals();
 
     for record in records {
-        let lua_record = lua::lua_record(record, &script_cols, &schema, lua_ctx)?;
+        let lua_record = lua::lua_record(record, &script_cols, &schema, &mut rdrs[record.file_idx()], lua_ctx)?;
         globals.set("record", lua_record)?;
 
         let lua_meta = lua::lua_meta(record, &schema, lua_ctx)?;
@@ -113,7 +110,14 @@ fn lua_filter<'a, 'b>(records: &[&'a Box<Record>], lua_script: &str, lua_ctx: &'
 ///
 /// Allow entirely custom Lua script to be evaluated for a group constraint.
 ///
-fn custom_constraint(script: &str, fields: &Option<Vec<String>>, records: &[&Box<Record>], schema: &GridSchema, lua_ctx: &Context) -> Result<bool, rlua::Error> {
+fn custom_constraint(
+    script: &str,
+    fields: &Option<Vec<String>>,
+    records: &[&Box<Record>],
+    schema: &GridSchema,
+    rdrs: &mut Vec<csv::Reader<File>>,
+    lua_ctx: &Context) -> Result<bool, MatcherError> {
+
     let script_cols = match fields {
         Some(fields) => {
             let fields = fields.iter().map(|f|f.as_str()).collect::<Vec<&str>>();
@@ -131,7 +135,7 @@ fn custom_constraint(script: &str, fields: &Option<Vec<String>>, records: &[&Box
     let lua_records = lua_ctx.create_table()?;
 
     for (idx, record) in records.iter().enumerate() {
-        let lua_record = lua::lua_record(record, &script_cols, &schema, lua_ctx)?;
+        let lua_record = lua::lua_record(record, &script_cols, &schema, &mut rdrs[record.file_idx()], lua_ctx)?;
         lua_records.set(idx + 1, lua_record)?;
 
         let lua_meta = lua::lua_meta(record, &schema, lua_ctx)?;
@@ -141,4 +145,5 @@ fn custom_constraint(script: &str, fields: &Option<Vec<String>>, records: &[&Box
     globals.set("metas", lua_metas)?;
     globals.set("records", lua_records)?;
     lua_ctx.load(&script).eval::<bool>()
+        .map_err(|source| MatcherError::CustomConstraintError { source })
 }
