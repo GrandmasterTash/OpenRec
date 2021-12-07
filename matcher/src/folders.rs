@@ -42,6 +42,7 @@ use crate::{model::datafile::DataFile, error::MatcherError, Context};
 // The root folder under which all data files are processed. In future this may become a mandatory command-line arg.
 pub const IN_PROGRESS: &str = ".inprogress";
 pub const UNMATCHED: &str = ".unmatched.csv";
+pub const DERIVED: &str = "derived.csv";
 
 lazy_static! {
     static ref FILENAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.csv$").unwrap();
@@ -225,7 +226,7 @@ pub fn new_matched_file(ctx: &Context) -> PathBuf {
 }
 
 ///
-/// e.g. 20201118_053000000_invoices.unmatched.csv
+/// e.g. 20201118_053000000_invoices.unmatched.csv.inprogress
 ///
 pub fn new_unmatched_file(ctx: &Context, file: &DataFile) -> PathBuf {
     unmatched(ctx).join(format!("{}_{}{}{}", file.timestamp(), file.shortname(), UNMATCHED, IN_PROGRESS))
@@ -320,6 +321,24 @@ pub fn filename(pb: &PathBuf) -> Result<String, MatcherError> {
         Some(os_str) => Ok(os_str.to_string_lossy().into()),
         None => Err(MatcherError::PathNotAFile { path: pb.to_canoncial_string() }),
     }
+}
+
+///
+/// Take the path to a data file and return a path to a derived data file from it.
+///
+/// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.inprogress
+///    -> $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.inprogress.derived.csv
+///
+/// e.g. $REC_HOME/unmatched/20191209_020405000_INV.csv
+///    -> $REC_HOME/unmatched/20191209_020405000_INV.csv.derived.csv
+///
+pub fn derived(entry: &DirEntry) -> Result<PathBuf, MatcherError> {
+
+    if is_data_file(entry) || is_unmatched_data_file(entry) {
+        return Ok(entry.path().with_extension(DERIVED))
+    }
+
+    Err(MatcherError::FileCantBeDerived { path: entry.path().to_canoncial_string() })
 }
 
 ///

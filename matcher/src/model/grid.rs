@@ -1,6 +1,8 @@
 use ubyte::ToByteUnit;
 use std::fs::{DirEntry, File};
+use super::data_accessor::DataAccessor;
 use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue};
+
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -141,28 +143,31 @@ impl Grid {
     ///
     /// Return a CSV reader for each source file.
     ///
-    pub fn readers(&self) -> Vec<csv::Reader<File>> {
-        self.schema()
-            .files()
-            .iter()
-            .map(|f| csv::ReaderBuilder::new().from_path(f.path()).unwrap())
-            .collect()
-    }
+    // TODO: Move into DataAccessor.
+    // #[deprecated]
+    // pub fn readers(&self) -> Vec<csv::Reader<File>> {
+    //     self.schema()
+    //         .files()
+    //         .iter()
+    //         .map(|f| csv::ReaderBuilder::new().from_path(f.path()).unwrap())
+    //         .collect()
+    // }
 
     ///
     /// Writes all the grid's data to a file at this point
     ///
-    pub fn debug_grid(&self, ctx: &Context, filename: &str) {
+    pub fn debug_grid(&self, ctx: &Context, filename: &str, accessor: &mut DataAccessor) {
         let output_path = folders::debug_path(ctx).join(filename);
         log::info!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
         let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
         wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
 
-        let mut rdrs = self.readers();
+        // let mut rdrs = self.readers();
 
         for record in &self.records {
-            wtr.write_record(record.as_strings(self.schema(), &mut rdrs[record.file_idx()])).expect("Unable to write record");
+            // wtr.write_record(record.as_strings(self.schema(), &mut rdrs[record.file_idx()])).expect("Unable to write record");
+            wtr.write_record(record.as_strings(self.schema(), accessor)).expect("Unable to write record");
         }
 
         wtr.flush().expect("Unable to flush the debug file");

@@ -1,4 +1,6 @@
 use std::{collections::HashMap, fs};
+use itertools::Itertools;
+
 use crate::{model::{data_type::DataType, record::Record}, error::MatcherError};
 
 use super::datafile::DataFile;
@@ -166,6 +168,10 @@ impl GridSchema {
 
     pub fn columns(&self) -> Vec<&Column> {
         self.col_map.values().collect()
+    }
+
+    pub fn derived_columns(&self) -> Vec<&Column> {
+        self.derived_cols.iter().collect_vec()
     }
 
     pub fn data_type(&self, header: &str) -> Option<&DataType> {

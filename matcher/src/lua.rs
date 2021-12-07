@@ -3,7 +3,7 @@ use std::fs::File;
 use rust_decimal::Decimal;
 use rlua::{Context, Table};
 use lazy_static::lazy_static;
-use crate::{model::{data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError};
+use crate::{model::{data_type::DataType, record::Record, schema::{Column, GridSchema}, data_accessor::DataAccessor}, error::MatcherError};
 
 lazy_static! {
     static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();
@@ -32,8 +32,9 @@ pub fn script_columns<'a>(script: &str, schema: &'a GridSchema) -> Vec<&'a Colum
 pub fn lua_record<'a>(
     record: &Record,
     script_cols: &[&Column],
-    schema: &GridSchema,
-    rdr: &mut csv::Reader<File>,
+    /* schema: &GridSchema,
+    rdr: &mut csv::Reader<File>, */
+    accessor: &mut DataAccessor,
     lua_ctx: &Context<'a>) -> Result<Table<'a>, MatcherError> {
 
     let lua_record = lua_ctx.create_table()?;
@@ -41,17 +42,17 @@ pub fn lua_record<'a>(
     for col in script_cols {
         match col.data_type() {
             DataType::UNKNOWN  => {},
-            DataType::BOOLEAN  => lua_record.set(col.header(), record.get_bool(col.header(), &schema, rdr)?)?,
-            DataType::BYTE     => lua_record.set(col.header(), record.get_byte(col.header(), &schema, rdr)?)?,
-            DataType::CHAR     => lua_record.set(col.header(), record.get_char(col.header(), &schema, rdr)?.map(|c|c.to_string()))?,
-            DataType::DATE     => lua_record.set(col.header(), record.get_date(col.header(), &schema, rdr)?)?,
-            DataType::DATETIME => lua_record.set(col.header(), record.get_datetime(col.header(), &schema, rdr)?)?,
-            DataType::DECIMAL  => lua_record.set(col.header(), record.get_decimal(col.header(), &schema, rdr)?.map(|d|LuaDecimal(d)))?,
-            DataType::INTEGER  => lua_record.set(col.header(), record.get_int(col.header(), &schema, rdr)?)?,
-            DataType::LONG     => lua_record.set(col.header(), record.get_long(col.header(), &schema, rdr)?)?,
-            DataType::SHORT    => lua_record.set(col.header(), record.get_short(col.header(), &schema, rdr)?)?,
-            DataType::STRING   => lua_record.set(col.header(), record.get_string(col.header(), &schema, rdr)?)?,
-            DataType::UUID     => lua_record.set(col.header(), record.get_uuid(col.header(), &schema, rdr)?.map(|i|i.to_string()))?,
+            DataType::BOOLEAN  => lua_record.set(col.header(), record.get_bool(col.header(), accessor)?)?,
+            DataType::BYTE     => lua_record.set(col.header(), record.get_byte(col.header(), accessor)?)?,
+            DataType::CHAR     => lua_record.set(col.header(), record.get_char(col.header(), accessor)?.map(|c|c.to_string()))?,
+            DataType::DATE     => lua_record.set(col.header(), record.get_date(col.header(), accessor)?)?,
+            DataType::DATETIME => lua_record.set(col.header(), record.get_datetime(col.header(), accessor)?)?,
+            DataType::DECIMAL  => lua_record.set(col.header(), record.get_decimal(col.header(), accessor)?.map(|d|LuaDecimal(d)))?,
+            DataType::INTEGER  => lua_record.set(col.header(), record.get_int(col.header(), accessor)?)?,
+            DataType::LONG     => lua_record.set(col.header(), record.get_long(col.header(), accessor)?)?,
+            DataType::SHORT    => lua_record.set(col.header(), record.get_short(col.header(), accessor)?)?,
+            DataType::STRING   => lua_record.set(col.header(), record.get_string(col.header(), accessor)?)?,
+            DataType::UUID     => lua_record.set(col.header(), record.get_uuid(col.header(), accessor)?.map(|i|i.to_string()))?,
         }
     }
 

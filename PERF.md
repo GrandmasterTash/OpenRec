@@ -85,7 +85,53 @@ Console output here
 [2021-12-03T14:01:54Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-invoices.csv] from [./tmp/matching] to [./tmp/archive]
 [2021-12-03T14:01:54Z INFO  matcher] Completed match job 6ec38334-6ba4-413a-9ff0-385c7b753044 in 1m 24s 368ms
 
-## Performance After Retaining Nothing
+## Performance After Retaining Only Matching Key
+After retained field overhaul, results were: -
+Peak RAM: 252MB
+Duration: 1m 33s 270ms
+Console output here
+[2021-12-07T06:16:00Z INFO  matcher] Starting match job cf23ca80-2769-4700-9175-256097492007
+[2021-12-07T06:16:00Z INFO  matcher::folders] Using folder REC_HOME [/home/stef/dev/rust/celerity/matcher/tmp]
+[2021-12-07T06:16:00Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-receipts.csv] from [./tmp/waiting] to [./tmp/matching]
+[2021-12-07T06:16:00Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-payments.csv] from [./tmp/waiting] to [./tmp/matching]
+[2021-12-07T06:16:00Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-invoices.csv] from [./tmp/waiting] to [./tmp/matching]
+[2021-12-07T06:16:00Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-invoices.derived.csv] from [./tmp/waiting] to [./tmp/matching]
+[2021-12-07T06:16:00Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-payments.derived.csv] from [./tmp/waiting] to [./tmp/matching]
+[2021-12-07T06:16:00Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-receipts.derived.csv] from [./tmp/waiting] to [./tmp/matching]
+[2021-12-07T06:16:00Z INFO  matcher] Running charter [Performance] v1637208553000
+[2021-12-07T06:16:00Z INFO  matcher::model::grid] Sourcing data with pattern [.*09-BIG-invoices\.csv]
+[2021-12-07T06:16:00Z INFO  matcher::model::grid] Reading file ./tmp/matching/20211130_065025197_09-BIG-invoices.csv (179.83MiB)
+[2021-12-07T06:16:00Z INFO  matcher::model::grid] 250000 records read from file 20211130_065025197_09-BIG-invoices.csv
+[2021-12-07T06:16:00Z INFO  matcher::model::grid] Grid Memory Size: 10MB
+[2021-12-07T06:16:00Z INFO  matcher::model::grid] Sourcing data with pattern [.*09-BIG-payments\.csv]
+[2021-12-07T06:16:00Z INFO  matcher::model::grid] Reading file ./tmp/matching/20211130_065025197_09-BIG-payments.csv (531.37MiB)
+[2021-12-07T06:16:01Z INFO  matcher::model::grid] 874288 records read from file 20211130_065025197_09-BIG-payments.csv
+[2021-12-07T06:16:01Z INFO  matcher::model::grid] Grid Memory Size: 43MiB
+[2021-12-07T06:16:01Z INFO  matcher::model::grid] Sourcing data with pattern [.*09-BIG-receipts\.csv]
+[2021-12-07T06:16:01Z INFO  matcher::model::grid] Reading file ./tmp/matching/20211130_065025197_09-BIG-receipts.csv (550.14MiB)
+[2021-12-07T06:16:01Z INFO  matcher::model::grid] 874288 records read from file 20211130_065025197_09-BIG-receipts.csv
+[2021-12-07T06:16:01Z INFO  matcher::model::grid] Grid Memory Size: 76MiB
+DERIVED_PATH: "./tmp/matching/20211130_065025197_09-BIG-invoices.derived.csv"
+DERIVED_PATH: "./tmp/matching/20211130_065025197_09-BIG-payments.derived.csv"
+DERIVED_PATH: "./tmp/matching/20211130_065025197_09-BIG-receipts.derived.csv"
+[2021-12-07T06:16:59Z INFO  matcher] Grid Memory Size: 76MiB
+[2021-12-07T06:16:59Z INFO  matcher] Grid Memory Size: 76MiB
+[2021-12-07T06:16:59Z INFO  matcher] Grid Memory Size: 76MiB
+[2021-12-07T06:16:59Z INFO  matcher] Grid Memory Size: 76MiB
+[2021-12-07T06:16:59Z INFO  matcher] Grid Memory Size: 76MiB
+[2021-12-07T06:16:59Z INFO  matcher::instructions::match_groups] Grouping by REFERENCE
+[2021-12-07T06:17:33Z INFO  matcher::instructions::match_groups] Matched 249990 out of 249990 groups. Constraints took 31s 599ms (0.126ms/group)
+[2021-12-07T06:17:33Z INFO  matcher] Grid Memory Size: 0B
+[2021-12-07T06:17:33Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-receipts.csv] from [./tmp/matching] to [./tmp/archive]
+[2021-12-07T06:17:33Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-payments.csv] from [./tmp/matching] to [./tmp/archive]
+[2021-12-07T06:17:33Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-invoices.csv] from [./tmp/matching] to [./tmp/archive]
+[2021-12-07T06:17:33Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-invoices.derived.csv] from [./tmp/matching] to [./tmp/archive]
+[2021-12-07T06:17:33Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-payments.derived.csv] from [./tmp/matching] to [./tmp/archive]
+[2021-12-07T06:17:33Z INFO  matcher::folders] Moving file [20211130_065025197_09-BIG-receipts.derived.csv] from [./tmp/matching] to [./tmp/archive]
+[2021-12-07T06:17:33Z INFO  matcher] Completed match job cf23ca80-2769-4700-9175-256097492007 in 1m 33s 270ms
+
+
+## Performance After Retaining Only Compacted Matching Key
 After retained field overhaul, results were: -
 Peak RAM: 
 Duration: 

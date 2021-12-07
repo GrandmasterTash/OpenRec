@@ -1,35 +1,48 @@
 use uuid::Uuid;
+use std::cell::Cell;
 use rust_decimal::Decimal;
-use super::data_type::DataType;
 use csv::{Position, ByteRecord};
-use std::{cell::Cell, fs::File};
 use bytes::{BufMut, BytesMut, Bytes};
+use super::{data_type::DataType, data_accessor::DataAccessor};
 use crate::{model::{schema::GridSchema}, error::MatcherError, convert};
 
 // TODO: Document the two forms of storing - compacted bytes and csv bytes...
 // TODO: Document the derived vec and file reader approach to getting data...
 
+
 pub struct Record {
     file_idx: u16,
-    byte: u64, // Used to build a csv::Position.
-    line: u64, // Used to build a csv::Position.
-    derived: Vec<Bytes>, // Projected and merged column data. Retained. // TODO: Remove from record and pass in to append calls as part of 'DataAccessor'.
+    data_idx: Index,
+    derived_idx: Index,
+    // byte: u64, // Used to build a csv::Position.
+    // line: u64, // Used to build a csv::Position.
+    // derived: Vec<Bytes>, // Projected and merged column data. Retained. // TODO: Remove from record and pass in to append calls as part of 'DataAccessor'.
     matched: Cell<bool>,
+}
+
+///
+/// Used to create a csv::Position to locate the record in a file.
+///
+struct Index {
+    byte: u64,
+    line: u32
 }
 
 impl Record {
     pub fn new(file_idx: u16, pos: &Position) -> Self {
         Self {
-            byte: pos.byte(),
-            line: pos.line(),
+            // byte: pos.byte(),
+            // line: pos.line(),
+            data_idx: Index { byte: pos.byte(), line: pos.line() as u32 },
+            derived_idx: Index { byte: 0, line: 0 },
             file_idx,
-            derived: Vec::new(),
+            // derived: Vec::new(),
             matched: Cell::new(false)
         }
     }
 
     pub fn row(&self) -> usize {
-        self.line as usize
+        self.data_idx.line as usize
     }
 
     pub fn file_idx(&self) -> usize {
@@ -45,9 +58,10 @@ impl Record {
     }
 
     pub fn memory_usage(&self) -> usize {
-        self.derived
-            .iter()
-            .map(|field| field.len()).sum::<usize>() + std::mem::size_of::<Record>()
+        // self.derived
+        //     .iter()
+        //     .map(|field| field.len()).sum::<usize>() +
+        std::mem::size_of::<Record>()
     }
 
     ///
@@ -56,9 +70,27 @@ impl Record {
     ///
     fn pos(&self) -> Position {
         let mut pos = Position::new();
-        pos.set_byte(self.byte);
-        pos.set_line(self.line);
+        pos.set_byte(self.data_idx.byte);
+        pos.set_line(self.data_idx.line as u64);
         pos
+    }
+
+    ///
+    /// Similar to pos, this points to the .dervived data file.
+    ///
+    fn derived_pos(&self) -> Option<Position> {
+        if self.derived_idx.line == 0 {
+            return None
+        }
+        let mut pos = Position::new();
+        pos.set_byte(self.derived_idx.byte);
+        pos.set_line(self.derived_idx.line as u64);
+        Some(pos)
+    }
+
+    pub fn set_derived_pos(&mut self, pos: &Position) {
+        self.derived_idx.byte = pos.byte();
+        self.derived_idx.line = pos.line() as u32;
     }
 
     ///
@@ -74,22 +106,29 @@ impl Record {
     ///
     /// Get the derived value, or load the real value from the backing csv reader.
     ///
-    fn get_bytes(&self, col: isize, data_type: DataType, rdr: &mut csv::Reader<File>)
+    fn get_bytes(&self, col: isize, data_type: DataType, accessor: &mut DataAccessor)
         -> Result<Option<Bytes>, MatcherError> {
 
         match col < 0 {
             true  => { // Derived column.
-                match self.derived.get((col.abs() - 1) as usize) { // -1 -> 0, -2 -> 1, -3 -> 2, etc.
+                // match self.derived.get((col.abs() - 1) as usize) { // -1 -> 0, -2 -> 1, -3 -> 2, etc.
+                match accessor.derived_accessor().get(
+                    (col.abs() - 1) as usize,
+                    self.file_idx as usize, // TODO: Replace last two params with &self?
+                    self.derived_pos()) { // -1 -> 0, -2 -> 1, -3 -> 2, etc.
+
                     Some(bytes) if bytes.len() > 0 => {
-                        let mut bm = BytesMut::new();
-                        bm.put_slice(bytes);
-                        Ok(Some(bm.freeze()))
+                        // let mut bm = BytesMut::new();
+                        // bm.put_slice(bytes);
+                        // Ok(Some(bm.freeze()))
+                        Ok(Some(bytes))
                     },
                     Some(_) |
                     None    => Ok(None),
                 }
             },
             false => { // File column.
+                let rdr = accessor.data_readers().get_mut(self.file_idx as usize).unwrap(); // TODO: Don't unwrap.
                 rdr.seek(self.pos())?;
                 let mut buffer = csv::ByteRecord::new();
                 rdr.read_byte_record(&mut buffer)?;
@@ -98,22 +137,23 @@ impl Record {
                     Some(bytes) if bytes.len() > 0 => {
                         let mut bm = BytesMut::new();
                         bm.put(bytes);
-                        let bytes = bm.freeze();
+                        Ok(Some(bm.freeze()))
+                        // let bytes = bm.freeze();
 
-                        match data_type {
-                            DataType::UNKNOWN => Err(MatcherError::UnknownDataTypeInColumn { column: col }),
-                            DataType::BOOLEAN => Ok(Some(convert::bool_to_bytes(convert::csv_bytes_to_bool(bytes)?))),
-                            DataType::BYTE => Ok(Some(convert::byte_to_bytes(convert::csv_bytes_to_byte(bytes)?))),
-                            DataType::CHAR => Ok(Some(convert::char_to_bytes(convert::csv_bytes_to_char(bytes)?))),
-                            DataType::DATE => Ok(Some(convert::date_to_bytes(convert::csv_bytes_to_date(bytes)?))),
-                            DataType::DATETIME => Ok(Some(convert::datetime_to_bytes(convert::csv_bytes_to_datetime(bytes)?))),
-                            DataType::DECIMAL => Ok(Some(convert::decimal_to_bytes(convert::csv_bytes_to_decimal(bytes)?))),
-                            DataType::INTEGER => Ok(Some(convert::int_to_bytes(convert::csv_bytes_to_int(bytes)?))),
-                            DataType::LONG => Ok(Some(convert::long_to_bytes(convert::csv_bytes_to_long(bytes)?))),
-                            DataType::SHORT => Ok(Some(convert::short_to_bytes(convert::csv_bytes_to_short(bytes)?))),
-                            DataType::STRING => Ok(Some(convert::string_to_bytes(&convert::csv_bytes_to_string(bytes)?))),
-                            DataType::UUID => Ok(Some(convert::uuid_to_bytes(convert::csv_bytes_to_uuid(bytes)?))),
-                        }
+                        // match data_type {
+                        //     DataType::UNKNOWN => Err(MatcherError::UnknownDataTypeInColumn { column: col }),
+                        //     DataType::BOOLEAN => Ok(Some(convert::bool_to_bytes(convert::csv_bytes_to_bool(bytes)?))),
+                        //     DataType::BYTE => Ok(Some(convert::byte_to_bytes(convert::csv_bytes_to_byte(bytes)?))),
+                        //     DataType::CHAR => Ok(Some(convert::char_to_bytes(convert::csv_bytes_to_char(bytes)?))),
+                        //     DataType::DATE => Ok(Some(convert::date_to_bytes(convert::csv_bytes_to_date(bytes)?))),
+                        //     DataType::DATETIME => Ok(Some(convert::datetime_to_bytes(convert::csv_bytes_to_datetime(bytes)?))),
+                        //     DataType::DECIMAL => Ok(Some(convert::decimal_to_bytes(convert::csv_bytes_to_decimal(bytes)?))),
+                        //     DataType::INTEGER => Ok(Some(convert::int_to_bytes(convert::csv_bytes_to_int(bytes)?))),
+                        //     DataType::LONG => Ok(Some(convert::long_to_bytes(convert::csv_bytes_to_long(bytes)?))),
+                        //     DataType::SHORT => Ok(Some(convert::short_to_bytes(convert::csv_bytes_to_short(bytes)?))),
+                        //     DataType::STRING => Ok(Some(convert::string_to_bytes(&convert::csv_bytes_to_string(bytes)?))),
+                        //     DataType::UUID => Ok(Some(convert::uuid_to_bytes(convert::csv_bytes_to_uuid(bytes)?))),
+                        // }
                     },
                     Some(_) |
                     None    => Ok(None),
@@ -122,100 +162,111 @@ impl Record {
         }
     }
 
-    pub fn get_bool(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<bool>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::BOOLEAN, rdr)? {
-                return Ok(Some(convert::bytes_to_bool(bytes)?))
+    // pub fn get_bool(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<bool>, MatcherError> {
+    pub fn get_bool(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<bool>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::BOOLEAN, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_bool(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_byte(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<u8>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::BYTE, rdr)? {
-                return Ok(Some(convert::bytes_to_byte(bytes)?))
+    // pub fn get_byte(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<u8>, MatcherError> {
+    pub fn get_byte(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<u8>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::BYTE, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_byte(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_char(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<char>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::CHAR, rdr)? {
-                return Ok(Some(convert::bytes_to_char(bytes)?))
+    // pub fn get_char(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<char>, MatcherError> {
+    pub fn get_char(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<char>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::CHAR, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_char(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_date(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<u64>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::DATE, rdr)? {
-                return Ok(Some(convert::bytes_to_date(bytes)?))
+    // pub fn get_date(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<u64>, MatcherError> {
+    pub fn get_date(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<u64>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::DATE, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_date(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_datetime(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<u64>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::DATETIME, rdr)? {
-                return Ok(Some(convert::bytes_to_datetime(bytes)?))
+    // pub fn get_datetime(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<u64>, MatcherError> {
+    pub fn get_datetime(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<u64>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::DATETIME, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_datetime(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_decimal(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<Decimal>, MatcherError> {
-        if let Some(col) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*col, DataType::DECIMAL, rdr)? {
-                return Ok(Some(convert::bytes_to_decimal(bytes)?))
+    // pub fn get_decimal(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<Decimal>, MatcherError> {
+    pub fn get_decimal(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<Decimal>, MatcherError> {
+        if let Some(col) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*col, DataType::DECIMAL, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_decimal(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_int(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<i32>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::INTEGER, rdr)? {
-                return Ok(Some(convert::bytes_to_int(bytes)?))
+    // pub fn get_int(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<i32>, MatcherError> {
+    pub fn get_int(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i32>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::INTEGER, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_int(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_long(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<i64>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::LONG, rdr)? {
-                return Ok(Some(convert::bytes_to_long(bytes)?))
+    // pub fn get_long(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<i64>, MatcherError> {
+    pub fn get_long(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i64>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::LONG, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_long(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_short(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<i16>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::SHORT, rdr)? {
-                return Ok(Some(convert::bytes_to_short(bytes)?))
+    // pub fn get_short(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<i16>, MatcherError> {
+    pub fn get_short(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i16>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::SHORT, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_short(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_string(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<String>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::STRING, rdr)? {
-                return Ok(Some(convert::bytes_to_string(bytes)?))
+    // pub fn get_string(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<String>, MatcherError> {
+    pub fn get_string(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<String>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::STRING, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_string(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_uuid(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<Uuid>, MatcherError> {
-        if let Some(column) = schema.position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, DataType::UUID, rdr)? {
-                return Ok(Some(convert::bytes_to_uuid(bytes)?))
+    // pub fn get_uuid(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<Option<Uuid>, MatcherError> {
+    pub fn get_uuid(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<Uuid>, MatcherError> {
+        if let Some(column) = accessor.schema().position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column, DataType::UUID, accessor)? {
+                return Ok(Some(convert::csv_bytes_to_uuid(bytes)?))
             }
         }
         Ok(None)
@@ -224,68 +275,95 @@ impl Record {
     ///
     /// Get the value in the column as a displayable string - if no value is present an empty string is returned.
     ///
-    pub fn get_as_string(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<String, MatcherError> {
-        match schema.data_type(header) {
+    // pub fn get_as_string(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Result<String, MatcherError> {
+    pub fn get_as_string(&self, header: &str, accessor: &mut DataAccessor) -> Result<String, MatcherError> {
+        match accessor.schema().data_type(header) {
             Some(data_type) => match data_type {
                 DataType::UNKNOWN => Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
-                DataType::BOOLEAN => Ok(self.get_bool(header, schema, rdr)?.map(|v|convert::bool_to_string(v)).unwrap_or(String::default())),
-                DataType::BYTE => Ok(self.get_byte(header, schema, rdr)?.map(|v|convert::byte_to_string(v)).unwrap_or(String::default())),
-                DataType::CHAR => Ok(self.get_char(header, schema, rdr)?.map(|v|convert::char_to_string(v)).unwrap_or(String::default())),
-                DataType::DATE => Ok(self.get_date(header, schema, rdr)?.map(|v|convert::date_to_string(v)).unwrap_or(String::default())),
-                DataType::DATETIME => Ok(self.get_datetime(header, schema, rdr)?.map(|v|convert::datetime_to_string(v)).unwrap_or(String::default())),
-                DataType::DECIMAL => Ok(self.get_decimal(header, schema, rdr)?.map(|v|convert::decimal_to_string(v)).unwrap_or(String::default())),
-                DataType::INTEGER => Ok(self.get_int(header, schema, rdr)?.map(|v|convert::int_to_string(v)).unwrap_or(String::default())),
-                DataType::LONG => Ok(self.get_long(header, schema, rdr)?.map(|v|convert::long_to_string(v)).unwrap_or(String::default())),
-                DataType::SHORT => Ok(self.get_short(header, schema, rdr)?.map(|v|convert::short_to_string(v)).unwrap_or(String::default())),
-                DataType::STRING => Ok(self.get_string(header, schema, rdr)?.unwrap_or(String::default())),
-                DataType::UUID => Ok(self.get_uuid(header, schema, rdr)?.map(|v|convert::uuid_to_string(v)).unwrap_or(String::default())),
+                DataType::BOOLEAN => Ok(self.get_bool(header, accessor)?.map(|v|convert::bool_to_string(v)).unwrap_or(String::default())),
+                DataType::BYTE => Ok(self.get_byte(header, accessor)?.map(|v|convert::byte_to_string(v)).unwrap_or(String::default())),
+                DataType::CHAR => Ok(self.get_char(header, accessor)?.map(|v|convert::char_to_string(v)).unwrap_or(String::default())),
+                DataType::DATE => Ok(self.get_date(header, accessor)?.map(|v|convert::date_to_string(v)).unwrap_or(String::default())),
+                DataType::DATETIME => Ok(self.get_datetime(header, accessor)?.map(|v|convert::datetime_to_string(v)).unwrap_or(String::default())),
+                DataType::DECIMAL => Ok(self.get_decimal(header, accessor)?.map(|v|convert::decimal_to_string(v)).unwrap_or(String::default())),
+                DataType::INTEGER => Ok(self.get_int(header, accessor)?.map(|v|convert::int_to_string(v)).unwrap_or(String::default())),
+                DataType::LONG => Ok(self.get_long(header, accessor)?.map(|v|convert::long_to_string(v)).unwrap_or(String::default())),
+                DataType::SHORT => Ok(self.get_short(header, accessor)?.map(|v|convert::short_to_string(v)).unwrap_or(String::default())),
+                DataType::STRING => Ok(self.get_string(header, accessor)?.unwrap_or(String::default())),
+                DataType::UUID => Ok(self.get_uuid(header, accessor)?.map(|v|convert::uuid_to_string(v)).unwrap_or(String::default())),
             },
             None => Ok(String::default()),
         }
     }
 
-    pub fn append_bool(&mut self, value: bool) {
-        self.derived.push(convert::bool_to_bytes(value));
+    pub fn append_bool(&self, value: bool, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::bool_to_string(value).into());
+        // accessor.derived_accessor().append(convert::bool_to_bytes(value));
+        // self.derived.push(convert::bool_to_bytes(value));
     }
 
-    pub fn append_byte(&mut self, value: u8) {
-        self.derived.push(convert::byte_to_bytes(value));
+    pub fn append_byte(&self, value: u8, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::byte_to_string(value).into());
+        // accessor.derived_accessor().append(convert::byte_to_bytes(value));
+        // self.derived.push(convert::byte_to_bytes(value));
     }
 
-    pub fn append_char(&mut self, value: char) {
-        self.derived.push(convert::char_to_bytes(value));
+    pub fn append_char(&self, value: char, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::char_to_string(value).into());
+        // accessor.derived_accessor().append(convert::char_to_bytes(value));
+        // self.derived.push(convert::char_to_bytes(value));
     }
 
-    pub fn append_date(&mut self, value: u64) {
-        self.derived.push(convert::date_to_bytes(value));
+    pub fn append_date(&self, value: u64, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::date_to_string(value).into());
+        // accessor.derived_accessor().append(convert::date_to_bytes(value));
+        // self.derived.push(convert::date_to_bytes(value));
     }
 
-    pub fn append_datetime(&mut self, value: u64) {
-        self.derived.push(convert::datetime_to_bytes(value));
+    pub fn append_datetime(&self, value: u64, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::datetime_to_string(value).into());
+        // accessor.derived_accessor().append(convert::datetime_to_bytes(value));
+        // self.derived.push(convert::datetime_to_bytes(value));
     }
 
-    pub fn append_decimal(&mut self, value: Decimal) {
-        self.derived.push(convert::decimal_to_bytes(value));
+    pub fn append_decimal(&self, value: Decimal, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::decimal_to_string(value).into());
+        // accessor.derived_accessor().append(convert::decimal_to_bytes(value));
+        // self.derived.push(convert::decimal_to_bytes(value));
     }
 
-    pub fn append_int(&mut self, value: i32) {
-        self.derived.push(convert::int_to_bytes(value));
+    pub fn append_int(&self, value: i32, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::int_to_string(value).into());
+        // accessor.derived_accessor().append(convert::int_to_bytes(value));
+        // self.derived.push(convert::int_to_bytes(value));
     }
 
-    pub fn append_long(&mut self, value: i64) {
-        self.derived.push(convert::long_to_bytes(value));
+    pub fn append_long(&self, value: i64, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::long_to_string(value).into());
+        // accessor.derived_accessor().append(convert::long_to_bytes(value));
+        // self.derived.push(convert::long_to_bytes(value));
     }
 
-    pub fn append_short(&mut self, value: i16) {
-        self.derived.push(convert::short_to_bytes(value));
+    pub fn append_short(&self, value: i16, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::short_to_string(value).into());
+        // accessor.derived_accessor().append(convert::short_to_bytes(value));
+        // self.derived.push(convert::short_to_bytes(value));
     }
 
-    pub fn append_string(&mut self, value: &str) {
-        self.derived.push(convert::string_to_bytes(value));
+    pub fn append_string(&self, value: &str, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(value.to_string().into());
+        // accessor.derived_accessor().append(convert::string_to_bytes(value));
+        // self.derived.push(convert::string_to_bytes(value));
     }
 
-    pub fn append_uuid(&mut self, value: Uuid) {
-        self.derived.push(convert::uuid_to_bytes(value));
+    pub fn append_uuid(&self, value: Uuid, accessor: &mut DataAccessor) {
+        accessor.derived_accessor().append(convert::uuid_to_string(value).into());
+        // accessor.derived_accessor().append(convert::uuid_to_bytes(value));
+        // self.derived.push(convert::uuid_to_bytes(value));
+    }
+
+    pub fn flush(&self, accessor: &mut DataAccessor) -> Result<(), MatcherError> {
+        accessor.derived_accessor().flush(self.file_idx)
     }
 
     ///
@@ -293,49 +371,138 @@ impl Record {
     ///
     /// Data is returned in a displayable, string format.
     ///
-    pub fn as_strings(&self, schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Vec<String> {
+    pub fn as_strings(&self, schema: &GridSchema, accessor: &mut DataAccessor) -> Vec<String> {
         schema.headers()
             .iter()
-            .map(|header| self.get_as_string(header, schema, rdr).unwrap_or_default())
+            .map(|header| self.get_as_string(header, accessor).unwrap_or_default())
             .collect()
     }
 
     ///
     /// If there is a value for this header, get the compacted byte format for it.
     ///
-    pub fn get_compact_bytes(&self, header: &str, schema: &GridSchema, rdr: &mut csv::Reader<File>)
+    pub fn get_compact_bytes(&self, header: &str, accessor: &mut DataAccessor)
         -> Result<Option<Bytes>, MatcherError> {
 
-        match schema.position_in_record(header, self) {
+        match accessor.schema().position_in_record(header, self) {
             Some(col) => {
-                match schema.data_type(header) {
-                    Some(data_type) => self.get_bytes(*col, *data_type, rdr),
+                match accessor.schema().data_type(header) {
+                    // TODO: This is currently NOT compact bytes.
+                    Some(data_type) => {
+                        self.get_bytes(*col, *data_type, accessor)
+                    },
                     None => Ok(None),
                 }
             },
-            None => Ok(None),
+            None =>  Ok(None),
         }
     }
 
     ///
     /// Merge the first non-None value from the source columns into a new column.
     ///
-    pub fn merge_col_from(&mut self, source: &[String], schema: &GridSchema, rdr: &mut csv::Reader<File>)
+    // pub fn merge_col_from(&mut self, source: &[String], schema: &GridSchema, rdr: &mut csv::Reader<File>)
+    pub fn merge_col_from(&self, source: &[String], accessor: &mut DataAccessor)
         -> Result<(), MatcherError> {
 
         for header in source {
-            match self.get_compact_bytes(header, schema, rdr)? {
-                Some(raw) => {
-                    self.derived.push(raw);
-                    return Ok(())
+            let data_type = match accessor.schema().data_type(header) {
+                Some(data_type) => data_type,
+                None => {
+                    println!("header: {}", header);
+                    todo!()
+                }, // TODO: Error.
+            };
+
+            let value = match data_type {
+                DataType::UNKNOWN => todo!(), // TODO: Error.
+                DataType::BOOLEAN => {
+                    match self.get_bool(header, accessor)? {
+                        Some(value) => convert::bool_to_string(value),
+                        None => continue,
+                    }
                 },
-                None => continue,
-            }
+                DataType::BYTE => {
+                    match self.get_byte(header, accessor)? {
+                        Some(value) => convert::byte_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::CHAR => {
+                    match self.get_char(header, accessor)? {
+                        Some(value) => convert::char_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::DATE => {
+                    match self.get_date(header, accessor)? {
+                        Some(value) => convert::date_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::DATETIME => {
+                    match self.get_datetime(header, accessor)? {
+                        Some(value) => convert::datetime_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::DECIMAL => {
+                    match self.get_decimal(header, accessor)? {
+                        Some(value) => convert::decimal_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::INTEGER => {
+                    match self.get_int(header, accessor)? {
+                        Some(value) => convert::int_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::LONG => {
+                    match self.get_long(header, accessor)? {
+                        Some(value) => convert::long_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::SHORT => {
+                    match self.get_short(header, accessor)? {
+                        Some(value) => convert::short_to_string(value),
+                        None => continue,
+                    }
+                },
+                DataType::STRING => {
+                    match self.get_string(header, accessor)? {
+                        Some(value) => value,
+                        None => continue,
+                    }
+                },
+                DataType::UUID => {
+                    match self.get_uuid(header, accessor)? {
+                        Some(value) => convert::uuid_to_string(value),
+                        None => continue,
+                    }
+                },
+            };
+
+            // let value = self.get_as_string(header, accessor)?;
+            accessor.derived_accessor().append(value.into());
+
+            // TODO: Compact derived bytes or string version?
+            // match self.get_compact_bytes(header, accessor)? {
+            //     Some(raw) => {
+            //         accessor.derived_accessor().append(raw);
+            //         // self.derived.push(raw);
+            //         return Ok(())
+            //     },
+            //     None => continue,
+            // }
         }
 
         // If we've not found a value, we'll still need to put a blank in there column
         // to ensure the row has the correct number of columns.
-        self.derived.push(Bytes::new());
+        // self.derived.push(Bytes::new());
+        // TODO: If using strings not compact bytes, we DONT need this.
+        // accessor.derived_accessor().append(Bytes::new());
         Ok(())
     }
 }

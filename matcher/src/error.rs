@@ -130,6 +130,9 @@ pub enum MatcherError {
     #[error("Chart configuration is invalid - {reason}")]
     CharterValidationError { reason: String },
 
+    #[error("Cannot create a derived file for {path}")]
+    FileCantBeDerived { path: String },
+
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 
