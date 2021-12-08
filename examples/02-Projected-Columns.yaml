@@ -27,7 +27,7 @@ instructions:
       # subsequent instruction in this charter.
       column: PAYMENT_AMOUNT_BASE
       # We must define the type of this column.
-      as_type: DECIMAL
+      as_type: Decimal
       # The Lua script below has access to a table called 'record' which is populated with the values of
       # each column on the underlying record. In this case, we are multipling the Amount by the FXRate
       # for the payment to derive a GBP value in a new column called PAYMENT_AMOUNT_BASE.
@@ -53,7 +53,7 @@ instructions:
       # invoice reference from the payment reference.
       column: PAYMENT_INV_REF
       # Our output column will be a string data-type.
-      as_type: STRING
+      as_type: String
       # Here we use the Lua function (https://www.lua.org/pil/20.3.html) to capture the portion of the field
       # we require into a variable called inv_ref then return that variable. Note, the '_' represent values
       # returned from string.find that we do not need (in this case the start and end position of the match).

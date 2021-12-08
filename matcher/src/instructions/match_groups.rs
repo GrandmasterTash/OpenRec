@@ -47,7 +47,7 @@ pub fn match_groups(
                 .map_err(rlua::Error::external)? {
 
                 records.iter().for_each(|r| r.set_matched());
-                matched.append_group(&records).map_err(|source| rlua::Error::external(source))?;
+                matched.append_group(&records).map_err(rlua::Error::external)?;
                 match_count += 1;
             }
 
@@ -99,7 +99,7 @@ fn is_match(
     let start = Instant::now();
 
     for (_index, constraint) in constraints.iter().enumerate() {
-        if !constraint.passes(&group, schema, accessor, lua_ctx)? {
+        if !constraint.passes(group, schema, accessor, lua_ctx)? {
             failed.push(constraint);
         }
     }

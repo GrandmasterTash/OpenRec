@@ -103,15 +103,15 @@ impl Record {
             true  => { // Derived column.
                 // These use negative indexes in the Grid and must be translated to a real
                 // CSV column. -1 -> 0, -2 -> 1, -3 -> 2, etc.
-                match accessor.derived_accessor().get((col.abs() - 1) as usize, &self)? {
-                    Some(bytes) if bytes.len() > 0 => Ok(Some(bytes)),
+                match accessor.derived_accessor().get((col.abs() - 1) as usize, self)? {
+                    Some(bytes) if !bytes.is_empty() => Ok(Some(bytes)),
                     Some(_) |
                     None    => Ok(None),
                 }
             },
             false => { // File column.
-                match accessor.get(col as usize, &self)? {
-                    Some(bytes) if bytes.len() > 0 => Ok(Some(bytes)),
+                match accessor.get(col as usize, self)? {
+                    Some(bytes) if !bytes.is_empty() => Ok(Some(bytes)),
                     Some(_) |
                     None    => Ok(None),
                 }
@@ -179,13 +179,13 @@ impl Record {
     pub fn get_as_string(&self, header: &str, accessor: &mut DataAccessor) -> Result<String, MatcherError> {
         match accessor.schema().data_type(header) {
             Some(data_type) => match data_type {
-                DataType::UNKNOWN => Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
-                DataType::BOOLEAN => Ok(self.get_bool(header, accessor)?.map(|v|convert::bool_to_string(v)).unwrap_or(String::default())),
-                DataType::DATETIME => Ok(self.get_datetime(header, accessor)?.map(|v|convert::datetime_to_string(v)).unwrap_or(String::default())),
-                DataType::DECIMAL => Ok(self.get_decimal(header, accessor)?.map(|v|convert::decimal_to_string(v)).unwrap_or(String::default())),
-                DataType::INTEGER => Ok(self.get_int(header, accessor)?.map(|v|convert::int_to_string(v)).unwrap_or(String::default())),
-                DataType::STRING => Ok(self.get_string(header, accessor)?.unwrap_or(String::default())),
-                DataType::UUID => Ok(self.get_uuid(header, accessor)?.map(|v|convert::uuid_to_string(v)).unwrap_or(String::default())),
+                DataType::Unknown => Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
+                DataType::Boolean => Ok(self.get_bool(header, accessor)?.map(convert::bool_to_string).unwrap_or_default()),
+                DataType::Datetime => Ok(self.get_datetime(header, accessor)?.map(convert::datetime_to_string).unwrap_or_default()),
+                DataType::Decimal => Ok(self.get_decimal(header, accessor)?.map(convert::decimal_to_string).unwrap_or_default()),
+                DataType::Integer => Ok(self.get_int(header, accessor)?.map(convert::int_to_string).unwrap_or_default()),
+                DataType::String => Ok(self.get_string(header, accessor)?.unwrap_or_default()),
+                DataType::Uuid => Ok(self.get_uuid(header, accessor)?.map(convert::uuid_to_string).unwrap_or_default()),
             },
             None => Ok(String::default()),
         }
@@ -256,38 +256,38 @@ impl Record {
             };
 
             let value = match data_type {
-                DataType::UNKNOWN => return Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
-                DataType::BOOLEAN => {
+                DataType::Unknown => return Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
+                DataType::Boolean => {
                     match self.get_bool(header, accessor)? {
                         Some(value) => convert::bool_to_string(value),
                         None => continue,
                     }
                 },
-                DataType::DATETIME => {
+                DataType::Datetime => {
                     match self.get_datetime(header, accessor)? {
                         Some(value) => convert::datetime_to_string(value),
                         None => continue,
                     }
                 },
-                DataType::DECIMAL => {
+                DataType::Decimal => {
                     match self.get_decimal(header, accessor)? {
                         Some(value) => convert::decimal_to_string(value),
                         None => continue,
                     }
                 },
-                DataType::INTEGER => {
+                DataType::Integer => {
                     match self.get_int(header, accessor)? {
                         Some(value) => convert::int_to_string(value),
                         None => continue,
                     }
                 },
-                DataType::STRING => {
+                DataType::String => {
                     match self.get_string(header, accessor)? {
                         Some(value) => value,
                         None => continue,
                     }
                 },
-                DataType::UUID => {
+                DataType::Uuid => {
                     match self.get_uuid(header, accessor)? {
                         Some(value) => convert::uuid_to_string(value),
                         None => continue,

@@ -33,14 +33,16 @@ pub struct Grid {
     schema: GridSchema,        // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
 
-impl Grid {
-    pub fn new() -> Self {
+impl Default for Grid {
+    fn default() -> Self {
         Self {
             records: vec!(),
-            schema: GridSchema::new(),
+            schema: GridSchema::default(),
         }
     }
+}
 
+impl Grid {
     pub fn schema(&self) -> &GridSchema {
         &self.schema
     }
@@ -169,7 +171,7 @@ fn field_prefix(ctx: &Context, file: &DirEntry, pattern_idx: usize, pattern: &st
                     Some(alias) => Some(alias.clone()),
                     None => return Err(MatcherError::CharterValidationError { reason: format!("No alias for file pattern {} idx {}", pattern, pattern_idx)}),
                 },
-                None => Some(folders::entry_shortname(&file)),
+                None => Some(folders::entry_shortname(file)),
             }
         },
         false => None,

@@ -24,7 +24,7 @@ impl DataFile {
         let filename: String = entry.file_name().to_string_lossy().into();
         let shortname = folders::shortname(&filename).to_string();
         let timestamp = folders::timestamp(&filename)?.to_string();
-        let derived = folders::derived(&entry)?;
+        let derived = folders::derived(entry)?;
         let derived_path = derived.to_string_lossy().into();
         let derived_filename = derived.file_name()
             .ok_or(MatcherError::PathNotAFile { path: derived.to_canoncial_string() })?
@@ -32,12 +32,12 @@ impl DataFile {
         let original_filename = original_filename(&filename)?;
 
         Ok(Self {
-            shortname: shortname.clone(),
+            shortname,
             filename,
             path,
             derived_path,
             derived_filename,
-            timestamp: timestamp.clone(),
+            timestamp,
             original_filename,
             schema,
         })

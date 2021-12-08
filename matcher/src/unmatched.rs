@@ -47,7 +47,7 @@ impl UnmatchedHandler {
                 writer.write_record(schema.columns().iter().map(|c| c.header_no_prefix()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteHeaders{ filename: file.filename().into(), source })?;
 
-                writer.write_record(schema.columns().iter().map(|c| c.data_type().to_str()).collect::<Vec<&str>>())
+                writer.write_record(schema.columns().iter().map(|c| c.data_type().as_str()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteSchema{ filename: file.filename().into(), source })?;
 
                 files.insert(file.original_filename().into(), UnmatchedFile{ full_filename, path: output_path.clone(), rows: 0, writer });

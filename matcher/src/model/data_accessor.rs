@@ -84,7 +84,7 @@ impl DataAccessor {
         rdr.read_byte_record(&mut buffer)?;
 
         match buffer.get(col as usize) {
-            Some(bytes) if bytes.len() > 0 => {
+            Some(bytes) if !bytes.is_empty() => {
                 let mut bm = BytesMut::new();
                 bm.put(bytes);
                 Ok(Some(bm.freeze()))
@@ -113,7 +113,7 @@ impl DerivedAccessor {
                 rdr.read_byte_record(&mut buffer)?;
 
                 match buffer.get(col as usize) {
-                    Some(bytes) if bytes.len() > 0 => {
+                    Some(bytes) if !bytes.is_empty() => {
                         let mut bm = BytesMut::new();
                         bm.put(bytes);
                         Ok(Some(bm.freeze()))
@@ -165,7 +165,7 @@ impl DerivedAccessor {
         writer.write_record(schema.derived_columns().iter().map(|c| c.header_no_prefix()).collect::<Vec<&str>>())
             .map_err(|source| MatcherError::CannotWriteHeaders{ filename: file.derived_filename().into(), source })?;
 
-        writer.write_record(schema.derived_columns().iter().map(|c| c.data_type().to_str()).collect::<Vec<&str>>())
+        writer.write_record(schema.derived_columns().iter().map(|c| c.data_type().as_str()).collect::<Vec<&str>>())
             .map_err(|source| MatcherError::CannotWriteSchema{ filename: file.derived_filename().into(), source })?;
             writer.flush()?;
         }

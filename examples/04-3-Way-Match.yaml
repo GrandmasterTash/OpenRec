@@ -14,12 +14,12 @@ debug: true
 instructions:
   - project:
       column: PAYMENT_AMOUNT_BASE
-      as_type: DECIMAL
+      as_type: Decimal
       from: record["PAY.Amount"] * record["PAY.FXRate"]
       when: meta["prefix"] == "PAY"
   - project:
       column: RECEIPT_AMOUNT_BASE
-      as_type: DECIMAL
+      as_type: Decimal
       from: record["REC.Amount"] * record["REC.FXRate"]
       when: meta["prefix"] == "REC"
   - merge_columns:

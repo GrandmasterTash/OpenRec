@@ -6,7 +6,7 @@ use crate::{model::data_type::{TRUE, DataType, FALSE}, error::MatcherError};
 
 
 fn unparseable_csv_err(data_type: DataType, bytes: Bytes) -> MatcherError {
-    MatcherError::UnparseableCsvField { data_type: data_type.to_str().into(), bytes: format!("{:?}", bytes) }
+    MatcherError::UnparseableCsvField { data_type: data_type.as_str().into(), bytes: format!("{:?}", bytes) }
 }
 
 pub fn csv_bytes_to_bool(bytes: Bytes) -> Result<bool, MatcherError> {
@@ -16,28 +16,28 @@ pub fn csv_bytes_to_bool(bytes: Bytes) -> Result<bool, MatcherError> {
     if bytes == FALSE.as_bytes() {
         return Ok(false)
     }
-    Err(unparseable_csv_err(DataType::BOOLEAN, bytes))
+    Err(unparseable_csv_err(DataType::Boolean, bytes))
 }
 
 pub fn csv_bytes_to_datetime(bytes: Bytes) -> Result<u64, MatcherError> {
     let raw = String::from_utf8_lossy(&bytes);
-    return match DateTime::parse_from_rfc3339(&raw) {
+    match DateTime::parse_from_rfc3339(&raw) {
         Ok(dt) => Ok(dt.timestamp_millis() as u64),
-        Err(_) => Err(unparseable_csv_err(DataType::DATETIME, bytes))
+        Err(_) => Err(unparseable_csv_err(DataType::Datetime, bytes))
     }
 }
 
 pub fn csv_bytes_to_decimal(bytes: Bytes) -> Result<Decimal, MatcherError> {
     match String::from_utf8_lossy(&bytes).parse() {
         Ok(dec) => Ok(dec),
-        Err(_) => Err(unparseable_csv_err(DataType::DECIMAL, bytes)),
+        Err(_) => Err(unparseable_csv_err(DataType::Decimal, bytes)),
     }
 }
 
 pub fn csv_bytes_to_int(bytes: Bytes) -> Result<i64, MatcherError> {
     match String::from_utf8_lossy(&bytes).parse() {
         Ok(int) => Ok(int),
-        Err(_) => Err(unparseable_csv_err(DataType::INTEGER, bytes)),
+        Err(_) => Err(unparseable_csv_err(DataType::Integer, bytes)),
     }
 }
 
@@ -48,7 +48,7 @@ pub fn csv_bytes_to_string(bytes: Bytes) -> Result<String, MatcherError> {
 pub fn csv_bytes_to_uuid(bytes: Bytes) -> Result<Uuid, MatcherError> {
     match String::from_utf8_lossy(&bytes).parse() {
         Ok(uuid) => Ok(uuid),
-        Err(_) => Err(unparseable_csv_err(DataType::UUID, bytes)),
+        Err(_) => Err(unparseable_csv_err(DataType::Uuid, bytes)),
     }
 }
 
@@ -141,7 +141,7 @@ pub fn bool_to_string(value: bool) -> String {
 
 pub fn datetime_to_string(value: u64) -> String {
     let dt = Utc.timestamp(value as i64 / 1000, (value % 1000) as u32 * 1000000);
-    format!("{}", dt.to_rfc3339_opts(SecondsFormat::Millis, true))
+    dt.to_rfc3339_opts(SecondsFormat::Millis, true).to_string()
 }
 
 pub fn decimal_to_string(value: Decimal) -> String {
@@ -153,7 +153,7 @@ pub fn int_to_string(value: i64) -> String {
 }
 
 pub fn uuid_to_string(value: Uuid) -> String {
-    format!("{}", value.to_hyphenated().to_string())
+    value.to_hyphenated().to_string()
 }
 
 

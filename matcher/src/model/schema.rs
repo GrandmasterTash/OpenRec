@@ -85,12 +85,12 @@ impl Column {
 
 impl FileSchema {
     pub fn prefix(&self) -> Option<&str> {
-        self.prefix.as_ref().map(String::as_str)
+        self.prefix.as_deref()
     }
 }
 
-impl GridSchema {
-    pub fn new() -> Self {
+impl Default for GridSchema {
+    fn default() -> Self {
         Self {
             headers: Vec::new(),
             col_map: HashMap::new(),
@@ -100,7 +100,9 @@ impl GridSchema {
             derived_cols: Vec::new(),
         }
     }
+}
 
+impl GridSchema {
     pub fn add_file(&mut self, file: DataFile) -> usize {
         self.files.push(file);
         self.files.len() - 1
@@ -211,7 +213,7 @@ impl GridSchema {
                         position_map
                             .get_mut(&fs_idx)
                             .unwrap()
-                            .insert(col.header.clone(), (c_idx + 1) as isize * -1); // Derived columns start at -1
+                            .insert(col.header.clone(), -((c_idx + 1) as isize)); // Derived columns start at -1
                     });
             });
 
@@ -260,7 +262,7 @@ impl FileSchema {
             let data_type = match type_record.get(idx) {
                 Some(raw_type) => {
                     let parsed = raw_type.into();
-                    if parsed == DataType::UNKNOWN {
+                    if parsed == DataType::Unknown {
                         return Err(MatcherError::UnknownDataTypeInColumn { column: idx as isize })
                     }
                     parsed
@@ -281,7 +283,7 @@ impl FileSchema {
     pub fn to_short_string(&self) -> String {
         self.columns
             .iter()
-            .map(|col| col.data_type.to_str())
+            .map(|col| col.data_type.as_str())
             .collect::<Vec<&str>>()
             .join(",")
     }

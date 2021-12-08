@@ -5,7 +5,7 @@ use crate::{error::MatcherError, model::{data_type::DataType, grid::Grid}};
 ///
 pub fn validate(source: &[String], grid: &mut Grid) -> Result<DataType, MatcherError> {
 
-    let mut data_type = DataType::UNKNOWN;
+    let mut data_type = DataType::Unknown;
 
     for header in source {
         if !grid.schema().headers().iter().any(|h| h == header) {
@@ -14,7 +14,7 @@ pub fn validate(source: &[String], grid: &mut Grid) -> Result<DataType, MatcherE
 
         match grid.schema().data_type(header) {
             Some(dt) => {
-                if data_type == DataType::UNKNOWN {
+                if data_type == DataType::Unknown {
                     data_type = *dt;
 
                 } else if data_type != *dt {
@@ -25,7 +25,7 @@ pub fn validate(source: &[String], grid: &mut Grid) -> Result<DataType, MatcherE
         }
     }
 
-    if data_type == DataType::UNKNOWN {
+    if data_type == DataType::Unknown {
         return Err(MatcherError::NoValidSourceColumns {})
     }
 

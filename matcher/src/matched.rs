@@ -21,7 +21,7 @@ impl MatchedHandler {
         let file = File::create(&path)?;
         let mut writer = BufWriter::new(file);
 
-        write!(&mut writer, "[\n")?;
+        writeln!(&mut writer, "[")?;
 
         let job_header = json!(
         {

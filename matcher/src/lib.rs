@@ -101,7 +101,7 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
     log::info!("Running charter [{}] v{:?}", ctx.charter().name(), ctx.charter().version());
 
     // Load all data into memory (for now).
-    let mut grid = Grid::new();
+    let mut grid = Grid::default();
 
     // Create Lua engine bindings.
     let lua = rlua::Lua::new();
@@ -197,7 +197,7 @@ fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor
                             *as_type,
                             from,
                             when,
-                            &record,
+                            record,
                             accessor,
                             script_cols,
                             &lua_ctx)
@@ -227,10 +227,10 @@ fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor
 fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<(), MatcherError> {
 
     // Create a match file containing job details and giving us a place to append match results.
-    let mut matched = MatchedHandler::new(ctx, &grid)?;
+    let mut matched = MatchedHandler::new(ctx, grid)?;
 
     // Create unmatched files for each sourced file.
-    let mut unmatched = UnmatchedHandler::new(ctx, &grid)?;
+    let mut unmatched = UnmatchedHandler::new(ctx, grid)?;
 
     // Create a read-mode derived accessor used to read real and derived data.
     let mut accessor = DataAccessor::with_no_buffer(grid)?;
@@ -240,7 +240,7 @@ fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<
         match inst {
             Instruction::Project { .. } => {},
             Instruction::MergeColumns { .. } => {},
-            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, grid, &schema, &mut accessor, &lua, &mut matched)?,
+            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, grid, &schema, &mut accessor, lua, &mut matched)?,
             Instruction::_Filter   => todo!(),
             Instruction::_UnFilter => todo!(),
         };
@@ -258,7 +258,7 @@ fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<
     matched.complete_files()?;
 
     // Write all unmatched records now - this will be optimised at a later stage to be a single call.
-    unmatched.write_records(ctx, grid.records(), &grid)?;
+    unmatched.write_records(ctx, grid.records(), grid)?;
 
     Ok(())
 }

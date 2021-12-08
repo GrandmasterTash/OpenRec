@@ -38,18 +38,13 @@ pub fn lua_record<'a>(
 
     for col in script_cols {
         match col.data_type() {
-            DataType::UNKNOWN  => {},
-            DataType::BOOLEAN  => lua_record.set(col.header(), record.get_bool(col.header(), accessor)?)?,
-            // DataType::BYTE     => lua_record.set(col.header(), record.get_byte(col.header(), accessor)?)?,
-            // DataType::CHAR     => lua_record.set(col.header(), record.get_char(col.header(), accessor)?.map(|c|c.to_string()))?,
-            // DataType::DATE     => lua_record.set(col.header(), record.get_date(col.header(), accessor)?)?,
-            DataType::DATETIME => lua_record.set(col.header(), record.get_datetime(col.header(), accessor)?)?,
-            DataType::DECIMAL  => lua_record.set(col.header(), record.get_decimal(col.header(), accessor)?.map(|d|LuaDecimal(d)))?,
-            DataType::INTEGER  => lua_record.set(col.header(), record.get_int(col.header(), accessor)?)?,
-            // DataType::LONG     => lua_record.set(col.header(), record.get_long(col.header(), accessor)?)?,
-            // DataType::SHORT    => lua_record.set(col.header(), record.get_short(col.header(), accessor)?)?,
-            DataType::STRING   => lua_record.set(col.header(), record.get_string(col.header(), accessor)?)?,
-            DataType::UUID     => lua_record.set(col.header(), record.get_uuid(col.header(), accessor)?.map(|i|i.to_string()))?,
+            DataType::Unknown  => {},
+            DataType::Boolean  => lua_record.set(col.header(), record.get_bool(col.header(), accessor)?)?,
+            DataType::Datetime => lua_record.set(col.header(), record.get_datetime(col.header(), accessor)?)?,
+            DataType::Decimal  => lua_record.set(col.header(), record.get_decimal(col.header(), accessor)?.map(LuaDecimal))?,
+            DataType::Integer  => lua_record.set(col.header(), record.get_int(col.header(), accessor)?)?,
+            DataType::String   => lua_record.set(col.header(), record.get_string(col.header(), accessor)?)?,
+            DataType::Uuid     => lua_record.set(col.header(), record.get_uuid(col.header(), accessor)?.map(|i|i.to_string()))?,
         }
     }
 

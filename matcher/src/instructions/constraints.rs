@@ -56,7 +56,7 @@ fn net<F>(
         return Err(MatcherError::ConstraintColumnMissing{ column: column.into() })
     }
 
-    if *accessor.schema().data_type(column).unwrap_or(&DataType::UNKNOWN) != DataType::DECIMAL {
+    if *accessor.schema().data_type(column).unwrap_or(&DataType::Unknown) != DataType::Decimal {
         return Err(MatcherError::ConstraintColumnNotDecimal{ column: column.into() })
     }
 
@@ -69,7 +69,7 @@ fn net<F>(
     let rhs_sum: Decimal = rhs_recs.iter().map(|r| r.get_decimal(column, accessor).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
 
     // The constraint passes if the sides net to zero AND there is at least one record from each side.
-    let net = sum_checker(lhs_sum, rhs_sum) && (lhs_recs.len() > 0 && rhs_recs.len() > 0);
+    let net = sum_checker(lhs_sum, rhs_sum) && (!lhs_recs.is_empty() && !rhs_recs.is_empty());
 
     // Do the records NET to zero?
     Ok(net)
@@ -93,7 +93,7 @@ fn lua_filter<'a, 'b>(
         let lua_record = lua::lua_record(record, &script_cols, accessor, lua_ctx)?;
         globals.set("record", lua_record)?;
 
-        let lua_meta = lua::lua_meta(record, &accessor.schema(), lua_ctx)?;
+        let lua_meta = lua::lua_meta(record, accessor.schema(), lua_ctx)?;
         globals.set("meta", lua_meta)?;
 
         if lua_ctx.load(&lua_script).eval::<bool>()? {
@@ -122,10 +122,10 @@ fn custom_constraint(
             schema.columns()
                 .into_iter()
                 .filter(|col| fields.contains(&col.header()))
-                .map(|c|c.clone())
+                .cloned()
                 .collect::<Vec<Column>>()
             },
-        None => schema.columns().into_iter().map(|c|c.clone()).collect(), // No restriction, provide all columns to the Lua script.
+        None => schema.columns().into_iter().cloned().collect(), // No restriction, provide all columns to the Lua script.
     };
 
     let globals = lua_ctx.globals();
@@ -136,7 +136,7 @@ fn custom_constraint(
         let lua_record = lua::lua_record(record, &script_cols, accessor, lua_ctx)?;
         lua_records.set(idx + 1, lua_record)?;
 
-        let lua_meta = lua::lua_meta(record, &accessor.schema(), lua_ctx)?;
+        let lua_meta = lua::lua_meta(record, accessor.schema(), lua_ctx)?;
         lua_metas.set(idx + 1, lua_meta)?;
     }
 
