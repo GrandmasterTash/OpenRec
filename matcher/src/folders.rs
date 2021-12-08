@@ -174,7 +174,7 @@ pub fn rollback_incomplete(ctx: &Context) -> Result<(), MatcherError> {
 ///
 /// Rename a file ending in .inprogress to remove the suffix.
 ///
-pub fn complete_file(path: &str) -> Result<(), MatcherError> {
+pub fn complete_file(path: &str) -> Result<PathBuf, MatcherError> {
     if !path.ends_with(IN_PROGRESS) {
         return Err(MatcherError::FileNotInProgress { path: path.into() })
     }
@@ -186,7 +186,7 @@ pub fn complete_file(path: &str) -> Result<(), MatcherError> {
         .map_err(|source| MatcherError::CannotRenameFile { from: from.to_canoncial_string(), to: to.to_canoncial_string(), source })?;
 
     log::debug!("Renaming {} -> {}", from.to_canoncial_string(), to.to_canoncial_string());
-    Ok(())
+    Ok(to.to_path_buf())
 }
 
 pub fn delete_empty_unmatched(ctx: &Context, filename: &str) -> Result<(), MatcherError> {

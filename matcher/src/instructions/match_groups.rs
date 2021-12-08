@@ -77,7 +77,7 @@ pub fn match_groups(
 fn match_key(record: &Box<Record>, headers: &[String], accessor: &mut DataAccessor) -> Bytes {
     let mut buf = BytesMut::new();
     for header in headers {
-        if let Some(bytes) = record.get_compact_bytes(header, accessor).unwrap() { // TODO: Need to know if this fails.
+        if let Some(bytes) = record.get_as_bytes(header, accessor).expect("Failed to read match ley") {
             buf.put(bytes);
         }
     }

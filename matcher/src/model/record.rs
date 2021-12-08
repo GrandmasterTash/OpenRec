@@ -234,7 +234,7 @@ impl Record {
     ///
     /// If there is a value for this header, get the compacted byte format for it.
     ///
-    pub fn get_compact_bytes(&self, header: &str, accessor: &mut DataAccessor)
+    pub fn get_as_bytes(&self, header: &str, accessor: &mut DataAccessor)
         -> Result<Option<Bytes>, MatcherError> {
 
         match accessor.schema().position_in_record(header, self) {

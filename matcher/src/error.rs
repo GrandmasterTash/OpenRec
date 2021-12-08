@@ -37,6 +37,9 @@ pub enum MatcherError {
     #[error("The file {filename} doesn't have a valid timestamp prefix")]
     InvalidTimestampPrefix { filename: String },
 
+    #[error("Unable to read a sourced data file {path}")]
+    BadSourceFile { path: String, description: String },
+
     #[error("Unable to open file {path}")]
     CannotOpenCsv { path: String, source: csv::Error },
 
@@ -53,7 +56,7 @@ pub enum MatcherError {
     NoSchemaRow { source: csv::Error },
 
     #[error("Cannot read CSV headers")]
-    CannotReadHeaders { source: csv::Error }, // TODO: filename?
+    CannotReadHeaders { source: csv::Error },
 
     #[error("Unable to write headers to {filename}")]
     CannotWriteHeaders { filename: String, source: csv::Error },

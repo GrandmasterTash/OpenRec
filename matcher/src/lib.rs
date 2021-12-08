@@ -12,7 +12,7 @@ use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::MatcherError;
 use std::{time::{Duration, Instant}, collections::HashMap};
-use crate::{model::{charter::{Charter, Instruction}, grid::Grid, data_accessor::DataAccessor, schema::Column}, instructions::merge_col::merge_cols, instructions::{project_col::{/* project_column, */ project_column_new, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler};
+use crate::{model::{charter::{Charter, Instruction}, grid::Grid, data_accessor::DataAccessor, schema::Column}, instructions::{project_col::{/* project_column, */ project_column_new, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
 // TODO: Flesh-out examples.
 // TODO: Unit/integration tests. Lots.
@@ -204,7 +204,7 @@ fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor
                             .map_err(rlua::Error::external)?;
                     },
                     Instruction::MergeColumns { into: _, from } => {
-                        merge_cols(from, &record, accessor).map_err(rlua::Error::external)?;
+                        record.merge_col_from(from, accessor).map_err(rlua::Error::external)?;
                     },
                     _ => {},
                 };
@@ -258,8 +258,7 @@ fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<
     matched.complete_files()?;
 
     // Write all unmatched records now - this will be optimised at a later stage to be a single call.
-    unmatched.write_records(grid.records(), &grid)?;
-    unmatched.complete_files(ctx)?;
+    unmatched.write_records(ctx, grid.records(), &grid)?;
 
     Ok(())
 }

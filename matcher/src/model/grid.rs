@@ -97,7 +97,8 @@ impl Grid {
 
                 // Build a schema from the file's header rows.
                 let prefix = field_prefix(ctx, &file, idx, pattern)?;
-                let schema = FileSchema::new(prefix, &mut rdr)?;
+                let schema = FileSchema::new(prefix, &mut rdr)
+                    .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() } )?;
 
                 // Use an existing schema from the grid, if there is one, otherwise add this one.
                 let schema_idx = self.schema.add_file_schema(schema.clone());

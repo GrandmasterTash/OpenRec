@@ -1,13 +1,4 @@
-use crate::{error::MatcherError, model::{data_type::DataType, grid::Grid, data_accessor::DataAccessor, record::Record}};
-
-///
-/// Create a new column whose value comes from the first non-empty source column specified.
-///
-pub fn merge_cols(source: &[String], record: &Record, accessor: &mut DataAccessor) -> Result<(), MatcherError> {
-    record.merge_col_from(source, accessor)?; // TODO: Can probably remove this now and call directly?
-
-    Ok(())
-}
+use crate::{error::MatcherError, model::{data_type::DataType, grid::Grid}};
 
 ///
 /// Ensure each source column exists in the grid and has the same datatype.

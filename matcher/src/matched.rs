@@ -9,7 +9,7 @@ pub struct MatchedHandler {
     groups: usize,
     path: String,
     writer: BufWriter<File>,
-} // TODO: This bad-boy will be created at the start of the job and passed into this module as there may be multiple
+}
 
 
 impl MatchedHandler {
@@ -76,5 +76,6 @@ impl MatchedHandler {
             .map_err(|source| MatcherError::CannotWriteThing { thing: "matched terminator".into(), filename: self.path.clone(), source })?)
 
         // TODO: Completing a job should also log the unmatched files and counts) - this will be the 3rd object in the matched JSON array.
+        // TODO: Log the file creation and path.
     }
 }

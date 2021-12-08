@@ -59,9 +59,7 @@ impl UnmatchedHandler {
         Ok(Self { files })
     }
 
-    pub fn write_records(&mut self, records: &[Box<Record>], grid: &Grid) -> Result<(), MatcherError> {
-        // TODO: This can be optimised but wait unti we're streaming data. don't need write_records AND complete file.
-
+    pub fn write_records(&mut self, ctx: &Context, records: &[Box<Record>], grid: &Grid) -> Result<(), MatcherError> {
         // Open readers for each sourced file of data.
         let mut readers: Vec<csv::Reader<File>> = grid.schema().files()
             .iter()
@@ -90,21 +88,21 @@ impl UnmatchedHandler {
                 })?;
         }
 
-        Ok(())
+        self.complete_files(ctx)
     }
 
-    pub fn complete_files(&mut self, ctx: &Context) -> Result<(), MatcherError> {
+    fn complete_files(&mut self, ctx: &Context) -> Result<(), MatcherError> {
         // Delete any unmatched files we didn't write records to.
         for (_filename, unmatched) in self.files.iter() {
             if unmatched.rows == 0 {
                 folders::delete_empty_unmatched(ctx, &unmatched.full_filename)?;
             } else {
                 // Rename any remaining .inprogress files.
-                folders::complete_file(&unmatched.path.to_canoncial_string())?;
+                let path = folders::complete_file(&unmatched.path.to_canoncial_string())?;
+                log::info!("Created unmatched file {}", path.to_canoncial_string());
             }
         }
 
-        // TODO: info log the creation of these files.
         Ok(())
     }
 }

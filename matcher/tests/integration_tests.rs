@@ -189,6 +189,11 @@ fn test_05_2_stage_match_from_examples() {
 #[test]
 fn test_07_unmatched_data_from_examples() {
 
+    // TODO: This test should have 3 attempts.
+    // The 1st attempt matches one group, and partially another, leaving a partial group and an unmatched group.
+    // The 2nd attempt matches the unmatched group leaving the partial group.
+    // The 3rd attempt matches the final group.
+
     let charter = common::example_charter("07-Unmatched-Data.yaml");
     let mut data_files = common::example_data_files(vec!(
         "20211129_043300000_07-invoices.csv",
