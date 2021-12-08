@@ -47,7 +47,6 @@ pub struct ColumnMeta {
     segments: Option<SegmentMeta>,  // String reference fields have a defined format.
     currency: Option<CurrencyMeta>, // If a string field isn't a reference it may be a currency.
     integer: Option<IntegerMeta>,   // If the column is an integer, ensure all values use a consistant length.
-    long: Option<LongMeta>,         // If the column is a long, ensure all values use a consistant length.
     decimal: Option<DecimalMeta>,   // If the column is a decimal, ensure all values use a consistant length.
 }
 
@@ -61,7 +60,6 @@ impl ColumnMeta {
             )),
             currency: None,
             integer: None,
-            long: None,
             decimal: None,
         }
     }
@@ -71,7 +69,6 @@ impl ColumnMeta {
             segments: None,
             currency: None,
             integer: None,
-            long: None,
             decimal: Some(DecimalMeta::new(precision, scale)),
         }
     }
@@ -81,7 +78,6 @@ impl ColumnMeta {
             segments: None,
             currency: Some(CurrencyMeta::new(code)),
             integer: None,
-            long: None,
             decimal: None,
         }
     }
@@ -98,7 +94,6 @@ impl ColumnMeta {
                 }
             },
             DataType::INTEGER => ColumnMeta { integer: Some(IntegerMeta::new(rng)), ..Default::default() },
-            DataType::LONG    => ColumnMeta { long: Some(LongMeta::new(rng)), ..Default::default() },
             DataType::DECIMAL => ColumnMeta { decimal: Some(DecimalMeta::generate(rng)), ..Default::default() },
             _ => ColumnMeta::default(),
         }
@@ -114,10 +109,6 @@ impl ColumnMeta {
 
     pub fn integer(&self) -> &Option<IntegerMeta> {
         &self.integer
-    }
-
-    pub fn long(&self) -> &Option<LongMeta> {
-        &self.long
     }
 
     pub fn decimal(&self) -> &Option<DecimalMeta> {
@@ -235,22 +226,6 @@ pub struct IntegerMeta {
 }
 
 impl IntegerMeta {
-    fn new(rng: &mut StdRng) -> Self {
-        Self { precision: rng.gen_range(1..=5) }
-    }
-
-    pub fn precision(&self) -> u8 {
-        self.precision
-    }
-}
-
-
-#[derive(Debug)]
-pub struct LongMeta {
-    precision: u8 // The number of digits in each row.
-}
-
-impl LongMeta {
     fn new(rng: &mut StdRng) -> Self {
         Self { precision: rng.gen_range(6..=10) }
     }

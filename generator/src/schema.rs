@@ -66,27 +66,22 @@ mod tests {
     #[test]
     fn test_parse_ok() {
         let mut rng = StdRng::seed_from_u64(1234567890u64);
-        let schema = Schema::new("ID,BO,BY,CH,DA,DT,DE,IN,LO,SH,ST,ID,BO", &mut rng, &mut vec!());
+        let schema = Schema::new("ID,BO,DT,DE,IN,ST,ID,BO", &mut rng, &mut vec!());
 
         // Parsed columns.
-        for idx in 0..13 {
+        for idx in 0..8 {
             assert_eq!(schema.columns()[idx].header(), format!("Column_{}", idx+1));
         }
 
         // Parsed columns.
         assert_eq!(schema.columns()[0].data_type(), DataType::UUID);
         assert_eq!(schema.columns()[1].data_type(), DataType::BOOLEAN);
-        assert_eq!(schema.columns()[2].data_type(), DataType::BYTE);
-        assert_eq!(schema.columns()[3].data_type(), DataType::CHAR);
-        assert_eq!(schema.columns()[4].data_type(), DataType::DATE);
-        assert_eq!(schema.columns()[5].data_type(), DataType::DATETIME);
-        assert_eq!(schema.columns()[6].data_type(), DataType::DECIMAL);
-        assert_eq!(schema.columns()[7].data_type(), DataType::INTEGER);
-        assert_eq!(schema.columns()[8].data_type(), DataType::LONG);
-        assert_eq!(schema.columns()[9].data_type(), DataType::SHORT);
-        assert_eq!(schema.columns()[10].data_type(), DataType::STRING);
-        assert_eq!(schema.columns()[11].data_type(), DataType::UUID);
-        assert_eq!(schema.columns()[12].data_type(), DataType::BOOLEAN);
+        assert_eq!(schema.columns()[2].data_type(), DataType::DATETIME);
+        assert_eq!(schema.columns()[3].data_type(), DataType::DECIMAL);
+        assert_eq!(schema.columns()[4].data_type(), DataType::INTEGER);
+        assert_eq!(schema.columns()[5].data_type(), DataType::STRING);
+        assert_eq!(schema.columns()[6].data_type(), DataType::UUID);
+        assert_eq!(schema.columns()[7].data_type(), DataType::BOOLEAN);
 
     }
 

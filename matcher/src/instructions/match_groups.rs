@@ -44,7 +44,6 @@ pub fn match_groups(
 
             // Test any constraints on the group to see if it's a match.
             if is_match(&records, constraints, schema, accessor, &lua_ctx, &lua_time)
-                // .map_err(|source| rlua::Error::external(source))? {
                 .map_err(rlua::Error::external)? {
 
                 records.iter().for_each(|r| r.set_matched());

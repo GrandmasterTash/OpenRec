@@ -140,8 +140,8 @@ fn fixed_inv_columns() -> Vec<Column> {
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, INVOICE_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
-        Column::new(DataType::DATE, TRADE_DATE.into(), ColumnMeta::default()),
-        Column::new(DataType::DATE, SETTLEMENT_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DATETIME, TRADE_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DATETIME, SETTLEMENT_DATE.into(), ColumnMeta::default()),
         Column::new(DataType::DECIMAL, TOTAL_AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
         Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("GBP".into()))),
         Column::new(DataType::DECIMAL, FX_RATE.into(), ColumnMeta::new_decimal(12, 6)),
@@ -156,7 +156,7 @@ fn fixed_pay_columns() -> Vec<Column> {
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, PAYMENT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
-        Column::new(DataType::DATE, PAYMENT_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DATETIME, PAYMENT_DATE.into(), ColumnMeta::default()),
         Column::new(DataType::DECIMAL, AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
         Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("GBP".into()))),
         Column::new(DataType::DECIMAL, FX_RATE.into(), ColumnMeta::new_decimal(12, 6)),
@@ -171,7 +171,7 @@ fn fixed_rec_columns() -> Vec<Column> {
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, RECEIPT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
-        Column::new(DataType::DATE, RECEIPT_DATE.into(), ColumnMeta::default()),
+        Column::new(DataType::DATETIME, RECEIPT_DATE.into(), ColumnMeta::default()),
         Column::new(DataType::DECIMAL, AMOUNT.into(), ColumnMeta::new_decimal(12, 6)),
         Column::new(DataType::STRING, PAYMENT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, CURRENCY.into(), ColumnMeta::new_currency(Some("GBP".into()))),
@@ -196,17 +196,12 @@ fn random_schema(cols: usize, rng: &mut StdRng) -> String {
     let mut schema = String::new();
 
     for col in 1..=cols {
-        schema += match rng.gen_range(1..=11) {
+        schema += match rng.gen_range(1..=6) {
             1  => DataType::BOOLEAN.into(),
-            2  => DataType::BYTE.into(),
-            3  => DataType::CHAR.into(),
-            4  => DataType::DATE.into(),
-            5  => DataType::DATETIME.into(),
-            6  => DataType::DECIMAL.into(),
-            7  => DataType::INTEGER.into(),
-            8  => DataType::LONG.into(),
-            9  => DataType::SHORT.into(),
-            10 => DataType::STRING.into(),
+            2  => DataType::DATETIME.into(),
+            3  => DataType::DECIMAL.into(),
+            4  => DataType::INTEGER.into(),
+            5  => DataType::STRING.into(),
             _  => DataType::UUID.into(),
         };
 
@@ -257,14 +252,9 @@ pub fn generate_row(schema: &Schema, foreign_key: &str, record_type: &str, rng: 
                 _ => match col.data_type() {
                     DataType::UNKNOWN  => panic!("Unknown data type encountered for column {}", col.header()),
                     DataType::BOOLEAN  => generate_boolean(rng),
-                    DataType::BYTE     => generate_byte(rng),
-                    DataType::CHAR     => generate_char(rng),
-                    DataType::DATE     => generate_date(rng),
                     DataType::DATETIME => generate_datetime(rng),
                     DataType::DECIMAL  => generate_decimal(rng, col.meta()),
                     DataType::INTEGER  => generate_integer(rng, col.meta()),
-                    DataType::LONG     => generate_long(rng, col.meta()),
-                    DataType::SHORT    => generate_short(rng),
                     DataType::STRING   => generate_string(rng, col.meta()),
                     DataType::UUID     => generate_uuid(),
                 }
@@ -301,21 +291,6 @@ fn generate_uuid() -> String {
 }
 
 ///
-/// Generate a random 2-byte integer.
-///
-fn generate_short(rng: &mut StdRng) -> String {
-    format!("{}", rng.gen_range(-32767..32767))
-}
-
-///
-/// Generate a random long up to the precision length in the metadata.
-///
-fn generate_long(rng: &mut StdRng, meta: &ColumnMeta) -> String {
-    let precision = meta.long().as_ref().unwrap().precision() as usize;
-    rand_chars(precision, RANDOM_NUMERIC, rng)
-}
-
-///
 /// Generate a random integer up to the precision length in the metadata.
 ///
 fn generate_integer(rng: &mut StdRng, meta: &ColumnMeta) -> String {
@@ -337,17 +312,6 @@ pub fn generate_decimal(rng: &mut StdRng, meta: &ColumnMeta) -> String {
         scale);
 
     format!("{}", decimal)
-}
-
-///
-/// Generate a random date from 1 year ago to 1 years time (loosly).
-///
-fn generate_date(rng: &mut StdRng) -> String {
-    let y = Utc::now().year() - 2 + rng.gen_range(0..3);  // Generate a year within 1 year of the current.
-    let m = rng.gen_range(1..13);                         // Generate a random month.
-    let d = rng.gen_range(1..days_in_month(y, m) as u32); // Generate a random day from this month.
-    let dt = Utc.ymd(y, m, d).and_hms(0, 0, 0);
-    format!("{}", dt.timestamp_millis())
 }
 
 ///
@@ -382,20 +346,6 @@ fn days_in_month(year: i32, month: u32) -> i64 {
     )
     .signed_duration_since(NaiveDate::from_ymd(year, month, 1))
     .num_days()
-}
-
-///
-/// Generate a random character from the alpha-numeric range.
-///
-fn generate_char(rng: &mut StdRng) -> String {
-    rand_char(RANDOM_ALPHANUMERIC, rng).to_string()
-}
-
-///
-/// Generate a positive random short.
-///
-fn generate_byte(rng: &mut StdRng) -> String {
-    format!("{}", rng.gen_range(0..128))
 }
 
 ///

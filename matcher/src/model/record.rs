@@ -128,33 +128,6 @@ impl Record {
         Ok(None)
     }
 
-    pub fn get_byte(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<u8>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
-                return Ok(Some(convert::csv_bytes_to_byte(bytes)?))
-            }
-        }
-        Ok(None)
-    }
-
-    pub fn get_char(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<char>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
-                return Ok(Some(convert::csv_bytes_to_char(bytes)?))
-            }
-        }
-        Ok(None)
-    }
-
-    pub fn get_date(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<u64>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
-                return Ok(Some(convert::csv_bytes_to_date(bytes)?))
-            }
-        }
-        Ok(None)
-    }
-
     pub fn get_datetime(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<u64>, MatcherError> {
         if let Some(column) = accessor.schema().position_in_record(header, self) {
             if let Some(bytes) = self.get_bytes(*column, accessor)? {
@@ -173,28 +146,10 @@ impl Record {
         Ok(None)
     }
 
-    pub fn get_int(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i32>, MatcherError> {
+    pub fn get_int(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i64>, MatcherError> {
         if let Some(column) = accessor.schema().position_in_record(header, self) {
             if let Some(bytes) = self.get_bytes(*column, accessor)? {
                 return Ok(Some(convert::csv_bytes_to_int(bytes)?))
-            }
-        }
-        Ok(None)
-    }
-
-    pub fn get_long(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i64>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
-                return Ok(Some(convert::csv_bytes_to_long(bytes)?))
-            }
-        }
-        Ok(None)
-    }
-
-    pub fn get_short(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i16>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
-                return Ok(Some(convert::csv_bytes_to_short(bytes)?))
             }
         }
         Ok(None)
@@ -226,14 +181,9 @@ impl Record {
             Some(data_type) => match data_type {
                 DataType::UNKNOWN => Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
                 DataType::BOOLEAN => Ok(self.get_bool(header, accessor)?.map(|v|convert::bool_to_string(v)).unwrap_or(String::default())),
-                DataType::BYTE => Ok(self.get_byte(header, accessor)?.map(|v|convert::byte_to_string(v)).unwrap_or(String::default())),
-                DataType::CHAR => Ok(self.get_char(header, accessor)?.map(|v|convert::char_to_string(v)).unwrap_or(String::default())),
-                DataType::DATE => Ok(self.get_date(header, accessor)?.map(|v|convert::date_to_string(v)).unwrap_or(String::default())),
                 DataType::DATETIME => Ok(self.get_datetime(header, accessor)?.map(|v|convert::datetime_to_string(v)).unwrap_or(String::default())),
                 DataType::DECIMAL => Ok(self.get_decimal(header, accessor)?.map(|v|convert::decimal_to_string(v)).unwrap_or(String::default())),
                 DataType::INTEGER => Ok(self.get_int(header, accessor)?.map(|v|convert::int_to_string(v)).unwrap_or(String::default())),
-                DataType::LONG => Ok(self.get_long(header, accessor)?.map(|v|convert::long_to_string(v)).unwrap_or(String::default())),
-                DataType::SHORT => Ok(self.get_short(header, accessor)?.map(|v|convert::short_to_string(v)).unwrap_or(String::default())),
                 DataType::STRING => Ok(self.get_string(header, accessor)?.unwrap_or(String::default())),
                 DataType::UUID => Ok(self.get_uuid(header, accessor)?.map(|v|convert::uuid_to_string(v)).unwrap_or(String::default())),
             },
@@ -245,18 +195,6 @@ impl Record {
         accessor.derived_accessor().append(convert::bool_to_string(value).into());
     }
 
-    pub fn append_byte(&self, value: u8, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::byte_to_string(value).into());
-    }
-
-    pub fn append_char(&self, value: char, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::char_to_string(value).into());
-    }
-
-    pub fn append_date(&self, value: u64, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::date_to_string(value).into());
-    }
-
     pub fn append_datetime(&self, value: u64, accessor: &mut DataAccessor) {
         accessor.derived_accessor().append(convert::datetime_to_string(value).into());
     }
@@ -265,16 +203,8 @@ impl Record {
         accessor.derived_accessor().append(convert::decimal_to_string(value).into());
     }
 
-    pub fn append_int(&self, value: i32, accessor: &mut DataAccessor) {
+    pub fn append_int(&self, value: i64, accessor: &mut DataAccessor) {
         accessor.derived_accessor().append(convert::int_to_string(value).into());
-    }
-
-    pub fn append_long(&self, value: i64, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::long_to_string(value).into());
-    }
-
-    pub fn append_short(&self, value: i16, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::short_to_string(value).into());
     }
 
     pub fn append_string(&self, value: &str, accessor: &mut DataAccessor) {
@@ -333,24 +263,6 @@ impl Record {
                         None => continue,
                     }
                 },
-                DataType::BYTE => {
-                    match self.get_byte(header, accessor)? {
-                        Some(value) => convert::byte_to_string(value),
-                        None => continue,
-                    }
-                },
-                DataType::CHAR => {
-                    match self.get_char(header, accessor)? {
-                        Some(value) => convert::char_to_string(value),
-                        None => continue,
-                    }
-                },
-                DataType::DATE => {
-                    match self.get_date(header, accessor)? {
-                        Some(value) => convert::date_to_string(value),
-                        None => continue,
-                    }
-                },
                 DataType::DATETIME => {
                     match self.get_datetime(header, accessor)? {
                         Some(value) => convert::datetime_to_string(value),
@@ -366,18 +278,6 @@ impl Record {
                 DataType::INTEGER => {
                     match self.get_int(header, accessor)? {
                         Some(value) => convert::int_to_string(value),
-                        None => continue,
-                    }
-                },
-                DataType::LONG => {
-                    match self.get_long(header, accessor)? {
-                        Some(value) => convert::long_to_string(value),
-                        None => continue,
-                    }
-                },
-                DataType::SHORT => {
-                    match self.get_short(header, accessor)? {
-                        Some(value) => convert::short_to_string(value),
                         None => continue,
                     }
                 },

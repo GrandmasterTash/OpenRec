@@ -27,20 +27,15 @@ pub fn project_column_new(
         match data_type {
             DataType::UNKNOWN  => {},
             DataType::BOOLEAN  => record.append_bool(lua_ctx.load(&eval).eval::<bool>()?, accessor),
-            DataType::BYTE     => record.append_byte(lua_ctx.load(&eval).eval::<u8>()?, accessor),
-            DataType::CHAR     => record.append_char(lua_ctx.load(&eval).eval::<String>().map(|s|s.chars().next().unwrap_or_default())?, accessor),
-            DataType::DATE     => record.append_date(lua_ctx.load(&eval).eval::<u64>()?, accessor),
             DataType::DATETIME => record.append_datetime(lua_ctx.load(&eval).eval::<u64>()?, accessor),
             DataType::DECIMAL  => record.append_decimal(lua_ctx.load(&eval).eval::<lua::LuaDecimal>()?.0, accessor),
-            DataType::INTEGER  => record.append_int(lua_ctx.load(&eval).eval::<i32>()?, accessor),
-            DataType::LONG     => record.append_long(lua_ctx.load(&eval).eval::<i64>()?, accessor),
-            DataType::SHORT    => record.append_short(lua_ctx.load(&eval).eval::<i16>()?, accessor),
+            DataType::INTEGER  => record.append_int(lua_ctx.load(&eval).eval::<i64>()?, accessor),
             DataType::STRING   => record.append_string(&lua_ctx.load(&eval).eval::<String>()?, accessor),
             DataType::UUID     => record.append_uuid(lua_ctx.load(&eval).eval::<String>().map(|s|s.parse().expect("Lua returned an invalid uuid"))?, accessor),
         };
     } else {
         // Put a blank value in the projected column if we're not evaluating it.
-        record.append_string("", accessor); // TODO: Create a 'pad' fn for this, to avoid dt confusion.
+        record.append_string("", accessor);
     }
 
     Ok(())
