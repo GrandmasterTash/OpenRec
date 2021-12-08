@@ -14,20 +14,15 @@ use error::MatcherError;
 use std::{time::{Duration, Instant}, collections::HashMap};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, data_accessor::DataAccessor, schema::Column}, instructions::merge_col::merge_cols, instructions::{project_col::{/* project_column, */ project_column_new, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
-// TODO: Alter source_data to only retain columns required for matching.
-//   Also - consider memory compaction, string table, etc.
-//   After memory compaction appears any projection (even bools) add signigicant overhead.
-//   Will look at 2021-12-05_064000000_invoices.derived.csv files to store projections and merged columns.
-//   Writing new file very fast. Suggest new strategy. Write all projected and merged columns to .derived file.
-//   Record should source from that file instead. CREATE A FILE ACCESSOR type FIRST!!!!!!!!!!!!!!!
-//   Suggest derived vec used during all projections and mergers, then flushed to disk and dropped.
-
-
 // TODO: Flesh-out examples.
 // TODO: Unit/integration tests. Lots.
 // TODO: Check code coverage.
 // TODO: Clippy!
-// TODO: Investigate sled for disk based groupings...
+// TODO: Changesets
+// TODO: Rollbacks.
+// TODO: Thread-per source file for projects and merges.
+// TODO: Investigate sled for disk based groupings.
+// TODO: Journal file - event log.
 
 ///
 /// Created for each match job. Used to pass the main top-level things around.
@@ -36,6 +31,7 @@ pub struct Context {
     job_id: Uuid,
     charter: Charter,
     base_dir: String,
+    timestamp: String,
 }
 
 impl Context {
@@ -44,6 +40,7 @@ impl Context {
             job_id: Uuid::new_v4(),
             charter,
             base_dir,
+            timestamp: folders::new_timestamp(),
         }
     }
 
@@ -57,6 +54,10 @@ impl Context {
 
     pub fn base_dir(&self) -> &str {
         &self.base_dir
+    }
+
+    pub fn ts(&self) -> &str {
+        &self.timestamp
     }
 }
 
@@ -78,30 +79,12 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     // Move any waiting files to the matching folder.
     folders::progress_to_matching(&ctx)?;
 
-    // Experiment....
-    // let rows = 1000000;
-    // let path = folders::matching(&ctx).join("write_test.csv");
-
-    // println!("Writing {} records to CSV {:?}", rows, path.to_str());
-    // let mut writer = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(path).unwrap();
-
-    // for idx in 1..1000 {
-    //     let mut record = csv::ByteRecord::new();
-    //     record.push_field(&Decimal::ONE_THOUSAND.serialize());
-    //     record.push_field(format!("REF{}", idx).as_bytes());
-    //     writer.write_record(&record).unwrap();
-    // }
-
-    // writer.flush().unwrap();
-
-    // println!("Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
-
     // Iterate alphabetically matching files.
     process_charter(&ctx)?;
 
     // Move matching files to the archive.
     // BUG: ONLY progress processed files by the charter, not everything in the waiting folder.
+    // BUG: Delete .derived files.
     folders::progress_to_archive(&ctx)?;
 
     // TODO: Log how many records processed, rate, MB size, etc.
@@ -115,11 +98,7 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
 ///
 fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
 
-    log::info!("Running charter [{}] v{:?}",
-        ctx.charter().name(),
-        ctx.charter().version());
-
-    let ts = folders::new_timestamp();
+    log::info!("Running charter [{}] v{:?}", ctx.charter().name(), ctx.charter().version());
 
     // Load all data into memory (for now).
     let mut grid = Grid::new();
@@ -127,8 +106,125 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
     // Create Lua engine bindings.
     let lua = rlua::Lua::new();
 
-    // Source data now to build the grid schema.
+    // Source data now to build the grid schema and index the records.
     grid.source_data(ctx)?;
+
+    // Create a DataAccessor now to use through the first two instruction passes. It will run in write mode
+    // meaning it will be writing derived values to a buffer for each record and flushing to disk.
+    let mut accessor = DataAccessor::with_buffer(&grid)?;
+
+    // If charter.debug - dump the grid with instr idx in filename.
+    if ctx.charter().debug() {
+        grid.debug_grid(ctx, &format!("0_{}.output.csv", ctx.ts()), &mut accessor);
+    }
+
+    // Pass 1 - calculate for each instruction, the Lua columns needed and added derived columns to the grid.
+    let projection_cols = pass_1_derived_schema(ctx, &mut grid)?;
+
+    // println!("Pass 1 complete - Sleeping for 8...");
+    // std::thread::sleep(std::time::Duration::from_secs(8));
+
+    // Pass 2 - calculate all projected and derived columns and write them to a .derived file per sourced
+    // file. Every corresponding row in the source files will have a row in the derived files which contains
+    // projected and merged column data.
+    pass_2_derived_data(ctx, &lua, &mut grid, &mut accessor, projection_cols)?;
+
+    // println!("Pass 2 complete - Sleeping for 8...");
+    // std::thread::sleep(std::time::Duration::from_secs(8));
+
+    // Pass 3 - run all other instructions that don't create derived data.
+    // Create a new accessor which can read from our persisted .derived files.
+    pass_3_match_data(ctx, &lua, &mut grid)?;
+
+    // println!("Pass 3 complete - Sleeping for 8...");
+    // std::thread::sleep(std::time::Duration::from_secs(8));
+
+    Ok(())
+}
+
+///
+/// Add a derived column for each projection or merger and calculate which columns each projection
+/// is dependant on.
+///
+fn pass_1_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<HashMap<usize, Vec<Column>>, MatcherError> {
+
+    let mut projection_cols = HashMap::new();
+
+    // Because both grid and accessor need to be borrowed mutablly, we'll copy an immutable schema
+    // to pass around.
+    let schema = grid.schema().clone();
+
+    for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
+        match inst {
+            Instruction::Project { column, as_type, from, when } => {
+                projection_cols.insert(idx, script_cols(from, when.as_ref().map(String::as_ref), &schema));
+                grid.schema_mut().add_projected_column(Column::new(column.into(), None, *as_type))?;
+            },
+            Instruction::MergeColumns { into, from } => {
+                let data_type = merge_col::validate(from, grid)?;
+                grid.schema_mut().add_merged_column(Column::new(into.into(), None, data_type))?;
+            },
+            _ => { /* Ignore other instructions. */}
+        }
+    }
+    Ok(projection_cols)
+}
+
+///
+/// Calculate all projected and derived columns and write them to a .derived file per sourced
+/// file. Every corresponding row in the source files will have a row in the derived files which contains
+/// projected and merged column data.
+///
+fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor: &mut DataAccessor, projection_cols: HashMap<usize, Vec<Column>>) -> Result<(), MatcherError> {
+
+    // Ensure the accessor's schema is sync'd with the modified grid's schema.
+    accessor.set_schema(grid.schema().clone());
+
+    // Now we know what columns are derived, write their headers to the .derived files.
+    accessor.write_derived_headers()?;
+
+    lua.context(|lua_ctx| {
+        // Calculate all projected and merged column values for each record.
+        for record in grid.records() {
+            for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
+                match inst {
+                    Instruction::Project { column: _, as_type, from, when } => {
+                        let script_cols = projection_cols.get(&idx)
+                            .ok_or(MatcherError::MissingScriptCols { instruction: idx })
+                            .map_err(rlua::Error::external)?;
+
+                        project_column_new(
+                            *as_type,
+                            from,
+                            when,
+                            &record,
+                            accessor,
+                            script_cols,
+                            &lua_ctx)
+                            .map_err(rlua::Error::external)?;
+                    },
+                    Instruction::MergeColumns { into: _, from } => {
+                        merge_cols(from, &record, accessor).map_err(rlua::Error::external)?;
+                    },
+                    _ => {},
+                };
+            }
+
+            // Flush the current record buffer to the appropriate derived file.
+            record.flush(accessor).map_err(rlua::Error::external)?;
+        }
+        Ok(())
+    })
+    .map_err(|source| MatcherError::MatchGroupError { source })?;
+
+    Ok(())
+}
+
+///
+/// Run all other instructions that don't create derived data. Create a new accessor which
+/// can read from our persisted .derived files.
+///
+fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<(), MatcherError> {
 
     // Create a match file containing job details and giving us a place to append match results.
     let mut matched = MatchedHandler::new(ctx, &grid)?;
@@ -136,103 +232,22 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
     // Create unmatched files for each sourced file.
     let mut unmatched = UnmatchedHandler::new(ctx, &grid)?;
 
-    // Create a DataAccessor now to use through both instruction passes.
-    let mut accessor = DataAccessor::with_buffer(&grid);
-
-    // Because both grid and accessor need to be borrow mutablly, we'll copy an immutable schema to pass around.
+    // Create a read-mode derived accessor used to read real and derived data.
+    let mut accessor = DataAccessor::with_no_buffer(grid)?;
     let schema = grid.schema().clone();
-
-    // If charter.debug - dump the grid with instr idx in filename.
-    if ctx.charter().debug() {
-        grid.debug_grid(ctx, &format!("0_{}.output.csv", ts), &mut accessor);
-    }
-
-    // Pass 0 - calculate for each instruction, the Lua columns needed and added derived columns to the grid.
-    let mut projection_cols = HashMap::new();
-    for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
-        match inst {
-            Instruction::Project { column, as_type, from, when } => {
-                projection_cols.insert(idx, script_cols(from, when.as_ref().map(String::as_ref), &schema));
-
-                grid.schema_mut().add_projected_column(Column::new(column.into(), None, *as_type))?;
-            },
-            Instruction::MergeColumns { into, from } => {
-                let data_type = merge_col::validate(from, &mut grid)?;
-                grid.schema_mut().add_merged_column(Column::new(into.into(), None, data_type))?;
-            },
-            _ => {}
-        }
-    }
-
-    // println!("Pass 0 complete - Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
-
-    // The above phase will likely have modified the schema. Take new snapshots.
-    // Because both grid and accessor need to be borrow mutablly, we'll copy an immutable schema to pass around.
-    let schema = grid.schema().clone();
-    accessor.set_schema(schema.clone());
-
-    // Now we know what columns are derived, write their headers to the .derived files.
-    accessor.write_derived_headers()?;
-
-    // TODO: Pass 1 - calculate all projected and derived columns and write them to a .derived file per sourced
-    // file. Every corresponding row in the source files will have a row in the derived files which contains 
-    // projected and merged column data.
-    lua.context(|lua_ctx| {
-        // let globals = lua_ctx.globals();
-        // TODO: Put column headers in the derived files.
-        for record in grid.records() {
-            for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
-                match inst {
-                    Instruction::Project { column, as_type, from, when } => {
-                        project_column_new(
-                            column,
-                            *as_type,
-                            from,
-                            when.as_ref().map(String::as_ref), // TODO: De-ugly this (and above).
-                            &record,
-                            &mut accessor,
-                            projection_cols.get(&idx).unwrap(),
-                            &lua_ctx/* ,
-                            &globals */).unwrap(); // TODO: Don't unwrap.
-                    },
-                    Instruction::MergeColumns { into, from } => {
-                        merge_cols(into, from, &record, &mut accessor).unwrap(); // TODO: Don't unwrap.
-                    },
-                    _ => {},
-                };
-            }
-
-            // Flush the current record buffer to the appropriate derived file.
-            record.flush(&mut accessor).unwrap(); // TODO: Don't unwrap.
-        }
-    });
-
-    // println!("Pass 1 complete - Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
-
-    // Pass 2 - run all other instructions that don't create derived data.
-    // Create a new accessor which can read from our persisted .derived files.
-    let mut accessor = DataAccessor::with_no_buffer(&mut grid);
-
-    // println!("Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
 
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
         match inst {
-            // Instruction::Project { column, as_type, from, when } => project_column(column, *as_type, from, when.as_ref().map(String::as_ref), &mut grid, &mut accessor, &lua)?,
             Instruction::Project { .. } => {},
-            // Instruction::MergeColumns { into, from } => merge_cols(into, from, &mut grid)?,
             Instruction::MergeColumns { .. } => {},
-            // Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, &mut grid, &lua, &mut matched)?,
-            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, &mut grid, &schema, &mut accessor, &lua, &mut matched)?,
+            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, grid, &schema, &mut accessor, &lua, &mut matched)?,
             Instruction::_Filter   => todo!(),
             Instruction::_UnFilter => todo!(),
         };
 
         // If charter.debug - dump the grid with instr idx in filename.
         if ctx.charter().debug() {
-            grid.debug_grid(ctx, &format!("{}_{}.output.csv", idx + 1, ts), &mut accessor);
+            grid.debug_grid(ctx, &format!("{}_{}.output.csv", idx + 1, ctx.ts()), &mut accessor);
         }
 
         log::info!("Grid Memory Size: {}",
@@ -245,9 +260,6 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
     // Write all unmatched records now - this will be optimised at a later stage to be a single call.
     unmatched.write_records(grid.records(), &grid)?;
     unmatched.complete_files(ctx)?;
-
-    // println!("Pass 2 complete - Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
 
     Ok(())
 }

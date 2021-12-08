@@ -25,15 +25,12 @@ pub fn match_groups(
     let mut match_count = 0;
     let lua_time = Cell::new(Duration::from_millis(0));
 
-    // let mut rdrs = grid.readers();
-
     // Create a Lua context to evaluate Constraint rules in.
     lua.context(|lua_ctx| {
         // Form groups from the records.
         for (_key, group) in &grid.records().iter()
 
             // Build a 'group key' from the record using the grouping columns.
-            // .map(|record| (match_key(record, group_by, grid.schema(), &mut rdrs[record.file_idx()]), record) )
             .map(|record| (match_key(record, group_by, accessor), record) )
 
             // Sort records by the group key to form contiguous runs of records belonging to the same group.
@@ -46,9 +43,9 @@ pub fn match_groups(
             let records = group.map(|(_key, record)| record).collect::<Vec<&Box<Record>>>();
 
             // Test any constraints on the group to see if it's a match.
-            // if is_match(&records, constraints, grid.schema(), &mut rdrs, &lua_ctx, &lua_time)
             if is_match(&records, constraints, schema, accessor, &lua_ctx, &lua_time)
-                .map_err(|source| rlua::Error::external(source))? {
+                // .map_err(|source| rlua::Error::external(source))? {
+                .map_err(rlua::Error::external)? {
 
                 records.iter().for_each(|r| r.set_matched());
                 matched.append_group(&records).map_err(|source| rlua::Error::external(source))?;
@@ -78,11 +75,9 @@ pub fn match_groups(
 ///
 /// Derive a value ('match key') to group this record with others.
 ///
-// fn match_key(record: &Box<Record>, headers: &[String], schema: &GridSchema, rdr: &mut csv::Reader<File>) -> Bytes {
 fn match_key(record: &Box<Record>, headers: &[String], accessor: &mut DataAccessor) -> Bytes {
     let mut buf = BytesMut::new();
     for header in headers {
-        // if let Some(bytes) = record.get_compact_bytes(header, schema, rdr).unwrap_or_default() { // We shouldn't error - if we do, use a blank match key.
         if let Some(bytes) = record.get_compact_bytes(header, accessor).unwrap() { // TODO: Need to know if this fails.
             buf.put(bytes);
         }
@@ -97,7 +92,6 @@ fn is_match(
     group: &[&Box<Record>],
     constraints: &[Constraint],
     schema: &GridSchema,
-    /*rdrs: &mut Vec<csv::Reader<File>>, */
     accessor: &mut DataAccessor,
     lua_ctx: &Context,
     lua_time: &Cell<Duration>) -> Result<bool, MatcherError> {
@@ -106,7 +100,6 @@ fn is_match(
     let start = Instant::now();
 
     for (_index, constraint) in constraints.iter().enumerate() {
-        // if !constraint.passes(&group, schema, rdrs, lua_ctx)? {
         if !constraint.passes(&group, schema, accessor, lua_ctx)? {
             failed.push(constraint);
         }

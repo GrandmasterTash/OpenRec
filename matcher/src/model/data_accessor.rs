@@ -1,6 +1,6 @@
-use bytes::{Bytes, BytesMut, BufMut};
 use crate::error::MatcherError;
-use super::{schema::GridSchema, grid::Grid};
+use bytes::{Bytes, BytesMut, BufMut};
+use super::{schema::GridSchema, grid::Grid, record::Record};
 
 ///
 /// A list of open CSV reader in the order of files sourced into the Grid.
@@ -18,10 +18,10 @@ pub type CsvWriters = Vec<csv::Writer<std::fs::File>>;
 ///
 pub enum DerivedAccessor {
     // Derived data will be retreived from a persisted CSV file.
-    File(CsvReaders), // TODO: Rename these enums to Read and Write respectively.
+    Read(CsvReaders),
 
     // Derived data will be retreived from a memory buffer for the current record.
-    Buffer(Vec<Bytes>, CsvWriters),
+    Write(Vec<Bytes>, CsvWriters),
 }
 
 ///
@@ -36,20 +36,20 @@ pub struct DataAccessor {
 }
 
 impl DataAccessor {
-    pub fn with_buffer(grid: &Grid) -> Self {
-        Self {
+    pub fn with_buffer(grid: &Grid) -> Result<Self, MatcherError> {
+        Ok(Self {
             schema: grid.schema().clone(),
-            data_readers: csv_readers(grid),
-            derived_accessor: DerivedAccessor::Buffer(Vec::new(), derived_writers(grid)),
-        }
+            data_readers: csv_readers(grid)?,
+            derived_accessor: DerivedAccessor::Write(Vec::new(), derived_writers(grid)?),
+        })
     }
 
-    pub fn with_no_buffer(grid: &mut Grid) -> Self {
-        Self {
+    pub fn with_no_buffer(grid: &mut Grid) -> Result<Self, MatcherError> {
+        Ok(Self {
             schema: grid.schema().clone(),
-            data_readers: csv_readers(grid),
-            derived_accessor: DerivedAccessor::File(derived_readers(grid)),
-        }
+            data_readers: csv_readers(grid)?,
+            derived_accessor: DerivedAccessor::Read(derived_readers(grid)?),
+        })
     }
 
     pub fn schema(&self) -> &GridSchema {
@@ -71,35 +71,66 @@ impl DataAccessor {
     pub fn write_derived_headers(&mut self) -> Result<(), MatcherError> {
         self.derived_accessor.write_headers(&self.schema)
     }
+
+    ///
+    /// Get data from the real CSV file.
+    ///
+    pub fn get(&mut self, col: usize, record: &Record) -> Result<Option<Bytes>, MatcherError> {
+        let rdr = self.data_readers.get_mut(record.file_idx())
+            .ok_or(MatcherError::MissingFileInSchema { index: record.file_idx() })?;
+        rdr.seek(record.pos())?;
+
+        let mut buffer = csv::ByteRecord::new();
+        rdr.read_byte_record(&mut buffer)?;
+
+        match buffer.get(col as usize) {
+            Some(bytes) if bytes.len() > 0 => {
+                let mut bm = BytesMut::new();
+                bm.put(bytes);
+                Ok(Some(bm.freeze()))
+            },
+            Some(_) |
+            None    => Ok(None),
+        }
+    }
 }
 
 impl DerivedAccessor {
-    pub fn get(&mut self, col: usize, file_idx: usize, pos: Option<csv::Position>) -> Option<Bytes> {
+    pub fn get(&mut self, col: usize, record: &Record)
+        -> Result<Option<Bytes>, MatcherError> {
+
         match self {
-            DerivedAccessor::File(readers) => {
-                let rdr = readers.get_mut(file_idx).unwrap(); // TODO: Don't unwrap.
-                rdr.seek(pos.unwrap()).unwrap(); // TODO: Don't unwrap.
+            DerivedAccessor::Read(readers) => {
+                let rdr = readers.get_mut(record.file_idx())
+                    .ok_or(MatcherError::MissingFileInSchema{ index: record.file_idx() })?;
+
+                match record.derived_pos() {
+                    Some(pos) => rdr.seek(pos)?,
+                    None => return Err(MatcherError::NoDerivedPosition { row: record.row(), file_idx: record.file_idx() }),
+                };
+
                 let mut buffer = csv::ByteRecord::new();
-                rdr.read_byte_record(&mut buffer).unwrap(); // TODO: Don't unwrap.
+                rdr.read_byte_record(&mut buffer)?;
 
                 match buffer.get(col as usize) {
                     Some(bytes) if bytes.len() > 0 => {
                         let mut bm = BytesMut::new();
                         bm.put(bytes);
-                        Some(bm.freeze())
+                        Ok(Some(bm.freeze()))
                     },
+
                     Some(_) |
-                    None    => None,
+                    None    => Ok(None),
                 }
             },
-            DerivedAccessor::Buffer(buffer, _writers) => buffer.get(col).cloned(),
+            DerivedAccessor::Write(buffer, _writers) => Ok(buffer.get(col).cloned()),
         }
     }
 
     pub fn append(&mut self, bytes: Bytes) {
         match self {
-            DerivedAccessor::File(_) => panic!("File based accessor cannot be written to"),
-            DerivedAccessor::Buffer(buffer, _) => {
+            DerivedAccessor::Read(_) => panic!("File based accessor cannot be written to"),
+            DerivedAccessor::Write(buffer, _) => {
                 buffer.push(bytes)
             },
         }
@@ -107,15 +138,16 @@ impl DerivedAccessor {
 
     pub fn flush(&mut self, file_idx: u16) -> Result<(), MatcherError> {
         match self {
-            DerivedAccessor::File(_) => panic!("File based accessor cannot be flushed"),
-            DerivedAccessor::Buffer(buffer, writers) => {
+            DerivedAccessor::Read(_) => panic!("File based accessor cannot be flushed"),
+            DerivedAccessor::Write(buffer, writers) => {
                 let mut record = csv::ByteRecord::new();
                 buffer.iter().for_each(|f| record.push_field(f));
                 buffer.clear();
 
-                let writer = writers.get_mut(file_idx as usize).unwrap(); // TODO: Don't unwrap.
-                writer.write_byte_record(&record).unwrap(); // TODO: Don't unwrap.
-                writer.flush().unwrap(); // TODO: Don't unwrap.
+                let writer = writers.get_mut(file_idx as usize)
+                    .ok_or(MatcherError::MissingFileInSchema{ index: file_idx as usize })?;
+                writer.write_byte_record(&record)?;
+                writer.flush()?;
             },
         }
         Ok(())
@@ -123,12 +155,11 @@ impl DerivedAccessor {
 
     pub fn write_headers(&mut self, schema: &GridSchema) -> Result<(), MatcherError> {
         let writers = match self {
-            DerivedAccessor::File(_) => panic!("Can't write derived headers, accessor is for reading only"),
-            DerivedAccessor::Buffer(_, writers) => writers,
+            DerivedAccessor::Read(_) => panic!("Can't write derived headers, accessor is for reading only"),
+            DerivedAccessor::Write(_, writers) => writers,
         };
 
         for (idx, file) in schema.files().iter().enumerate() {
-            // let file_schema = &schema.file_schemas()[file.schema_idx()];
             let writer = &mut writers[idx];
 
         writer.write_record(schema.derived_columns().iter().map(|c| c.header_no_prefix()).collect::<Vec<&str>>())
@@ -144,27 +175,30 @@ impl DerivedAccessor {
 }
 
 
-fn csv_readers(grid: &Grid) -> CsvReaders {
-    grid.schema()
+fn csv_readers(grid: &Grid) -> Result<CsvReaders, MatcherError> {
+    Ok(grid.schema()
         .files()
         .iter()
-        .map(|f| csv::ReaderBuilder::new().from_path(f.path()).unwrap()) // TODO: Don't unwrap
-        .collect()
+        .map(|f| csv::ReaderBuilder::new().from_path(f.path()))
+        .collect::<Result<Vec<_>, _>>()?)
 }
 
-fn derived_readers(grid: &mut Grid) -> CsvReaders {
-    let mut readers: CsvReaders = grid.schema()
+
+fn derived_readers(grid: &mut Grid) -> Result<CsvReaders, MatcherError> {
+    let mut readers = grid.schema()
         .files()
         .iter()
-        .map(|f| csv::ReaderBuilder::new().has_headers(false).from_path(f.derived_path()).unwrap()) // TODO: Don't unwrap
-        .collect();
+        .map(|f| csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(f.derived_path()))
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Index all the record derived positions in their respective files.
 
     // Skip the schema row in each reader.
     let mut ignored = csv::ByteRecord::new();
     for reader in &mut readers {
-        reader.read_byte_record(&mut ignored).unwrap(); // TODO: Don't unwrap.
+        reader.read_byte_record(&mut ignored)?;
     }
 
     // Advance the reader in the appropriate file for each record in the grid.
@@ -174,17 +208,17 @@ fn derived_readers(grid: &mut Grid) -> CsvReaders {
         record.set_derived_pos(reader.position());
     }
 
-    readers
+    Ok(readers)
 }
 
-fn derived_writers(grid: &Grid) -> CsvWriters {
-    grid.schema()
+
+fn derived_writers(grid: &Grid) -> Result<CsvWriters, MatcherError> {
+    Ok(grid.schema()
         .files()
         .iter()
-        .map(|f| {
-            println!("DERIVED_PATH: {:?}", f.derived_path());
-            f
-        }) // TODO: Don't unwrap
-        .map(|f| csv::WriterBuilder::new().has_headers(false).quote_style(csv::QuoteStyle::Always).from_path(f.derived_path()).unwrap()) // TODO: Don't unwrap
-        .collect()
+        .map(|f| csv::WriterBuilder::new()
+            .has_headers(false)
+            .quote_style(csv::QuoteStyle::Always)
+            .from_path(f.derived_path()))
+        .collect::<Result<Vec<_>, _>>()?)
 }

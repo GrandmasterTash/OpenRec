@@ -70,6 +70,9 @@ pub enum MatcherError {
     #[error("Unable to write unmatched record row {row} to {filename}")]
     CannotWriteUnmatchedRecord { filename: String, row: usize, source: csv::Error },
 
+    #[error("Cannot read derived data from record in row {row} for file {file_idx}, no derived index")]
+    NoDerivedPosition { row: usize, file_idx: usize },
+
     #[error("Unknown data type specified in column {column}")]
     UnknownDataTypeInColumn { column: isize },
 
@@ -90,6 +93,9 @@ pub enum MatcherError {
 
     #[error("Merged column {header} already exists")]
     MergedColumnExists { header: String },
+
+    #[error("Instruction {instruction} was missing a set of script columms")]
+    MissingScriptCols { instruction: usize },
 
     #[error("Lua error in script\neval: {eval}\nreturn type: {data_type}\nwhen: {when}\row: {row}")]
     ProjectColScriptError { eval: String, when: String, data_type: String, row: usize, source: rlua::Error },

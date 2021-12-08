@@ -1,6 +1,11 @@
 use std::fs::DirEntry;
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString, original_filename}};
 
+///
+/// Represents a physical sourced file of data.
+///
+/// Contains various representations of it's path along with the index of it's schema held by the GridSchema.
+///
 #[derive(Clone, Debug)]
 pub struct DataFile {
     shortname: String,         // 'invoices' if filename is '/tmp/20201118_053000000_invoices.csv' or '/tmp/20201118_053000000_invoices.unmatched.csv'
@@ -21,7 +26,11 @@ impl DataFile {
         let timestamp = folders::timestamp(&filename)?.to_string();
         let derived = folders::derived(&entry)?;
         let derived_path = derived.to_string_lossy().into();
-        let derived_filename = derived.file_name().unwrap().to_string_lossy().into(); // TODO: Don't unwrap.
+        let derived_filename = derived.file_name()
+            .ok_or(MatcherError::PathNotAFile { path: derived.to_canoncial_string() })?
+            .to_string_lossy().into();
+        let original_filename = original_filename(&filename)?;
+
         Ok(Self {
             shortname: shortname.clone(),
             filename,
@@ -29,7 +38,7 @@ impl DataFile {
             derived_path,
             derived_filename,
             timestamp: timestamp.clone(),
-            original_filename: format!("{}_{}.csv", timestamp, shortname), // TODO: this should be done in folders module.
+            original_filename,
             schema,
         })
     }

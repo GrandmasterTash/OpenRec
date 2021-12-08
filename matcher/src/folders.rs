@@ -302,6 +302,17 @@ pub fn shortname<'a>(filename: &'a str) -> &'a str {
 }
 
 ///
+/// Returns the original filename for a file, regardless of whether it's unmatched or not.
+///
+/// e.g. 20201118_053000000_invoices.unmatched.csv -> 20201118_053000000_invoices.csv
+///
+pub fn original_filename(filename: &str) -> Result<String, MatcherError> {
+    let shortname = shortname(&filename).to_string();
+    let timestamp = timestamp(&filename)?.to_string();
+    Ok(format!("{}_{}.csv", timestamp, shortname))
+}
+
+///
 /// Remove the timestamp prefix and the file-extension suffix from the filename.
 ///
 /// e.g. 20191209_020405000_INV.unmatched.csv -> INV

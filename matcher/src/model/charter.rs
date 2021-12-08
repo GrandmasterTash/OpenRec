@@ -1,6 +1,6 @@
-use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::io::BufReader;
+use rust_decimal::Decimal;
 use crate::{model::data_type::DataType, error::MatcherError};
 
 #[derive(Debug, Deserialize)]

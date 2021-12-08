@@ -1,5 +1,4 @@
 use regex::Regex;
-use std::fs::File;
 use rust_decimal::Decimal;
 use rlua::{Context, Table};
 use lazy_static::lazy_static;
@@ -12,12 +11,12 @@ lazy_static! {
 ///
 /// Return all the columns referenced in the script specified.
 ///
-pub fn script_columns<'a>(script: &str, schema: &'a GridSchema) -> Vec<&'a Column> {
+pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
     let mut columns = Vec::new();
 
     for cap in HEADER_REGEX.captures_iter(script) {
         if let Some(col) = schema.column(&cap[1]) {
-            columns.push(col);
+            columns.push(col.clone());
         } else {
             log::warn!("Record field [{}] was not found, potential typo in Lua script?\n{}", &cap[1], script);
         }
@@ -31,9 +30,7 @@ pub fn script_columns<'a>(script: &str, schema: &'a GridSchema) -> Vec<&'a Colum
 ///
 pub fn lua_record<'a>(
     record: &Record,
-    script_cols: &[&Column],
-    /* schema: &GridSchema,
-    rdr: &mut csv::Reader<File>, */
+    script_cols: &[Column],
     accessor: &mut DataAccessor,
     lua_ctx: &Context<'a>) -> Result<Table<'a>, MatcherError> {
 
