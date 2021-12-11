@@ -2,6 +2,7 @@ mod common;
 use serde_json::json;
 
 // TODO: Write a test for each of the examples.
+// TODO: Test where nothing matches.
 
 #[test]
 fn test_01_basic_match_from_examples() {

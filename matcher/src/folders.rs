@@ -2,7 +2,7 @@ use chrono::Utc;
 use regex::Regex;
 use lazy_static::lazy_static;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
-use crate::{model::datafile::DataFile, error::MatcherError, Context};
+use crate::{model::{datafile::DataFile, grid::Grid}, error::MatcherError, Context};
 
 /*
     Files are processed alphabetically - hence the human-readable timestamp prefix - to ensure consistent ordering.
@@ -47,12 +47,13 @@ pub const DERIVED: &str = "derived.csv";
 lazy_static! {
     static ref FILENAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.csv$").unwrap();
     static ref UNMATCHED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.unmatched\.csv$").unwrap();
+    static ref DERIVED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.derived\.csv$").unwrap();
 }
 
 ///
 /// Ensure the folders exist to process files for this reconcilliation.
 ///
-pub fn ensure_exist(ctx: &Context) -> Result<(), MatcherError> {
+pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), MatcherError> {
     let home = Path::new(ctx.base_dir());
 
     log::info!("Using folder REC_HOME [{}]", home.to_canoncial_string());
@@ -110,7 +111,7 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
 ///
 /// Move any matching files to the archive folder.
 ///
-pub fn progress_to_archive(ctx: &Context) -> Result<(), MatcherError> {
+pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError> {
     for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
             if is_unmatched_data_file(&entry) {
@@ -118,7 +119,12 @@ pub fn progress_to_archive(ctx: &Context) -> Result<(), MatcherError> {
                 fs::remove_file(entry.path())?;
                 log::info!("Deleted unmatched file [{}]", entry.path().to_string_lossy())
 
-            } else  if is_data_file(&entry) {
+            } else if is_derived_file(&entry) {
+                // Delete .derived files don't move them to archive.
+                fs::remove_file(entry.path())?;
+                log::info!("Deleted derived file [{}]", entry.path().to_string_lossy())
+
+            } else if is_data_file(&entry) && was_processed(&entry, &grid) {
                 let dest = archive(ctx).join(entry.file_name());
 
                 log::info!("Moving file [{file}] from [{src}] to [{dest}]",
@@ -156,7 +162,7 @@ pub fn files_in_matching(ctx: &Context, file_pattern: &str) -> Result<Vec<DirEnt
 ///
 /// Any .inprogress files should be deleted.
 ///
-pub fn rollback_incomplete(ctx: &Context) -> Result<(), MatcherError> {
+pub fn rollback_any_incomplete(ctx: &Context) -> Result<(), MatcherError> {
     for folder in vec!(matched(ctx), unmatched(ctx)) {
         for entry in folder.read_dir()? {
             if let Ok(entry) = entry {
@@ -242,7 +248,7 @@ pub fn new_timestamp() -> String {
         return ts
     }
 
-    Utc::now().format("%Y%m%d_%H%M%S%3f_").to_string()
+    Utc::now().format("%Y%m%d_%H%M%S%3f").to_string()
 }
 
 ///
@@ -275,6 +281,33 @@ fn is_unmatched_data_file(entry: &DirEntry) -> bool {
             false
         }
     }
+}
+
+///
+/// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
+/// a '.derived.csv' suffix.
+///
+/// Logs a warning if we couldn't get a file's metadata and returns false.
+///
+fn is_derived_file(entry: &DirEntry) -> bool {
+    match entry.metadata() {
+        Ok(metadata) => metadata.is_file() && DERIVED_REGEX.is_match(&entry.file_name().to_string_lossy()),
+        Err(err) => {
+            log::warn!("Skipping derived file, failed to get metadata for {}: {}", entry.path().to_canoncial_string(), err);
+            false
+        }
+    }
+}
+
+///
+/// True if the file is a data-file in the grid (and has therefore been 'sourced').
+///
+fn was_processed(entry: &DirEntry, grid: &Grid) -> bool {
+    grid.schema()
+        .files()
+        .iter()
+        .map(|df| df.path())
+        .any(|path| path == entry.path().to_canoncial_string())
 }
 
 ///

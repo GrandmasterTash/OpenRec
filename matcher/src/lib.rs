@@ -14,15 +14,77 @@ use error::MatcherError;
 use std::{time::{Duration, Instant}, collections::HashMap};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, data_accessor::DataAccessor, schema::Column}, instructions::{project_col::{/* project_column, */ project_column_new, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
+// TODO: Changesets
+// TODO: Re-instate accumulated timings for projections and mergers.
+// TODO: Debug per instruction. Currentl all derived are debugged at once.
+// TODO: Rollback commands.
 // TODO: Flesh-out examples.
 // TODO: Unit/integration tests. Lots.
 // TODO: Check code coverage.
 // TODO: Clippy!
-// TODO: Changesets
-// TODO: Rollbacks.
 // TODO: Thread-per source file for projects and merges.
 // TODO: Investigate sled for disk based groupings.
 // TODO: Journal file - event log.
+// TODO: Jetwash to generate changesets for update files (via business key).
+
+/*
+  - Changesets - only unmatched data is effected.
+  - Direct manual instruction.
+    - Update record 123, set amount = 100.00 and date = 1/1/2020
+    - Update records where date = 1/1/2020, set amount = amount * 100
+    - Update records in source file xxxxxx_inv.csv, yyyyyyy_inv.csv  change amount to decimal.
+    - Delete records where xxxx.
+
+    [
+        {
+            "id": "uuid_1",
+            "change": "Data", <<< discriminator
+            "where": "record[uuid] = xxx-yyy-zzzz",
+            "changes": [
+                { "Field": "amount", "Value": "100.00" },
+                { "Field": "date", "Value": "2020-01-01T00:00:00.000Z" }
+            ],
+            "source": "user_abc",
+            "approved_by": ["user_abc", "user_xyz"],
+            "timestamp": 123456789
+        },
+        {
+            "id": "uuid_2",
+            "change": "Data", <<< discriminator
+            "where": "record[date] = 1577836800000",
+            "changes": [
+                { "Script": "record[amount] = record[amount] * 100" }
+            ],
+            "source": "user_xyz",
+            "approved_by": ["user_abc", "user_xyz"],
+            "timestamp": 123456789
+        },
+        {
+            "id": "uuid_3",
+            "change": "Schema", <<< discriminator
+            "in": [ "xxxxxx_inv.csv", "yyyyyyy_inv.csv" ],
+            "changes": [
+                { "Amount": "Decimal" }
+            ],
+            "source": "user_123",
+            "approved_by": ["user_abc", "user_xyz"],
+            "timestamp": 123456789
+        },
+        {
+            "id": "uuid_4",
+            "change": "delete", <<< discriminator
+            "where": "record[uuid] = xxx-yyy-zzzz-wwww",
+            "source": "user_xyz",
+            "approved_by": ["user_abc", "user_xyz"],
+            "timestamp": 123456789
+        },
+    ]
+
+    - Record changesets in the matched json files.
+    - Changesets are archived at end of a job they are used in.
+    - Changesets look file YYYYMMDD_HHMMSSMMM_changeset.json
+    - Changesets only apply to unmatched data in their current job with a ts earlier than the changeset's ts.
+*/
 
 ///
 /// Created for each match job. Used to pass the main top-level things around.
@@ -69,23 +131,21 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     let ctx = Context::new(Charter::load(charter)?, base_dir);
     log::info!("Starting match job {}", ctx.job_id());
 
-    folders::ensure_exist(&ctx)?;
+    folders::ensure_dirs_exist(&ctx)?;
 
     // TODO: Ensure nothing in waiting folder is already in the archive folder.
 
     // On start-up, any matching files should log warning and be moved to waiting.
-    folders::rollback_incomplete(&ctx)?;
+    folders::rollback_any_incomplete(&ctx)?;
 
     // Move any waiting files to the matching folder.
     folders::progress_to_matching(&ctx)?;
 
     // Iterate alphabetically matching files.
-    process_charter(&ctx)?;
+    let grid = process_charter(&ctx)?;
 
     // Move matching files to the archive.
-    // BUG: ONLY progress processed files by the charter, not everything in the waiting folder.
-    // BUG: Delete .derived files.
-    folders::progress_to_archive(&ctx)?;
+    folders::progress_to_archive(&ctx, grid)?;
 
     // TODO: Log how many records processed, rate, MB size, etc.
     log::info!("Completed match job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, start.elapsed()).0));
@@ -96,7 +156,7 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
 ///
 /// Process the matching instructions.
 ///
-fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
+fn process_charter(ctx: &Context) -> Result<Grid, MatcherError> {
 
     log::info!("Running charter [{}] v{:?}", ctx.charter().name(), ctx.charter().version());
 
@@ -139,7 +199,7 @@ fn process_charter(ctx: &Context) -> Result<(), MatcherError> {
     // println!("Pass 3 complete - Sleeping for 8...");
     // std::thread::sleep(std::time::Duration::from_secs(8));
 
-    Ok(())
+    Ok(grid)
 }
 
 ///

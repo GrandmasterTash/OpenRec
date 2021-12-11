@@ -79,6 +79,9 @@ impl Grid {
     ///
     pub fn source_data(&mut self, ctx: &Context) -> Result<(), MatcherError> {
 
+        // TODO: Inject changesets at the appropriate point in time. Only apply them to records sourced
+        // with an earlier timestamp in their filename. So consider putting a REAL timestamp on a DataFile.
+
         for (idx, pattern) in ctx.charter().file_patterns().iter().enumerate() {
             log::info!("Sourcing data with pattern [{}]", pattern);
             // TODO: Validate the source path is canonicalised in the rec base.
