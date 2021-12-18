@@ -1,8 +1,9 @@
+use lazy_static::__Deref;
 use rlua::Context;
 use itertools::Itertools;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}};
-use crate::{error::MatcherError, formatted_duration_rate, model::{charter::Constraint, grid::Grid, record::Record, schema::GridSchema, data_accessor::DataAccessor}, matched::MatchedHandler, blue};
+use crate::{error::MatcherError, formatted_duration_rate, model::{charter::Constraint, grid::Grid, record::Record, schema::GridSchema}, matched::MatchedHandler, blue, lua, data_accessor::DataAccessor};
 
 ///
 /// Bring groups of records together using the columns specified.
@@ -27,6 +28,8 @@ pub fn match_groups(
 
     // Create a Lua context to evaluate Constraint rules in.
     lua.context(|lua_ctx| {
+        lua::init_context(&lua_ctx)?;
+
         // Form groups from the records.
         for (_key, group) in &grid.records().iter()
 
@@ -40,14 +43,12 @@ pub fn match_groups(
             .group_by(|(key, _record)| key.clone()) {
 
             // Collect the records in the group.
-            let records = group.map(|(_key, record)| record).collect::<Vec<&Box<Record>>>();
+            let records = group.map(|(_key, record)| record.deref()).collect::<Vec<&Record>>();
 
             // Test any constraints on the group to see if it's a match.
-            if is_match(&records, constraints, schema, accessor, &lua_ctx, &lua_time)
-                .map_err(rlua::Error::external)? {
-
-                records.iter().for_each(|r| r.set_matched());
-                matched.append_group(&records).map_err(rlua::Error::external)?;
+            if is_match(&records, constraints, schema, accessor, &lua_ctx, &lua_time)? {
+                records.iter().for_each(|r| r.set_deleted());
+                matched.append_group(&records)?;
                 match_count += 1;
             }
 
@@ -59,7 +60,7 @@ pub fn match_groups(
     .map_err(|source| MatcherError::MatchGroupError { source })?;
 
     // Remove matched records from the grid now.
-    grid.remove_matched();
+    grid.remove_deleted();
 
     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
@@ -88,7 +89,7 @@ fn match_key(record: &Box<Record>, headers: &[String], accessor: &mut DataAccess
 /// Evaluate the constraint rules against the grroup to see if they all pass.
 ///
 fn is_match(
-    group: &[&Box<Record>],
+    group: &[&Record],
     constraints: &[Constraint],
     schema: &GridSchema,
     accessor: &mut DataAccessor,

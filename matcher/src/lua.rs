@@ -1,11 +1,26 @@
 use regex::Regex;
-use rust_decimal::Decimal;
-use rlua::{Context, Table};
 use lazy_static::lazy_static;
-use crate::{model::{data_type::DataType, record::Record, schema::{Column, GridSchema}, data_accessor::DataAccessor}, error::MatcherError};
+use rlua::{Context, Table, Number};
+use rust_decimal::{Decimal, prelude::FromPrimitive};
+use crate::{model::{data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, data_accessor::DataAccessor};
 
 lazy_static! {
     static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();
+}
+
+///
+/// Plug-in global Rust functions that can be called from Lua script.
+///
+pub fn init_context(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
+    let globals = lua_ctx.globals();
+
+    // Create a decimal() function to convert a Lua number to a Rust Decimal data-type.
+    let decimal = lua_ctx.create_function(|_, value: Number| {
+        Ok(LuaDecimal(Decimal::from_f64(value).unwrap())) // TODO: Don't unwrap.
+    })?;
+    globals.set("decimal", decimal)?;
+
+    Ok(())
 }
 
 ///
@@ -17,8 +32,6 @@ pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
     for cap in HEADER_REGEX.captures_iter(script) {
         if let Some(col) = schema.column(&cap[1]) {
             columns.push(col.clone());
-        } else {
-            log::warn!("Record field [{}] was not found, potential typo in Lua script?\n{}", &cap[1], script);
         }
     }
 
@@ -59,6 +72,9 @@ pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
 
     let lua_meta = lua_ctx.create_table()?;
 
+    // TODO: Put filename in meta.
+    // TODO: Put a derived unix timestamp in meta from the filename prefix.
+
     let file = match schema.files().get(record.file_idx()) {
         Some(file) => file,
         None => return Err(MatcherError::MissingFileInSchema{ index: record.file_idx() }),
@@ -71,6 +87,35 @@ pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
 
     lua_meta.set("prefix", file_schema.prefix())?;
     Ok(lua_meta)
+}
+
+///
+/// Filter the records using the Lua expression and return the filtered list (i.e. those matching the filter).
+///
+pub fn lua_filter<'a, 'b>(
+    records: &[&'a Record],
+    lua_script: &str,
+    lua_ctx: &'b Context,
+    accessor: &mut DataAccessor,
+    schema: &GridSchema) -> Result<Vec<&'a Record>, MatcherError> {
+
+    let mut results = vec!();
+    let script_cols = script_columns(lua_script, schema);
+    let globals = lua_ctx.globals();
+
+    for record in records {
+        let lua_record = lua_record(record, &script_cols, accessor, lua_ctx)?;
+        globals.set("record", lua_record)?;
+
+        let lua_meta = lua_meta(record, accessor.schema(), lua_ctx)?;
+        globals.set("meta", lua_meta)?;
+
+        if lua_ctx.load(&lua_script).eval::<bool>()? {
+            results.push(*record);
+        }
+    }
+
+    Ok(results)
 }
 
 ///

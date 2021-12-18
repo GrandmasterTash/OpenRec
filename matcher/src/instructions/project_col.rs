@@ -1,7 +1,7 @@
 use itertools::Itertools;
-use crate::{error::MatcherError, model::{data_type::DataType, schema::{Column, GridSchema}, data_accessor::DataAccessor, record::Record}, lua};
+use crate::{error::MatcherError, model::{data_type::DataType, schema::{Column, GridSchema}, record::Record}, lua, data_accessor::DataAccessor};
 
-pub fn project_column_new(
+pub fn project_column(
     data_type: DataType,
     eval: &str,
     when: &Option<String>,
@@ -12,12 +12,10 @@ pub fn project_column_new(
 
     let globals = lua_ctx.globals();
 
-    let lua_record = lua::lua_record(record, script_cols, accessor, lua_ctx)
-        .map_err(rlua::Error::external)?;
+    let lua_record = lua::lua_record(record, script_cols, accessor, lua_ctx)?;
     globals.set("record", lua_record)?;
 
-    let lua_meta = lua::lua_meta(record, accessor.schema(), lua_ctx)
-        .map_err(rlua::Error::external)?;
+    let lua_meta = lua::lua_meta(record, accessor.schema(), lua_ctx)?;
     globals.set("meta", lua_meta)?;
 
     // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip

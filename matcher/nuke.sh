@@ -2,4 +2,5 @@
 echo "Reseting tmp folder - preseving archive"
 rm -f ./tmp/debug/*.csv
 rm -f ./tmp/unmatched/*.csv
-rm -f ./tmp/matched/*.json 
+rm -f ./tmp/matched/*matched.json 
+rm -f ./tmp/archive/*.modified.csv

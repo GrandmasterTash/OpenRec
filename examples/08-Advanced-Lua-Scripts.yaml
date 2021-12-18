@@ -99,6 +99,7 @@ instructions:
         #         -- We start by creating anonymous functions used to filter data in the group of records.
         #         local invoices = function (_record, meta) return meta["prefix"] == "invoices" end
         #         local payments = function (_record, meta) return meta["prefix"] == "payments" end
+        # TODO: Can we create a rust filter() fn that would be used like: local invoices = filter(meta["prefix"] == "invoices")
 
         #         -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
         #         -- the second is a filter to apply to the records in the group.

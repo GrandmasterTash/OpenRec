@@ -1,35 +1,56 @@
 use std::fs::DirEntry;
-use crate::{error::MatcherError, folders::{self, ToCanoncialString, original_filename}};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}};
 
 ///
 /// Represents a physical sourced file of data.
 ///
 /// Contains various representations of it's path along with the index of it's schema held by the GridSchema.
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataFile {
     shortname: String,         // 'invoices' if filename is '/tmp/20201118_053000000_invoices.csv' or '/tmp/20201118_053000000_invoices.unmatched.csv'
     filename: String,          // '20201118_053000000_invoices.csv' if path is '/tmp/20201118_053000000_invoices.csv'
     path: String,              // The full canonical path to the file.
     derived_path: String,      // The path to any temporary file storing derived data, eg. '/tmp/20201118_053000000_invoices.derived.csv'
     derived_filename: String,  // '20201118_053000000_invoices.derived.csv'
+    modifying_path: String,    // The path to any temporary file storing modified data, eg. '/tmp/20201118_053000000_invoices.csv.modifying'
+    modifying_filename: String,// '20201118_053000000_invoices.csv.modifying'
+    modified_path: String,     // The path to a modified file updated by a changeset. eg. '/tmp/20201118_053000000_invoices.csv.modified.csv'
+    modified_filename: String, // '20201118_053000000_invoices.csv.modified.csv'
+    pre_modified_path: String, // The path to an unmatched file before a changeset is applied, eg. '/tmp/20201118_053000000_invoices.unmatched.csv.pre_modified'
     timestamp: String,         // '20201118_053000000' if the filename is '20201118_053000000_invoices.csv'.
     original_filename: String, // 20201118_053000000_invoices.unmatched.csv -> 20201118_053000000_invoices.csv
     schema: usize,             // Index of the file's schema in the Grid.
 }
 
 impl DataFile {
+    // TODO: Store PathBuf so we can half the number of files and derive things on the fly.
     pub fn new(entry: &DirEntry, schema: usize) -> Result<Self, MatcherError> {
         let path = entry.path().to_canoncial_string();
         let filename: String = entry.file_name().to_string_lossy().into();
+        let original_filename = folders::original_filename(&filename)?;
         let shortname = folders::shortname(&filename).to_string();
         let timestamp = folders::timestamp(&filename)?.to_string();
+
         let derived = folders::derived(entry)?;
         let derived_path = derived.to_string_lossy().into();
         let derived_filename = derived.file_name()
             .ok_or(MatcherError::PathNotAFile { path: derived.to_canoncial_string() })?
             .to_string_lossy().into();
-        let original_filename = original_filename(&filename)?;
+
+        let modifying = folders::modifying(entry)?;
+        let modifying_path = modifying.to_string_lossy().into();
+        let modifying_filename = modifying.file_name()
+            .ok_or(MatcherError::PathNotAFile { path: modifying.to_canoncial_string() })?
+            .to_string_lossy().into();
+
+        let modified = folders::modified(entry)?;
+        let modified_path = modified.to_string_lossy().into();
+        let modified_filename = modified.file_name()
+            .ok_or(MatcherError::PathNotAFile { path: modified.to_canoncial_string() })?
+            .to_string_lossy().into();
+
+        let pre_modified_path = folders::pre_modified(entry).to_string_lossy().into();
 
         Ok(Self {
             shortname,
@@ -37,6 +58,11 @@ impl DataFile {
             path,
             derived_path,
             derived_filename,
+            modifying_path,
+            modifying_filename,
+            modified_path,
+            modified_filename,
+            pre_modified_path,
             timestamp,
             original_filename,
             schema,
@@ -63,6 +89,10 @@ impl DataFile {
         &self.path
     }
 
+    pub fn set_path(&mut self, path: &str) {
+        self.path = path.to_string();
+    }
+
     pub fn derived_path(&self) -> &str {
         &self.derived_path
     }
@@ -74,4 +104,25 @@ impl DataFile {
     pub fn original_filename(&self) -> &str {
         &self.original_filename
     }
+
+    pub fn modifying_path(&self) -> &str {
+        &self.modifying_path
+    }
+
+    pub fn modifying_filename(&self) -> &str {
+        &self.modifying_filename
+    }
+
+    pub fn modified_path(&self) -> &str {
+        &self.modified_path
+    }
+
+    pub fn modified_filename(&self) -> &str {
+        &self.modified_filename
+    }
+
+    pub fn pre_modified_path(&self) -> &str {
+        &self.pre_modified_path
+    }
+
 }

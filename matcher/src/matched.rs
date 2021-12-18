@@ -49,7 +49,7 @@ impl MatchedHandler {
     /// When n is a file index in the grid and y is the line number in the file for the record. Line numbers include
     /// the header rows (so the first line of data will start at 3).
     ///
-    pub fn append_group(&mut self, records: &[&Box<Record>]) -> Result<(), MatcherError> {
+    pub fn append_group(&mut self, records: &[&Record]) -> Result<(), MatcherError> {
         // Push this file writing into an fn.
         if self.groups !=  0 {
             write!(&mut self.writer, ",\n    ")
@@ -77,5 +77,6 @@ impl MatchedHandler {
 
         // TODO: Completing a job should also log the unmatched files and counts) - this will be the 3rd object in the matched JSON array.
         // TODO: Log the file creation and path.
+        // TODO: Record applied changesets.
     }
 }

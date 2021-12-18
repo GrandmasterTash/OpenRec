@@ -76,6 +76,9 @@ pub enum MatcherError {
     #[error("Cannot read derived data from record in row {row} for file {file_idx}, no derived index")]
     NoDerivedPosition { row: usize, file_idx: usize },
 
+    #[error("The column {column} is not in the file {file}")]
+    MissingColumn { column: String, file: String },
+
     #[error("Unknown data type specified in column {column}")]
     UnknownDataTypeInColumn { column: isize },
 
@@ -118,6 +121,9 @@ pub enum MatcherError {
     #[error("A problem occured during the match")]
     MatchGroupError { source: rlua::Error },
 
+    #[error("An error occured processing instruction {instruction} on record {row} from file {file}")]
+    DeriveDataError { instruction: String, row: usize, file: String, source: rlua::Error },
+
     #[error("The constraint column {column} is not present")]
     ConstraintColumnMissing { column: String },
 
@@ -142,6 +148,12 @@ pub enum MatcherError {
     #[error("Cannot create a derived file for {path}")]
     FileCantBeDerived { path: String },
 
+    #[error("Unable to load changeset {path}")]
+    UnableToParseChangset { path: String, source: serde_json::Error },
+
+    #[error("An error occured sourcing data")]
+    GridSourceError { source: rlua::Error },
+
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 
@@ -150,4 +162,14 @@ pub enum MatcherError {
 
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+}
+
+///
+/// This allows us to return MatcherErrors inside Lua contexts and have them wrapped
+/// and exposed outside the context without having to map_err everywhere.
+///
+impl From<MatcherError> for rlua::Error {
+    fn from(err: MatcherError) -> Self {
+        rlua::Error::external(err)
+    }
 }

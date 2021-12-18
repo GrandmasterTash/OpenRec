@@ -3,8 +3,9 @@ use bytes::Bytes;
 use std::cell::Cell;
 use rust_decimal::Decimal;
 use csv::{Position, ByteRecord};
-use super::{data_type::DataType, data_accessor::DataAccessor};
-use crate::{model::schema::GridSchema, error::MatcherError, convert};
+use crate::{model::schema::GridSchema, error::MatcherError, convert, data_accessor::DataAccessor};
+
+use super::data_type::DataType;
 
 ///
 /// A record is essentially a point to one or two CSV rows on disk.
@@ -15,7 +16,7 @@ pub struct Record {
     file_idx: u16,
     data_idx: Index,
     derived_idx: Index,
-    matched: Cell<bool>,
+    deleted: Cell<bool>,
 }
 
 ///
@@ -32,7 +33,7 @@ impl Record {
             data_idx: Index { byte: pos.byte(), line: pos.line() as u32 },
             derived_idx: Index { byte: 0, line: 0 },
             file_idx,
-            matched: Cell::new(false)
+            deleted: Cell::new(false)
         }
     }
 
@@ -44,12 +45,12 @@ impl Record {
         self.file_idx as usize
     }
 
-    pub fn matched(&self) -> bool {
-        self.matched.get()
+    pub fn deleted(&self) -> bool {
+        self.deleted.get()
     }
 
-    pub fn set_matched(&self) {
-        self.matched.set(true);
+    pub fn set_deleted(&self) {
+        self.deleted.set(true);
     }
 
     pub fn memory_usage(&self) -> usize {

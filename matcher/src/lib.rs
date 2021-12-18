@@ -4,36 +4,41 @@ mod model;
 mod convert;
 mod folders;
 mod matched;
+mod changeset;
 mod unmatched;
 mod instructions;
+mod data_accessor;
 
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::MatcherError;
 use std::{time::{Duration, Instant}, collections::HashMap};
-use crate::{model::{charter::{Charter, Instruction}, grid::Grid, data_accessor::DataAccessor, schema::Column}, instructions::{project_col::{/* project_column, */ project_column_new, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler};
+use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
-// TODO: Changesets
+// TODO: Ensure all lua script errors log the script in the message.
 // TODO: Re-instate accumulated timings for projections and mergers.
-// TODO: Debug per instruction. Currentl all derived are debugged at once.
+// TODO: Debug per instruction. Currently all derived are debugged at once.
+// TODO: Changesets
 // TODO: Rollback commands.
 // TODO: Flesh-out examples.
 // TODO: Unit/integration tests. Lots.
 // TODO: Check code coverage.
+// TODO: Remove panics! and unwraps / expects where possible.
 // TODO: Clippy!
 // TODO: Thread-per source file for projects and merges.
-// TODO: Investigate sled for disk based groupings.
+// TODO: Investigate sled for disk based groupings. Seems I'm not a pioneer :( https://en.wikipedia.org/wiki/External_sorting
 // TODO: Journal file - event log.
 // TODO: Jetwash to generate changesets for update files (via business key).
+// TODO: Consider an 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 
 /*
   - Changesets - only unmatched data is effected.
   - Direct manual instruction.
     - Update record 123, set amount = 100.00 and date = 1/1/2020
-    - Update records where date = 1/1/2020, set amount = amount * 100
-    - Update records in source file xxxxxx_inv.csv, yyyyyyy_inv.csv  change amount to decimal.
-    - Delete records where xxxx.
+    - WONT DO THIS Update records where date = 1/1/2020, set amount = amount * 100
+    - WONT DO THIS Update records in source file xxxxxx_inv.csv, yyyyyyy_inv.csv  change amount to decimal.
+    * Delete records where xxxx.
 
     [
         {
@@ -64,7 +69,7 @@ use crate::{model::{charter::{Charter, Instruction}, grid::Grid, data_accessor::
             "change": "Schema", <<< discriminator
             "in": [ "xxxxxx_inv.csv", "yyyyyyy_inv.csv" ],
             "changes": [
-                { "Amount": "Decimal" }
+                { Column: "Amount", type: "Decimal" }
             ],
             "source": "user_123",
             "approved_by": ["user_abc", "user_xyz"],
@@ -136,6 +141,8 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     // TODO: Ensure nothing in waiting folder is already in the archive folder.
 
     // On start-up, any matching files should log warning and be moved to waiting.
+    // TODO: Delete any modified unmatched files (if there's an associated .bak file)
+    // TODO: rename any unmatched.bak to remove the .bak suffix.
     folders::rollback_any_incomplete(&ctx)?;
 
     // Move any waiting files to the matching folder.
@@ -145,6 +152,7 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     let grid = process_charter(&ctx)?;
 
     // Move matching files to the archive.
+    // TODO: Delete unmatched.bak files if there has been no error.
     folders::progress_to_archive(&ctx, grid)?;
 
     // TODO: Log how many records processed, rate, MB size, etc.
@@ -160,18 +168,25 @@ fn process_charter(ctx: &Context) -> Result<Grid, MatcherError> {
 
     log::info!("Running charter [{}] v{:?}", ctx.charter().name(), ctx.charter().version());
 
-    // Load all data into memory (for now).
-    let mut grid = Grid::default();
-
     // Create Lua engine bindings.
     let lua = rlua::Lua::new();
 
-    // Source data now to build the grid schema and index the records.
-    grid.source_data(ctx)?;
+    // Load all data into memory (for now).
+    let mut grid = Grid::default();
+    grid.source_data(ctx)?; // TODO: Wrap these two lines into one.
+
+    // Load and apply changesets to transform new and unmatched data prior to matching.
+    let (any_applied, _changsets) = changeset::apply(ctx, &mut grid, &lua)?;
+
+    if any_applied {
+        // Re-source the grid now, as we'll need to re-index record positions.
+        grid = Grid::default();
+        grid.source_data(ctx)?;
+    }
 
     // Create a DataAccessor now to use through the first two instruction passes. It will run in write mode
     // meaning it will be writing derived values to a buffer for each record and flushing to disk.
-    let mut accessor = DataAccessor::with_buffer(&grid)?;
+    let mut accessor = DataAccessor::for_deriving(&grid)?;
 
     // If charter.debug - dump the grid with instr idx in filename.
     if ctx.charter().debug() {
@@ -243,39 +258,51 @@ fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor
     // Now we know what columns are derived, write their headers to the .derived files.
     accessor.write_derived_headers()?;
 
+    // Track the record and instruction being processed.
+    let mut eval_ctx = (0, 0);
+
     lua.context(|lua_ctx| {
+        lua::init_context(&lua_ctx)?;
+
         // Calculate all projected and merged column values for each record.
-        for record in grid.records() {
-            for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
+        for (r_idx, record) in grid.records().iter().enumerate() {
+            for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
+                eval_ctx = (r_idx, i_idx);
+
                 match inst {
                     Instruction::Project { column: _, as_type, from, when } => {
-                        let script_cols = projection_cols.get(&idx)
-                            .ok_or(MatcherError::MissingScriptCols { instruction: idx })
-                            .map_err(rlua::Error::external)?;
+                        let script_cols = projection_cols.get(&i_idx)
+                            .ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
 
-                        project_column_new(
+                        project_column(
                             *as_type,
                             from,
                             when,
                             record,
                             accessor,
                             script_cols,
-                            &lua_ctx)
-                            .map_err(rlua::Error::external)?;
+                            &lua_ctx)?;
                     },
+
                     Instruction::MergeColumns { into: _, from } => {
-                        record.merge_col_from(from, accessor).map_err(rlua::Error::external)?;
+                        record.merge_col_from(from, accessor)?;
                     },
-                    _ => {},
+
+                    _ => {}, // Ignore other instructions in this phase.
                 };
             }
 
             // Flush the current record buffer to the appropriate derived file.
-            record.flush(accessor).map_err(rlua::Error::external)?;
+            record.flush(accessor)?;
         }
         Ok(())
     })
-    .map_err(|source| MatcherError::MatchGroupError { source })?;
+    .map_err(|source| MatcherError::DeriveDataError {
+        instruction: format!("{:?}", ctx.charter().instructions()[eval_ctx.1]),
+        row: grid.records()[eval_ctx.0].row(),
+        file: grid.schema().files()[grid.records()[eval_ctx.0].file_idx()].filename().into(),
+        source
+    })?;
 
     Ok(())
 }
@@ -293,7 +320,7 @@ fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<
     let mut unmatched = UnmatchedHandler::new(ctx, grid)?;
 
     // Create a read-mode derived accessor used to read real and derived data.
-    let mut accessor = DataAccessor::with_no_buffer(grid)?;
+    let mut accessor = DataAccessor::for_reading(grid)?;
     let schema = grid.schema().clone();
 
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
@@ -345,10 +372,10 @@ pub fn blue(msg: &str) -> ansi_term::ANSIGenericString<'_, str> {
 }
 
 const BANNER: &str = r#"
-  ___                   ____  _____ ____
- / _ \ _ __   ___ _ __ |  _ \| ____/ ___|
-| | | | '_ \ / _ \ '_ \| |_) |  _|| |
-| |_| | |_) |  __/ | | |  _ <| |__| |___
- \___/| .__/ \___|_| |_|_| \_\_____\____|
-      |_|
+  ____     _           _ _
+ / ___|___| | ___ _ __(_) |_ _   _
+| |   / _ \ |/ _ \ '__| | __| | | |
+| |__|  __/ |  __/ |  | | |_| |_| |
+ \____\___|_|\___|_|  |_|\__|\__, |
+ OpenRec: Matching Engine    |___/
 "#;

@@ -46,6 +46,7 @@ instructions:
       # above, would cause an error as soon as it was evaluated against an invoice record, because
       # invoices don't have a field called 'PAY.Amount' or 'PAY.FXRate'.
       when: meta["prefix"] == "PAY"
+      # TODO: Consider removing when clauses and just capture a nil ref and projecting a blank.
 
   - project:
       # In this example our payment records have an invoice reference but it's embedded in the payment reference

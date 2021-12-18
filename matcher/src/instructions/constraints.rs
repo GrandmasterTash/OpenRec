@@ -1,10 +1,11 @@
 use rlua::Context;
 use rust_decimal::Decimal;
-use crate::{model::{charter::{Constraint, ToleranceType}, data_type::DataType, record::Record, schema::{Column, GridSchema}, data_accessor::DataAccessor}, error::MatcherError, lua};
+use crate::{model::{charter::{Constraint, ToleranceType}, data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua, data_accessor::DataAccessor};
 
 impl Constraint {
     pub fn passes(
-        &self, records: &[&Box<Record>],
+        &self,
+        records: &[&Record],
         schema: &GridSchema,
         accessor: &mut DataAccessor,
         lua_ctx: &Context) -> Result<bool, MatcherError> {
@@ -44,7 +45,7 @@ fn net<F>(
     lhs: &str,
     rhs: &str,
     sum_checker: F,
-    records: &[&Box<Record>],
+    records: &[&Record],
     schema: &GridSchema,
     accessor: &mut DataAccessor,
     lua_ctx: &Context) -> Result<bool, MatcherError>
@@ -61,8 +62,8 @@ fn net<F>(
     }
 
     // Collect records in the group which match lhs and rhs filters.
-    let lhs_recs = lua_filter(records, lhs, lua_ctx, accessor, schema)?;
-    let rhs_recs = lua_filter(records, rhs, lua_ctx, accessor, schema)?;
+    let lhs_recs = lua::lua_filter(records, lhs, lua_ctx, accessor, schema)?;
+    let rhs_recs = lua::lua_filter(records, rhs, lua_ctx, accessor, schema)?;
 
     // Sum the NETting column for records on both sides.
     let lhs_sum: Decimal = lhs_recs.iter().map(|r| r.get_decimal(column, accessor).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
@@ -76,41 +77,12 @@ fn net<F>(
 }
 
 ///
-/// Filter the records using the Lua expression and return the filtered list.
-///
-fn lua_filter<'a, 'b>(
-    records: &[&'a Box<Record>],
-    lua_script: &str,
-    lua_ctx: &'b Context,
-    accessor: &mut DataAccessor,
-    schema: &GridSchema) -> Result<Vec<&'a Box<Record>>, MatcherError> {
-
-    let mut results = vec!();
-    let script_cols = lua::script_columns(lua_script, schema);
-    let globals = lua_ctx.globals();
-
-    for record in records {
-        let lua_record = lua::lua_record(record, &script_cols, accessor, lua_ctx)?;
-        globals.set("record", lua_record)?;
-
-        let lua_meta = lua::lua_meta(record, accessor.schema(), lua_ctx)?;
-        globals.set("meta", lua_meta)?;
-
-        if lua_ctx.load(&lua_script).eval::<bool>()? {
-            results.push(*record);
-        }
-    }
-
-    Ok(results)
-}
-
-///
 /// Allow entirely custom Lua script to be evaluated for a group constraint.
 ///
 fn custom_constraint(
     script: &str,
     fields: &Option<Vec<String>>,
-    records: &[&Box<Record>],
+    records: &[&Record],
     schema: &GridSchema,
     accessor: &mut DataAccessor,
     lua_ctx: &Context) -> Result<bool, MatcherError> {

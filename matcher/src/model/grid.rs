@@ -1,7 +1,7 @@
 use ubyte::ToByteUnit;
 use std::fs::DirEntry;
-use super::data_accessor::DataAccessor;
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue};
+use rlua::Error as LuaError;
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, data_accessor::DataAccessor};
 
 
 ///
@@ -29,8 +29,8 @@ use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{dat
 /// Note: No memory is allocted for the empty cells shown above.
 ///
 pub struct Grid {
-    records: Vec<Box<Record>>, // Represents each row from one of the sourced files.
-    schema: GridSchema,        // Represents the column structure of the grid and maps headers to the underlying record columns.
+    records: Vec<Box<Record>>,  // Represents each row from one of the sourced files.
+    schema: GridSchema,         // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
 
 impl Default for Grid {
@@ -38,6 +38,7 @@ impl Default for Grid {
         Self {
             records: vec!(),
             schema: GridSchema::default(),
+            // changesets: vec!(),
         }
     }
 }
@@ -55,8 +56,8 @@ impl Grid {
         self.records.push(record);
     }
 
-    pub fn remove_matched(&mut self) {
-        self.records.retain(|r| !r.matched())
+    pub fn remove_deleted(&mut self) {
+        self.records.retain(|r| !r.deleted())
     }
 
     pub fn records(&self) -> &Vec<Box<Record>> {
@@ -79,9 +80,7 @@ impl Grid {
     ///
     pub fn source_data(&mut self, ctx: &Context) -> Result<(), MatcherError> {
 
-        // TODO: Inject changesets at the appropriate point in time. Only apply them to records sourced
-        // with an earlier timestamp in their filename. So consider putting a REAL timestamp on a DataFile.
-
+        // Load and index al pending records.
         for (idx, pattern) in ctx.charter().file_patterns().iter().enumerate() {
             log::info!("Sourcing data with pattern [{}]", pattern);
             // TODO: Validate the source path is canonicalised in the rec base.
@@ -101,9 +100,11 @@ impl Grid {
                     .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
 
                 // Build a schema from the file's header rows.
-                let prefix = field_prefix(ctx, &file, idx, pattern)?;
+                let prefix = field_prefix(ctx, &file, idx, pattern)
+                    .map_err(LuaError::external)?;
+
                 let schema = FileSchema::new(prefix, &mut rdr)
-                    .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() } )?;
+                    .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;
 
                 // Use an existing schema from the grid, if there is one, otherwise add this one.
                 let schema_idx = self.schema.add_file_schema(schema.clone());
@@ -112,24 +113,24 @@ impl Grid {
                 // Register the data file with the grid.
                 let file_idx = self.schema.add_file(DataFile::new(&file, schema_idx)?);
 
-                // Load the data as bytes into memory.
+                // Create an in-memory index for each sourced record.
                 for result in rdr.byte_records() {
                     let csv_record = result // Ensure we can read the record - but ignore it at this point.
                         .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
 
-                    count += 1;
-
                     let record = Box::new(Record::new(file_idx as u16, &csv_record.position()
                         .expect("No position for a record in a file?").clone()));
+
                     self.add_record(record);
+                    count += 1;
                 }
 
                 log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
+
                 log::info!("Grid Memory Size: {}",
                     blue(&format!("{:.0}", self.memory_usage().bytes())));
             }
         }
-
         Ok(())
     }
 
@@ -151,7 +152,7 @@ impl Grid {
     ///
     pub fn debug_grid(&self, ctx: &Context, filename: &str, accessor: &mut DataAccessor) {
         let output_path = folders::debug_path(ctx).join(filename);
-        log::info!("Creating grid debug file {}...", output_path.to_canoncial_string());
+        log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
         let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
         wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
@@ -161,7 +162,7 @@ impl Grid {
         }
 
         wtr.flush().expect("Unable to flush the debug file");
-        log::info!("...{} rows written to {}", self.records.len(), output_path.to_canoncial_string());
+        log::debug!("...{} rows written to {}", self.records.len(), output_path.to_canoncial_string());
     }
 }
 
