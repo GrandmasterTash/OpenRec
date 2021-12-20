@@ -25,9 +25,7 @@ const FIXED_TS: &str = "20211201_053700000";
 ///
 /// This function will delete any existing files in base_dir before creating a new waiting folder.
 ///
-/// Finally, any test data files in the source list are copied into the waiting folder.
-///
-pub fn init_test(folder: &str, data_files: &Vec<PathBuf>) -> PathBuf {
+pub fn init_test(folder: &str) -> PathBuf {
     dotenv::dotenv().ok();
     let _ = env_logger::builder().is_test(true).try_init();
 
@@ -39,7 +37,26 @@ pub fn init_test(folder: &str, data_files: &Vec<PathBuf>) -> PathBuf {
         .expect(&format!("Cannot remove base_dir {}", base_dir.to_string_lossy()));
 
     // Create a waiting folder to put the test data files.
-    // let waiting = format!("{}/waiting", base_dir);
+    let waiting = base_dir.join("waiting/");
+    std::fs::create_dir_all(&waiting)
+        .expect("Cannot create a waiting folder");
+
+    base_dir
+}
+
+///
+/// Set-up logging and ensure a fixed timestamp is used when writing output matched files.
+///
+/// Create a worker folder structure under the base_dir specified.
+///
+/// This function will delete any existing files in base_dir before creating a new waiting folder.
+///
+/// Finally, any test data files in the source list are copied into the waiting folder.
+///
+pub fn init_test_from_examples(folder: &str, data_files: &Vec<PathBuf>) -> PathBuf {
+    let base_dir = init_test(folder);
+
+    // Create a waiting folder to put the test data files.
     let waiting = base_dir.join("waiting/");
     std::fs::create_dir_all(&waiting)
         .expect("Cannot create a waiting folder");
@@ -64,6 +81,15 @@ pub fn copy_example_data_file(filename: &str, base_dir: &PathBuf) -> PathBuf {
         .expect(&format!("Cannot copy test data file {:?} into {}", filename, base_dir.to_string_lossy()));
 
     data_file
+}
+
+///
+/// Write the contents to the file specified and return the resultant file's path.
+///
+pub fn write_file(parent: &PathBuf, filename: &str, contents: &str) -> PathBuf {
+    let file = parent.join(filename);
+    std::fs::write(&file, contents).unwrap();
+    file.to_path_buf()
 }
 
 ///

@@ -73,6 +73,9 @@ pub enum MatcherError {
     #[error("Unable to write unmatched record row {row} to {filename}")]
     CannotWriteUnmatchedRecord { filename: String, row: usize, source: csv::Error },
 
+    #[error("Unable to write matched file footer to {filename}")]
+    CannotWriteFooter { filename: String, source: serde_json::Error },
+
     #[error("Cannot read derived data from record in row {row} for file {file_idx}, no derived index")]
     NoDerivedPosition { row: usize, file_idx: usize },
 
@@ -118,11 +121,14 @@ pub enum MatcherError {
     #[error("The source column {header} has type {this_type:?} which wont merge with {other_type:?}")]
     InvalidSourceDataType { header: String, this_type: DataType, other_type: DataType},
 
-    #[error("A problem occured during the match")]
-    MatchGroupError { source: rlua::Error },
+    #[error("An error occured processing changeset {changeset} on record {row} from file {file}")]
+    ChangeSetError { changeset: String, row: usize, file: String, source: rlua::Error },
 
     #[error("An error occured processing instruction {instruction} on record {row} from file {file}")]
     DeriveDataError { instruction: String, row: usize, file: String, source: rlua::Error },
+
+    #[error("A problem occured during the match")]
+    MatchGroupError { source: rlua::Error },
 
     #[error("The constraint column {column} is not present")]
     ConstraintColumnMissing { column: String },

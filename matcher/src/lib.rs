@@ -9,18 +9,20 @@ mod unmatched;
 mod instructions;
 mod data_accessor;
 
+use changeset::ChangeSet;
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::MatcherError;
-use std::{time::{Duration, Instant}, collections::HashMap};
+use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
+// BUG: Unmatched files concat the .unmatched segment multiple times. Write a test to ensure this doesn't happen.
+// BUG: No data errors the job. Write a test to ensure this doesn't happen.
+// TODO: List all files present (highlight those matching the patterns for sourcing) in waiting and unmatched at start of a job.
 // TODO: Ensure all lua script errors log the script in the message.
 // TODO: Re-instate accumulated timings for projections and mergers.
 // TODO: Debug per instruction. Currently all derived are debugged at once.
-// TODO: Changesets
-// TODO: Rollback commands.
 // TODO: Flesh-out examples.
 // TODO: Unit/integration tests. Lots.
 // TODO: Check code coverage.
@@ -32,83 +34,67 @@ use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}
 // TODO: Jetwash to generate changesets for update files (via business key).
 // TODO: Consider an 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 
-/*
-  - Changesets - only unmatched data is effected.
-  - Direct manual instruction.
-    - Update record 123, set amount = 100.00 and date = 1/1/2020
-    - WONT DO THIS Update records where date = 1/1/2020, set amount = amount * 100
-    - WONT DO THIS Update records in source file xxxxxx_inv.csv, yyyyyyy_inv.csv  change amount to decimal.
-    * Delete records where xxxx.
+///
+/// These are the linear state transitions of a match Job.
+///
+/// Any error encountered will suspend the job at that phase. It should be safe to start a new job assuming
+/// amendments are made to the charter to correct any error, or changesets are aborted.
+///
+#[derive(Clone, Copy, Debug)]
+pub enum Phase {
+     FolderInitialisation,
+     SourceData,
+     ApplyChangeSets,
+     DeriveSchema,
+     DeriveData,
+     MatchAndGroup,
+     ComleteAndArchive,
+     Complete
+}
 
-    [
-        {
-            "id": "uuid_1",
-            "change": "Data", <<< discriminator
-            "where": "record[uuid] = xxx-yyy-zzzz",
-            "changes": [
-                { "Field": "amount", "Value": "100.00" },
-                { "Field": "date", "Value": "2020-01-01T00:00:00.000Z" }
-            ],
-            "source": "user_abc",
-            "approved_by": ["user_abc", "user_xyz"],
-            "timestamp": 123456789
-        },
-        {
-            "id": "uuid_2",
-            "change": "Data", <<< discriminator
-            "where": "record[date] = 1577836800000",
-            "changes": [
-                { "Script": "record[amount] = record[amount] * 100" }
-            ],
-            "source": "user_xyz",
-            "approved_by": ["user_abc", "user_xyz"],
-            "timestamp": 123456789
-        },
-        {
-            "id": "uuid_3",
-            "change": "Schema", <<< discriminator
-            "in": [ "xxxxxx_inv.csv", "yyyyyyy_inv.csv" ],
-            "changes": [
-                { Column: "Amount", type: "Decimal" }
-            ],
-            "source": "user_123",
-            "approved_by": ["user_abc", "user_xyz"],
-            "timestamp": 123456789
-        },
-        {
-            "id": "uuid_4",
-            "change": "delete", <<< discriminator
-            "where": "record[uuid] = xxx-yyy-zzzz-wwww",
-            "source": "user_xyz",
-            "approved_by": ["user_abc", "user_xyz"],
-            "timestamp": 123456789
-        },
-    ]
-
-    - Record changesets in the matched json files.
-    - Changesets are archived at end of a job they are used in.
-    - Changesets look file YYYYMMDD_HHMMSSMMM_changeset.json
-    - Changesets only apply to unmatched data in their current job with a ts earlier than the changeset's ts.
-*/
+impl Phase {
+    pub fn ordinal(&self) -> usize {
+        match self {
+            Phase::FolderInitialisation => 1,
+            Phase::SourceData           => 2,
+            Phase::ApplyChangeSets      => 3,
+            Phase::DeriveSchema         => 4,
+            Phase::DeriveData           => 5,
+            Phase::MatchAndGroup        => 6,
+            Phase::ComleteAndArchive    => 7,
+            Phase::Complete             => 8,
+        }
+    }
+}
 
 ///
-/// Created for each match job. Used to pass the main top-level things around.
+/// Created for each match job. Used to pass the main top-level job 'things' around.
 ///
 pub struct Context {
-    job_id: Uuid,
-    charter: Charter,
-    base_dir: String,
-    timestamp: String,
+    started: Instant,   // When the job started.
+    job_id: Uuid,       // Each job is given a unique id.
+    charter: Charter,   // The charter of instructions to run.
+    base_dir: String,   // The root of the working folder for data (see the folders module).
+    timestamp: String,  // A unique timestamp to prefix any generated files with for this job.
+    lua: rlua::Lua,     // Lua engine state.
+    phase: Cell<Phase>, // The current point in the linear state transition of the job.
 }
 
 impl Context {
     pub fn new(charter: Charter, base_dir: String) -> Self {
         Self {
+            started: Instant::now(),
             job_id: Uuid::new_v4(),
             charter,
             base_dir,
             timestamp: folders::new_timestamp(),
+            lua: rlua::Lua::new(),
+            phase: Cell::new(Phase::FolderInitialisation),
         }
+    }
+
+    pub fn started(&self) -> Instant {
+        self.started
     }
 
     pub fn job_id(&self) -> &Uuid {
@@ -126,16 +112,68 @@ impl Context {
     pub fn ts(&self) -> &str {
         &self.timestamp
     }
+
+    pub fn lua(&self) -> &rlua::Lua {
+        &self.lua
+    }
+
+    pub fn phase(&self) -> Phase {
+        self.phase.get()
+    }
+
+    pub fn set_phase(&self, phase: Phase) {
+        self.phase.set(phase);
+    }
 }
 
-// TODO: Make these parameters consistent.
-pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
-    log::info!("{}", BANNER);
+///
+/// Create a new match job and run the charter.
+///
+/// If this library is used as part of a wider solution, care must be taken to synchronise these match jobs
+/// so only one can exclusively run against a given charter/folder of data at any one time.
+///
+pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
 
-    let start = Instant::now();
-    let ctx = Context::new(Charter::load(charter)?, base_dir);
-    log::info!("Starting match job {}", ctx.job_id());
+    let ctx = init_job(charter, base_dir)?;
+    ctx.set_phase(Phase::FolderInitialisation);
 
+    init_folders(&ctx)?;
+    ctx.set_phase(Phase::SourceData);
+
+    let grid = Grid::load(&ctx)?;
+    ctx.set_phase(Phase::ApplyChangeSets);
+
+    let (mut grid, changesets) = apply_changesets(&ctx, grid)?;
+    ctx.set_phase(Phase::DeriveSchema);
+
+    let (projection_cols, mut accessor) = create_derived_schema(&ctx, &mut grid)?;
+    ctx.set_phase(Phase::DeriveData);
+
+    derive_data(&ctx, &mut grid, &mut accessor, projection_cols)?;
+    ctx.set_phase(Phase::MatchAndGroup);
+
+    let (matched, unmatched) = match_and_group(&ctx, &mut grid)?;
+    ctx.set_phase(Phase::ComleteAndArchive);
+
+    complete_and_archive(&ctx, grid, matched, unmatched, changesets)?;
+    ctx.set_phase(Phase::Complete);
+
+    Ok(())
+}
+
+///
+/// Parse and load the charter configuration, return a job Context.
+///
+fn init_job(charter: &str, base_dir: &str) -> Result<Context, MatcherError> {
+    let ctx = Context::new(Charter::load(charter)?, base_dir.into());
+    log::info!("Starting match job {}, charter {} (v{})", ctx.job_id(), ctx.charter().name(), ctx.charter().version());
+    Ok(ctx)
+}
+
+///
+/// Prepare the working folders before loading data.
+///
+fn init_folders(ctx: &Context) -> Result<(), MatcherError> {
     folders::ensure_dirs_exist(&ctx)?;
 
     // TODO: Ensure nothing in waiting folder is already in the archive folder.
@@ -148,41 +186,27 @@ pub fn run_charter(charter: &str, base_dir: String) -> Result<()> {
     // Move any waiting files to the matching folder.
     folders::progress_to_matching(&ctx)?;
 
-    // Iterate alphabetically matching files.
-    let grid = process_charter(&ctx)?;
-
-    // Move matching files to the archive.
-    // TODO: Delete unmatched.bak files if there has been no error.
-    folders::progress_to_archive(&ctx, grid)?;
-
-    // TODO: Log how many records processed, rate, MB size, etc.
-    log::info!("Completed match job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, start.elapsed()).0));
-
     Ok(())
 }
 
 ///
-/// Process the matching instructions.
+/// Load and apply changesets to transform new and unmatched data prior to matching.
 ///
-fn process_charter(ctx: &Context) -> Result<Grid, MatcherError> {
-
-    log::info!("Running charter [{}] v{:?}", ctx.charter().name(), ctx.charter().version());
-
-    // Create Lua engine bindings.
-    let lua = rlua::Lua::new();
-
-    // Load all data into memory (for now).
-    let mut grid = Grid::default();
-    grid.source_data(ctx)?; // TODO: Wrap these two lines into one.
-
-    // Load and apply changesets to transform new and unmatched data prior to matching.
-    let (any_applied, _changsets) = changeset::apply(ctx, &mut grid, &lua)?;
-
+/// If data is modified, we re-load/index the records in a new instance of the grid.
+///
+fn apply_changesets(ctx: &Context, mut grid: Grid) -> Result<(Grid, Vec<ChangeSet>), MatcherError> {
+    let (any_applied, changesets) = changeset::apply(ctx, &mut grid)?;
     if any_applied {
-        // Re-source the grid now, as we'll need to re-index record positions.
-        grid = Grid::default();
-        grid.source_data(ctx)?;
+        return Ok((Grid::load(ctx)?, changesets))
     }
+    Ok((grid, changesets))
+}
+
+///
+/// Add a derived column for each projection or merger and calculate which columns each projection
+/// is dependant on.
+///
+fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usize, Vec<Column>>, DataAccessor), MatcherError> {
 
     // Create a DataAccessor now to use through the first two instruction passes. It will run in write mode
     // meaning it will be writing derived values to a buffer for each record and flushing to disk.
@@ -190,38 +214,8 @@ fn process_charter(ctx: &Context) -> Result<Grid, MatcherError> {
 
     // If charter.debug - dump the grid with instr idx in filename.
     if ctx.charter().debug() {
-        grid.debug_grid(ctx, &format!("0_{}.output.csv", ctx.ts()), &mut accessor);
+        grid.debug_grid(ctx, &format!("{}_{}.output.csv", ctx.phase().ordinal(), ctx.ts()), &mut accessor);
     }
-
-    // Pass 1 - calculate for each instruction, the Lua columns needed and added derived columns to the grid.
-    let projection_cols = pass_1_derived_schema(ctx, &mut grid)?;
-
-    // println!("Pass 1 complete - Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
-
-    // Pass 2 - calculate all projected and derived columns and write them to a .derived file per sourced
-    // file. Every corresponding row in the source files will have a row in the derived files which contains
-    // projected and merged column data.
-    pass_2_derived_data(ctx, &lua, &mut grid, &mut accessor, projection_cols)?;
-
-    // println!("Pass 2 complete - Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
-
-    // Pass 3 - run all other instructions that don't create derived data.
-    // Create a new accessor which can read from our persisted .derived files.
-    pass_3_match_data(ctx, &lua, &mut grid)?;
-
-    // println!("Pass 3 complete - Sleeping for 8...");
-    // std::thread::sleep(std::time::Duration::from_secs(8));
-
-    Ok(grid)
-}
-
-///
-/// Add a derived column for each projection or merger and calculate which columns each projection
-/// is dependant on.
-///
-fn pass_1_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<HashMap<usize, Vec<Column>>, MatcherError> {
 
     let mut projection_cols = HashMap::new();
 
@@ -242,15 +236,6 @@ fn pass_1_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<HashMap<usize
             _ => { /* Ignore other instructions. */}
         }
     }
-    Ok(projection_cols)
-}
-
-///
-/// Calculate all projected and derived columns and write them to a .derived file per sourced
-/// file. Every corresponding row in the source files will have a row in the derived files which contains
-/// projected and merged column data.
-///
-fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor: &mut DataAccessor, projection_cols: HashMap<usize, Vec<Column>>) -> Result<(), MatcherError> {
 
     // Ensure the accessor's schema is sync'd with the modified grid's schema.
     accessor.set_schema(grid.schema().clone());
@@ -258,10 +243,20 @@ fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor
     // Now we know what columns are derived, write their headers to the .derived files.
     accessor.write_derived_headers()?;
 
+    Ok((projection_cols, accessor))
+}
+
+///
+/// Calculate all projected and derived columns and write them to a .derived file per sourced
+/// file. Every corresponding row in the source files will have a row in the derived files which contains
+/// projected and merged column data.
+///
+fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, projection_cols: HashMap<usize, Vec<Column>>) -> Result<(), MatcherError> {
+
     // Track the record and instruction being processed.
     let mut eval_ctx = (0, 0);
 
-    lua.context(|lua_ctx| {
+    ctx.lua().context(|lua_ctx| {
         lua::init_context(&lua_ctx)?;
 
         // Calculate all projected and merged column values for each record.
@@ -311,13 +306,13 @@ fn pass_2_derived_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid, accessor
 /// Run all other instructions that don't create derived data. Create a new accessor which
 /// can read from our persisted .derived files.
 ///
-fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<(), MatcherError> {
+fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, UnmatchedHandler), MatcherError> {
 
     // Create a match file containing job details and giving us a place to append match results.
     let mut matched = MatchedHandler::new(ctx, grid)?;
 
     // Create unmatched files for each sourced file.
-    let mut unmatched = UnmatchedHandler::new(ctx, grid)?;
+    let unmatched = UnmatchedHandler::new(ctx, grid)?;
 
     // Create a read-mode derived accessor used to read real and derived data.
     let mut accessor = DataAccessor::for_reading(grid)?;
@@ -327,25 +322,47 @@ fn pass_3_match_data(ctx: &Context, lua: &rlua::Lua, grid: &mut Grid) -> Result<
         match inst {
             Instruction::Project { .. } => {},
             Instruction::MergeColumns { .. } => {},
-            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, grid, &schema, &mut accessor, lua, &mut matched)?,
+            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, grid, &schema, &mut accessor, ctx.lua(), &mut matched)?,
             Instruction::_Filter   => todo!(),
             Instruction::_UnFilter => todo!(),
         };
 
         // If charter.debug - dump the grid with instr idx in filename.
         if ctx.charter().debug() {
-            grid.debug_grid(ctx, &format!("{}_{}.output.csv", idx + 1, ctx.ts()), &mut accessor);
+            grid.debug_grid(ctx, &format!("{}_{}_{}.output.csv", ctx.phase().ordinal(), idx + 1, ctx.ts()), &mut accessor);
         }
 
         log::info!("Grid Memory Size: {}",
             blue(&format!("{:.0}", grid.memory_usage().bytes())));
     }
 
-    // Complete the matched JSON file.
-    matched.complete_files()?;
+    Ok((matched, unmatched))
+}
+
+///
+/// Complete the matched file and write-out the unmatched records.
+///
+/// Move data to the archive folders and delete any temporary files.
+///
+fn complete_and_archive(
+    ctx: &Context,
+    grid: Grid,
+    mut matched: MatchedHandler,
+    mut unmatched: UnmatchedHandler,
+    changesets: Vec<ChangeSet>) -> Result<(), MatcherError> {
 
     // Write all unmatched records now - this will be optimised at a later stage to be a single call.
-    unmatched.write_records(ctx, grid.records(), grid)?;
+    unmatched.write_records(ctx, grid.records(), &grid)?;
+
+    // Complete the matched JSON file.
+    matched.complete_files(&unmatched, changesets)?;
+
+    // Move matching files to the archive.
+    // TODO: Delete unmatched.bak files if there has been no error.
+    folders::progress_to_archive(&ctx, grid)?;
+
+    // TODO: Log how many records processed, rate, MB size, etc.
+    log::info!("Completed match job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, ctx.started().elapsed()).0));
 
     Ok(())
 }
@@ -370,12 +387,3 @@ pub fn formatted_duration_rate(amount: usize, elapsed: Duration) -> (String, Str
 pub fn blue(msg: &str) -> ansi_term::ANSIGenericString<'_, str> {
     ansi_term::Colour::RGB(70, 130, 180).paint(msg)
 }
-
-const BANNER: &str = r#"
-  ____     _           _ _
- / ___|___| | ___ _ __(_) |_ _   _
-| |   / _ \ |/ _ \ '__| | __| | | |
-| |__|  __/ |  __/ |  | | |_| |_| |
- \____\___|_|\___|_|  |_|\__|\__, |
- OpenRec: Matching Engine    |___/
-"#;

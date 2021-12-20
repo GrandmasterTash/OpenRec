@@ -1,10 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{io::BufReader, fs::{File, self}, collections::HashMap};
+use std::{io::BufReader, fs::File, collections::HashMap};
 use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, data_accessor::DataAccessor};
-
-// TODO: Update the comments here to reflect latest implemented.
-// TODO: Implement some changeset examples and tests.
 
 /*
     Changeset files are instructions to modified unmatched or yet-to-be-matched data.
@@ -23,33 +20,34 @@ use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lu
     ------------------------------------ CHANGSETS APPLIED (affecting both data files) ----------------------------------------------------
     WAITING                   UNMATCHED                      MATCHING                              MATCHED                 ARCHIVE
                                                              20210109_inv.unmatched.csv            20210109_matched.json   20210109_inv.csv
-                                                             20210110_inv.csv.modified.csv                                 20210110_inv.csv
+                                                             20210110_inv.csv.                                             20210110_inv.csv
                                                              20210111_changeset.json
-                                                             20210109_inv.unmatched.bak
+                                                             20210109_inv.unmatched.csv.pre_modified
     ------------------------------------ MATCH COMPLETE (unmatch data remains from both file) ---------------------------------------------
     WAITING                   UNMATCHED                              MATCHING                      MATCHED                 ARCHIVE
                               20210109_inv.unmatched.csv                                           20210109_matched.json   20210109_inv.csv
                               20210110_inv.unmatched.csv                                           20210111_matched.json   20210110_inv.csv
-                                                                                                   20210111_changeset.json
+                                                                                                   20210111_changeset.json 20210110_inv.csv.pre_modified
 
-    Note: The .modified section of the filename above is dropped when unmatched data is created. That-is, only original files will
-    be given a .modified tag in the filename, but not unmatched files.
+    Whilst changesets are being applied, new data files are written into the matching folder with the .modifying extension. These files
+    contain the original data with any changeset modifications applied. Note: If a record is ignored by a changeset, it is absent from the
+    new file.
 
-    There are some intermediary stages within the CHANGESETS APPLIED stage above which are not shown.
-    They involve the creation of a temporary named version of file of the modified unmatched file. The pre-modified unmatched file
-    is renamed to .bak (which is deleted at the end of the job.).
+    At the end of ChangeSet processing, the original unmatched files are given a _pre_modified suffix and for data which is new for this
+    match job (i.e. it arrived in the waiting folder) the original file is immediately moved to the archive folder.
 
-    Given the above unmatched file '20210109_inv.unmatched.csv' then a new file will be created '20210109_inv.unmatched.csv.<job_id>'
-    where modified data (the unmatched data with the changes in the changeset being applied) are written to.
+    Next the .modifying suffix is removed from the new copies of the data and matching continues by re-sourcing the grid from the latest set
+    of files in the matching folder.
 
-    Once all changsets have been processed, the original unmatched file '20210109_inv.unmatched.csv' will be deleted and the job_id
-    suffix on the new version of the file removed.
+    At the end of the job, _pre_modified files (i.e. the unmatched files) are dropped and data which was new at the start of the job will be
+    archived as normal, except, because the filename already exists, the modified data files are archived and given a new extension of
+    '.modified.csv' to avoid a collision with the unmodified version of the datafile.
 */
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum Change {
-    UpdateFields { updates: Vec<FieldChange>, lua_filter: String }, // TODO: Prevent filter containing any field in updates otherwise cyclic dependency = stack overflow
+    UpdateFields { updates: Vec<FieldChange>, lua_filter: String },
     IgnoreRecords { lua_filter: String },
 }
 
@@ -63,15 +61,33 @@ pub struct FieldChange {
 pub struct ChangeSet {
     id: uuid::Uuid,
     change: Change,
-    source: String,
-    comment: String,
-    approved_by: Vec<String>,
+    source: Option<String>,
+    comment: Option<String>,
+    approved_by: Option<Vec<String>>, // TODO: Consider metadata for changesets and charters.
     timestamp: DateTime<Utc>,
+
+    #[serde(skip)]
+    effected: usize,
+
+    #[serde(skip)]
+    filename: String,
 }
 
 impl ChangeSet {
     pub fn change(&self) -> &Change {
         &self.change
+    }
+
+    pub fn effected(&self) -> usize {
+        self.effected
+    }
+
+    pub fn filename(&self) -> &str {
+        &self.filename
+    }
+
+    pub fn set_filename(&mut self, filename: String) {
+        self.filename = filename;
     }
 }
 
@@ -84,19 +100,12 @@ struct Metrics {
 }
 
 ///
-/// A flag to indiciate if ANY changes were applied to data.
-/// A list of all changesets evaluated.
-/// A map of DataFiles to Metrics indicating details of any changes in those files.
-///
-pub type ChangeSetResult = Result<(bool, Vec<ChangeSet>), MatcherError>;
-
-///
 /// Apply any ChangeSets to the csv data now.
 ///
-pub fn apply(ctx: &Context, grid: &mut Grid, lua: &rlua::Lua) -> ChangeSetResult {
+pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), MatcherError> {
 
     // Load any changesets for the data.
-    let changesets = load_changesets(ctx)?;
+    let mut changesets = load_changesets(ctx)?;
 
     // Clone the grid schema - some lower level fns need mut accessor, mut grid and an immutable schema.
     let schema = grid.schema().clone();
@@ -108,18 +117,24 @@ pub fn apply(ctx: &Context, grid: &mut Grid, lua: &rlua::Lua) -> ChangeSetResult
     // Track how many changes are made to each file.
     let mut metrics = init_metrics(grid);
 
-    lua.context(|lua_ctx| {
+    // Track the record and changeset being processed.
+    let mut eval_ctx = (0, 0);
+
+    ctx.lua().context(|lua_ctx| {
         lua::init_context(&lua_ctx)?;
-        // TODO: Use an eval_ctx like merge and projections to report exact file/row failure points. Log changeset name.
 
         // Apply each changeset in order to each record.
-        for record in grid.records_mut() {
+        for (r_idx, record) in grid.records_mut().iter().enumerate() {
+            eval_ctx = (r_idx, 0);
+
             let data_file = &schema.files()[record.file_idx()];
 
             // Load the current record into a buffer.
             accessor.load_modifying_record(record)?;
 
-            for changeset in &changesets {
+            for (c_idx, changeset) in &mut changesets.iter_mut().enumerate() {
+                eval_ctx = (r_idx, c_idx);
+
                 let lua_filter = match changeset.change() {
                     Change::UpdateFields { updates: _, lua_filter } => lua_filter,
                     Change::IgnoreRecords { lua_filter }            => lua_filter,
@@ -140,6 +155,8 @@ pub fn apply(ctx: &Context, grid: &mut Grid, lua: &rlua::Lua) -> ChangeSetResult
                             metrics.get_mut(data_file).expect("No metrics for record").ignored += 1;
                         },
                     }
+
+                    changeset.effected += 1;
                 }
             }
 
@@ -150,7 +167,12 @@ pub fn apply(ctx: &Context, grid: &mut Grid, lua: &rlua::Lua) -> ChangeSetResult
         }
         Ok(())
     })
-    .map_err(|source| MatcherError::MatchGroupError { source })?;
+    .map_err(|source| MatcherError::ChangeSetError {
+        changeset: format!("{:?}", changesets[eval_ctx.1].id),
+        row: grid.records()[eval_ctx.0].row(),
+        file: grid.schema().files()[grid.records()[eval_ctx.0].file_idx()].filename().into(),
+        source
+    })?;
 
     // Delete any ignored records from memory.
     grid.remove_deleted();
@@ -158,20 +180,9 @@ pub fn apply(ctx: &Context, grid: &mut Grid, lua: &rlua::Lua) -> ChangeSetResult
     // Finalise the modifying files, renaming and archiving things as required.
     let any_applied = finalise_files(ctx, &metrics)?;
 
-    /* 
-    TODO: Produce some output like this.
-    It must be logged here.
-    It must be returned from this fn so it can be recorded in the job.json.
-    wibble_changeset.json      Updated      Ignored
-        wibble_inv.csv     100,000,000  100,000,000
-        wobble_pay.csv     100,000,000  100,000,000
-    wobble_changeset.json      Updated      Ignored
-        wibble_inv.csv     100,000,000  100,000,000
-        wibble_pay.csv               0          100
-        wobble_pay.csv     100,000,000  100,000,000
-    nobble_changeset.json      Updated      Ignored
-                            --- nothing updated ---
-    */
+    for changeset in &changesets {
+        log::info!("ChangeSet {} effected {} record(s)", changeset.id, changeset.effected);
+    }
 
     Ok((any_applied, changesets))
 }
@@ -197,18 +208,18 @@ fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>) -> Result
                 // Then rename the modifying file, eg. 20210110_inv.csv.modifying -> 20210110_inv.csv
                 folders::archive_immediately(ctx, data_file.path())?;
 
-                log::info!("Moving {} to {}", data_file.modifying_filename(), data_file.filename());
-                fs::rename(data_file.modifying_path(), data_file.path())?;
+                log::debug!("Moving {} to {}", data_file.modifying_filename(), data_file.filename());
+                folders::rename(data_file.modifying_path(), data_file.path())?;
 
             } else {
                 // For un-matched files, we'll rename the current file with a .pre_modified suffix.
-                fs::rename(data_file.path(), data_file.pre_modified_path())?; // TODO: Map these errors so we know which files failed.
-                fs::rename(data_file.modifying_path(), data_file.path())?;
-                fs::remove_file(data_file.pre_modified_path())?;
+                folders::rename(data_file.path(), data_file.pre_modified_path())?;
+                folders::rename(data_file.modifying_path(), data_file.path())?;
+                folders::remove_file(data_file.pre_modified_path())?;
             }
         } else {
             log::debug!("Removing unmodified modifying file {}", data_file.modifying_path());
-            fs::remove_file(data_file.modifying_path())?;
+            folders::remove_file(data_file.modifying_path())?;
         }
     }
 
@@ -231,7 +242,11 @@ fn record_effected(
     accessor: &mut DataAccessor,
     schema: &GridSchema) -> Result<bool, MatcherError> {
 
-    Ok(!lua::lua_filter(&vec!(record), &lua_filter, lua_ctx, accessor, schema)?.is_empty())
+    let effected = !lua::lua_filter(&vec!(record), &lua_filter, lua_ctx, accessor, schema)?.is_empty();
+
+    log::trace!("record_effected: {} : {:?} : {}", lua_filter, record.as_strings(schema, accessor), effected);
+
+    Ok(effected)
 }
 
 ///
@@ -245,8 +260,12 @@ fn load_changesets(ctx: &Context) -> Result<Vec<ChangeSet>, MatcherError> {
         let reader = BufReader::new(File::open(file.path())?);
         let mut content: Vec<ChangeSet> = serde_json::from_reader(reader)
             .map_err(|source| MatcherError::UnableToParseChangset { path: file.path().to_canoncial_string(), source } )?;
-
         log::info!("Loaded changeset {}", file.file_name().to_string_lossy());
+
+        for changeset in &mut content {
+            changeset.set_filename(file.file_name().to_string_lossy().into());
+        }
+
         changesets.append(&mut content);
     }
 

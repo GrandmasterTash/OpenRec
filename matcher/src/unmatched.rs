@@ -12,12 +12,23 @@ pub struct UnmatchedHandler {
 ///
 /// Represents an unmatched file potentially being written to as part of the current job.
 ///
-struct UnmatchedFile {
+pub struct UnmatchedFile {
     rows: usize,
     path: PathBuf,
     full_filename: String, // CURRENT filename, e.g. 20211126_072400000_invoices.unmatched.csv.
     writer: Writer<File>,
 }
+
+impl UnmatchedFile {
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn filename(&self) -> &str {
+        &self.full_filename
+    }
+}
+
 
 impl UnmatchedHandler {
     ///
@@ -93,16 +104,21 @@ impl UnmatchedHandler {
 
     fn complete_files(&mut self, ctx: &Context) -> Result<(), MatcherError> {
         // Delete any unmatched files we didn't write records to.
-        for (_filename, unmatched) in self.files.iter() {
+        for (_filename, mut unmatched) in self.files.iter_mut() {
             if unmatched.rows == 0 {
                 folders::delete_empty_unmatched(ctx, &unmatched.full_filename)?;
             } else {
                 // Rename any remaining .inprogress files.
                 let path = folders::complete_file(&unmatched.path.to_canoncial_string())?;
+                unmatched.full_filename = folders::filename(&path)?;
                 log::info!("Created unmatched file {}", path.to_canoncial_string());
             }
         }
 
         Ok(())
+    }
+
+    pub fn unmatched_files(&self) -> Vec<&UnmatchedFile> {
+        self.files.values().collect()
     }
 }

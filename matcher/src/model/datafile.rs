@@ -15,8 +15,6 @@ pub struct DataFile {
     derived_filename: String,  // '20201118_053000000_invoices.derived.csv'
     modifying_path: String,    // The path to any temporary file storing modified data, eg. '/tmp/20201118_053000000_invoices.csv.modifying'
     modifying_filename: String,// '20201118_053000000_invoices.csv.modifying'
-    modified_path: String,     // The path to a modified file updated by a changeset. eg. '/tmp/20201118_053000000_invoices.csv.modified.csv'
-    modified_filename: String, // '20201118_053000000_invoices.csv.modified.csv'
     pre_modified_path: String, // The path to an unmatched file before a changeset is applied, eg. '/tmp/20201118_053000000_invoices.unmatched.csv.pre_modified'
     timestamp: String,         // '20201118_053000000' if the filename is '20201118_053000000_invoices.csv'.
     original_filename: String, // 20201118_053000000_invoices.unmatched.csv -> 20201118_053000000_invoices.csv
@@ -44,12 +42,6 @@ impl DataFile {
             .ok_or(MatcherError::PathNotAFile { path: modifying.to_canoncial_string() })?
             .to_string_lossy().into();
 
-        let modified = folders::modified(entry)?;
-        let modified_path = modified.to_string_lossy().into();
-        let modified_filename = modified.file_name()
-            .ok_or(MatcherError::PathNotAFile { path: modified.to_canoncial_string() })?
-            .to_string_lossy().into();
-
         let pre_modified_path = folders::pre_modified(entry).to_string_lossy().into();
 
         Ok(Self {
@@ -60,8 +52,6 @@ impl DataFile {
             derived_filename,
             modifying_path,
             modifying_filename,
-            modified_path,
-            modified_filename,
             pre_modified_path,
             timestamp,
             original_filename,
@@ -111,14 +101,6 @@ impl DataFile {
 
     pub fn modifying_filename(&self) -> &str {
         &self.modifying_filename
-    }
-
-    pub fn modified_path(&self) -> &str {
-        &self.modified_path
-    }
-
-    pub fn modified_filename(&self) -> &str {
-        &self.modified_filename
     }
 
     pub fn pre_modified_path(&self) -> &str {

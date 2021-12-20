@@ -14,7 +14,6 @@ pub struct Charter {
     field_aliases: Option<Vec<String>>,
     use_field_prefixes: Option<bool>,
     instructions: Vec<Instruction>,
-    // TODO: Start at, end at, schema difference handling.
 }
 
 

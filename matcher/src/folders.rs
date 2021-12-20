@@ -58,6 +58,22 @@ lazy_static! {
 }
 
 ///
+/// Rename a folder or file - captures the paths to log if fails.
+///
+pub fn rename(from: &str, to: &str) -> Result<(), MatcherError> {
+    Ok(fs::rename(from, to)
+        .map_err(|source| MatcherError::CannotRenameFile { from: from.into(), to: to.into(), source })?)
+}
+
+///
+/// Remove the file specified - captures the path to log if fails.
+///
+pub fn remove_file(filename: &str) -> Result<(), MatcherError> {
+    Ok(fs::remove_file(filename)
+        .map_err(|source| MatcherError::CannotDeleteFile { source, filename: filename.into() })?)
+}
+
+///
 /// Ensure the folders exist to process files for this reconcilliation.
 ///
 pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), MatcherError> {
@@ -119,8 +135,6 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
 /// Move any matching files to the archive folder.
 ///
 pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError> {
-    // TODO: Remove any unmatched.csv.pre_modified files now. The changeset is applied and confirmed.
-
     for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
             if is_unmatched_data_file(&entry) {
@@ -265,7 +279,7 @@ pub fn complete_file(path: &str) -> Result<PathBuf, MatcherError> {
     }
 
     let from = Path::new(path);
-    let to = Path::new(path.strip_suffix(IN_PROGRESS).unwrap(/* Check above makes this sage */));
+    let to = Path::new(path.strip_suffix(IN_PROGRESS).unwrap(/* Check above makes this safe */));
 
     fs::rename(from, to)
         .map_err(|source| MatcherError::CannotRenameFile { from: from.to_canoncial_string(), to: to.to_canoncial_string(), source })?;
@@ -491,24 +505,6 @@ pub fn modifying(entry: &DirEntry) -> Result<PathBuf, MatcherError> {
 
     if is_data_file(entry) || is_unmatched_data_file(entry) {
         return Ok(entry.path().with_extension(MODIFYING))
-    }
-
-    Err(MatcherError::FileCantBeDerived { path: entry.path().to_canoncial_string() })
-}
-
-///
-/// Take the path to a data file and return a path to a modified version of it.
-///
-/// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.
-///    -> $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.modified.csv
-///
-/// e.g. $REC_HOME/unmatched/20191209_020405000_INV.csv
-///    -> $REC_HOME/unmatched/20191209_020405000_INV.csv.modified.csv
-///
-pub fn modified(entry: &DirEntry) -> Result<PathBuf, MatcherError> {
-
-    if is_data_file(entry) || is_unmatched_data_file(entry) {
-        return Ok(entry.path().with_extension(MODIFIED))
     }
 
     Err(MatcherError::FileCantBeDerived { path: entry.path().to_canoncial_string() })

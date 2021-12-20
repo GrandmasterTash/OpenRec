@@ -1,6 +1,7 @@
-use serde_json::json;
+use itertools::Itertools;
+use serde_json::{json, Value};
 use std::{fs::File, io::{BufWriter, Write}};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context, changeset::{ChangeSet, Change}, unmatched::UnmatchedHandler};
 
 ///
 /// Manages the matched job file and appends matched groups to it.
@@ -68,15 +69,77 @@ impl MatchedHandler {
     ///
     /// Terminate the matched file to make it's contents valid JSON.
     ///
-    pub fn complete_files(&mut self) -> Result<(), MatcherError> {
+    pub fn complete_files(&mut self, unmatched: &UnmatchedHandler, changesets: Vec<ChangeSet>) -> Result<(), MatcherError> {
+
+        // TODO: Record charter filename PATH in the match job too - update tests.
+        // TODO: Log this files creation and path.
+
+        // Terminate the groups object.
+        write!(&mut self.writer, "]\n}},\n")
+            .map_err(|source| MatcherError::CannotWriteThing { thing: "matched groups terminator".into(), filename: self.path.clone(), source })?;
+
+        let footer = json!(
+        {
+            "unmatched": summerise_unmatched(unmatched),
+            "changesets": summerise_changesets(changesets),
+        });
+
+        // Write the unmatched count and changeset metrics.
+        serde_json::to_writer_pretty(&mut self.writer, &footer)
+            .map_err(|source| MatcherError::CannotWriteFooter { filename: self.path.clone(), source })?;
+
+        // Terminate the root array.
+        write!(&mut self.writer, "]\n")
+            .map_err(|source| MatcherError::CannotWriteThing { thing: "matched file terminator".into(), filename: self.path.clone(), source })?;
+
         // Remove the .inprogress suffix
         folders::complete_file(&self.path)?;
 
-        Ok(write!(&mut self.writer, "]\n}}\n]\n")
-            .map_err(|source| MatcherError::CannotWriteThing { thing: "matched terminator".into(), filename: self.path.clone(), source })?)
-
-        // TODO: Completing a job should also log the unmatched files and counts) - this will be the 3rd object in the matched JSON array.
-        // TODO: Log the file creation and path.
-        // TODO: Record applied changesets.
+        Ok(())
     }
+}
+
+///
+/// List each remaining unmatched file and how many records it contains.
+///
+fn summerise_unmatched(unmatched: &UnmatchedHandler) -> Vec<Value> {
+    unmatched.unmatched_files()
+        .iter()
+        .filter(|uf| uf.rows() > 0)
+        .map(|uf| json!({
+            "file": uf.filename(),
+            "rows": uf.rows()
+        }) )
+        .collect()
+}
+
+///
+/// List each changeset file that was present for the match job and summerise the count of effected records
+/// for each file.
+///
+fn summerise_changesets(changesets: Vec<ChangeSet>) -> Vec<Value> {
+
+    let mut json = vec!();
+
+    for group in &changesets
+        .iter()
+        .sorted_by(|cs1, cs2| Ord::cmp(cs1.filename(), cs2.filename()))
+        .group_by(|cs| cs.filename().to_string() ) {
+
+        let (updated, ignored): (Vec<&ChangeSet>, Vec<&ChangeSet>) = group.1.partition(|cs| {
+            match cs.change() {
+                Change::UpdateFields { .. }  => true,
+                Change::IgnoreRecords { .. } => false,
+            }
+        });
+
+        json.push(json!(
+        {
+            "file": &group.0,
+            "updated": updated.iter().map(|cs| cs.effected()).sum::<usize>(),
+            "ignored": ignored.iter().map(|cs| cs.effected()).sum::<usize>()
+        }));
+    }
+
+    json
 }

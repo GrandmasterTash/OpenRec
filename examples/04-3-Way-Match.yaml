@@ -10,6 +10,8 @@ description: |
 version: 1
 file_patterns: ['.*04-invoices\.csv', '.*04-payments\.csv', '.*04-receipts\.csv']
 field_aliases: ['INV', 'PAY', 'REC']
+# TODO: Consider merging above two lines into array of objects { "pattern": ".*04-invoices\.csv", alias: "INV" }
+# TODO: Automerge same names and datatypes with ability to opt-out of that feature.
 debug: true
 instructions:
   - project:

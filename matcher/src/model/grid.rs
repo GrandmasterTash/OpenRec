@@ -33,16 +33,6 @@ pub struct Grid {
     schema: GridSchema,         // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
 
-impl Default for Grid {
-    fn default() -> Self {
-        Self {
-            records: vec!(),
-            schema: GridSchema::default(),
-            // changesets: vec!(),
-        }
-    }
-}
-
 impl Grid {
     pub fn schema(&self) -> &GridSchema {
         &self.schema
@@ -50,10 +40,6 @@ impl Grid {
 
     pub fn schema_mut(&mut self) -> &mut GridSchema {
         &mut self.schema
-    }
-
-    pub fn add_record(&mut self, record: Box<Record>) {
-        self.records.push(record);
     }
 
     pub fn remove_deleted(&mut self) {
@@ -72,13 +58,16 @@ impl Grid {
     /// Return how much memory all the ByteRecords are using.
     ///
     pub fn memory_usage(&self) -> usize {
-        self.records.iter().map(|r| r.memory_usage()).sum()
+        memory_usage(self.records())
     }
 
     ///
     /// Load data into the grid.
     ///
-    pub fn source_data(&mut self, ctx: &Context) -> Result<(), MatcherError> {
+    pub fn load(ctx: &Context) -> Result<Self, MatcherError> {
+
+        let mut records = vec!();
+        let mut grid_schema = GridSchema::default();
 
         // Load and index al pending records.
         for (idx, pattern) in ctx.charter().file_patterns().iter().enumerate() {
@@ -107,11 +96,11 @@ impl Grid {
                     .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;
 
                 // Use an existing schema from the grid, if there is one, otherwise add this one.
-                let schema_idx = self.schema.add_file_schema(schema.clone());
-                last_schema_idx = self.validate_schema(schema_idx, &last_schema_idx, &schema, pattern)?;
+                let schema_idx = grid_schema.add_file_schema(schema.clone());
+                last_schema_idx = validate_schema(&grid_schema, schema_idx, &last_schema_idx, &schema, pattern)?;
 
                 // Register the data file with the grid.
-                let file_idx = self.schema.add_file(DataFile::new(&file, schema_idx)?);
+                let file_idx = grid_schema.add_file(DataFile::new(&file, schema_idx)?);
 
                 // Create an in-memory index for each sourced record.
                 for result in rdr.byte_records() {
@@ -121,30 +110,18 @@ impl Grid {
                     let record = Box::new(Record::new(file_idx as u16, &csv_record.position()
                         .expect("No position for a record in a file?").clone()));
 
-                    self.add_record(record);
+                    records.push(record);
                     count += 1;
                 }
 
                 log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
 
                 log::info!("Grid Memory Size: {}",
-                    blue(&format!("{:.0}", self.memory_usage().bytes())));
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_schema(&self, schema_idx: usize, last_schema_idx: &Option<usize>, schema: &FileSchema, filename: &str)
-        -> Result<Option<usize>, MatcherError> {
-
-        if let Some(last) = last_schema_idx {
-            if *last != schema_idx {
-                let existing: &FileSchema = &self.schema().file_schemas()[*last];
-                return Err(MatcherError::SchemaMismatch { filename: filename.into(), first: existing.to_short_string(), second: schema.to_short_string() })
+                    blue(&format!("{:.0}", memory_usage(&records).bytes())));
             }
         }
 
-        Ok(Some(schema_idx))
+        Ok(Grid { records, schema: grid_schema })
     }
 
     ///
@@ -180,4 +157,25 @@ fn field_prefix(ctx: &Context, file: &DirEntry, pattern_idx: usize, pattern: &st
         },
         false => None,
     })
+}
+
+// TODO: This seems like it should be part of add_file_schema in GridSchema.....
+fn validate_schema(grid_schema: &GridSchema, schema_idx: usize, last_schema_idx: &Option<usize>, schema: &FileSchema, filename: &str)
+    -> Result<Option<usize>, MatcherError> {
+
+    if let Some(last) = last_schema_idx {
+        if *last != schema_idx {
+            let existing: &FileSchema = &grid_schema.file_schemas()[*last];
+            return Err(MatcherError::SchemaMismatch { filename: filename.into(), first: existing.to_short_string(), second: schema.to_short_string() })
+        }
+    }
+
+    Ok(Some(schema_idx))
+}
+
+///
+/// Return how much memory all the ByteRecords are using.
+///
+pub fn memory_usage(records: &[Box<Record>]) -> usize {
+    records.iter().map(|r| r.memory_usage()).sum()
 }
