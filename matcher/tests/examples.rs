@@ -2,7 +2,6 @@ use crate::common;
 use serde_json::json;
 
 // TODO: Write a test for each of the examples.
-// TODO: Don't use auto-test with cargo, it's more efficient to have a single int test binary. Can drop dead-code work-around above then!
 // TODO: Test where nothing matches.
 // TODO: Add the unmatched counts to tests in this file (in the matched job json).
 

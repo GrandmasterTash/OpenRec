@@ -4,7 +4,8 @@ use crate::{error::MatcherError, folders::{self, ToCanoncialString}};
 ///
 /// Represents a physical sourced file of data.
 ///
-/// Contains various representations of it's path along with the index of it's schema held by the GridSchema.
+/// Contains various representations of it's path along with the index of it's schema 
+/// held in the GridSchema.
 ///
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataFile {
@@ -22,7 +23,6 @@ pub struct DataFile {
 }
 
 impl DataFile {
-    // TODO: Store PathBuf so we can half the number of files and derive things on the fly.
     pub fn new(entry: &DirEntry, schema: usize) -> Result<Self, MatcherError> {
         let path = entry.path().to_canoncial_string();
         let filename: String = entry.file_name().to_string_lossy().into();

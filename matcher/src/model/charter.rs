@@ -13,7 +13,7 @@ pub struct Charter {
     file_patterns: Vec<String>,
     field_aliases: Option<Vec<String>>,
     use_field_prefixes: Option<bool>,
-    instructions: Vec<Instruction>,
+    instructions: Option<Vec<Instruction>>,
 }
 
 
@@ -69,7 +69,10 @@ impl Charter {
     }
 
     pub fn instructions(&self) -> &[Instruction] {
-        &self.instructions
+        match &self.instructions {
+            Some(instructions) => &instructions,
+            None => &[],
+        }
     }
 
     pub fn load(path: &str) -> Result<Self, MatcherError> {

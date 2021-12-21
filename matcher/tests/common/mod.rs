@@ -126,7 +126,7 @@ pub fn assert_file_contents(path: &PathBuf, expected: &str) {
 }
 
 ///
-/// Check there are not unmatched files.
+/// Check there are no unmatched files.
 /// Check there is a matched file.
 /// Check the source data has been archived and not modified.
 /// Returns the PathBuf to the matched.json file.

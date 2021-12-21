@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Utc, TimeZone};
 use regex::Regex;
 use lazy_static::lazy_static;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
@@ -54,6 +54,7 @@ lazy_static! {
     static ref SHORTNAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*?)(\.unmatched)*\.csv$").unwrap();
     static ref DERIVED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.derived\.csv$").unwrap();
     static ref CHANGESET_REGEX: Regex = Regex::new(CHANGESET_PATTERN).unwrap();
+    static ref TIMESTAMP_REGEX: Regex = Regex::new(r"^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(\d{3})").unwrap();
     pub static ref UNMATCHED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.unmatched\.csv$").unwrap();
 }
 
@@ -262,7 +263,8 @@ pub fn rollback_any_incomplete(ctx: &Context) -> Result<(), MatcherError> {
     for folder in vec!(matching(ctx)) {
         for entry in folder.read_dir()? {
             if let Ok(entry) = entry {
-                if entry.file_name().to_string_lossy().ends_with(MODIFYING) {
+                if entry.file_name().to_string_lossy().ends_with(MODIFYING)
+                    || entry.file_name().to_string_lossy().ends_with(DERIVED) {
                     log::warn!("Rolling back file {}", entry.path().to_canoncial_string());
                     fs::remove_file(entry.path())?;
                 }
@@ -431,6 +433,29 @@ pub fn timestamp<'a>(filename: &'a str) -> Result<&'a str, MatcherError> {
         Some(captures) if captures.len() == 3 => Ok(captures.get(1).map(|ts|ts.as_str()).ok_or(MatcherError::InvalidTimestampPrefix{ filename: filename.into() })?),
         Some(_captures) => Err(MatcherError::InvalidTimestampPrefix{ filename: filename.into() }),
         None => Err(MatcherError::InvalidTimestampPrefix{ filename: filename.into() }),
+    }
+}
+
+///
+/// Parse the YYYYMMDD_HHSSMMIII file prefix into a unix epoch timestamp.
+///
+pub fn unix_timestamp(file_timestamp: &str) -> Option<i64> {
+    match TIMESTAMP_REGEX.captures(file_timestamp) {
+        Some(captures) if captures.len() == 8 => {
+            Some(Utc
+                .ymd(
+                    captures.get(1).expect("No years").as_str().parse::<i32>().expect("year not numeric"),
+                    captures.get(2).expect("No months").as_str().parse::<u32>().expect("month not numeric"),
+                    captures.get(3).expect("No days").as_str().parse::<u32>().expect("day not numeric"))
+                .and_hms_milli(
+                    captures.get(4).expect("No hours").as_str().parse::<u32>().expect("hour not numeric"),
+                    captures.get(5).expect("No minutes").as_str().parse::<u32>().expect("minute not numeric"),
+                    captures.get(6).expect("No seconds").as_str().parse::<u32>().expect("second not numeric"),
+                    captures.get(7).expect("No millis").as_str().parse::<u32>().expect("milli not numeric"))
+                .timestamp_millis())
+        },
+        Some(_captures) => None,
+        None => None,
     }
 }
 

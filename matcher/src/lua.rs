@@ -1,8 +1,8 @@
 use regex::Regex;
 use lazy_static::lazy_static;
-use rlua::{Context, Table, Number};
+use rlua::{Context, Table, Number, FromLuaMulti};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
-use crate::{model::{data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, data_accessor::DataAccessor};
+use crate::{model::{data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, data_accessor::DataAccessor, folders};
 
 lazy_static! {
     static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();
@@ -18,9 +18,25 @@ pub fn init_context(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
     let decimal = lua_ctx.create_function(|_, value: Number| {
         Ok(LuaDecimal(Decimal::from_f64(value).unwrap())) // TODO: Don't unwrap.
     })?;
+
     globals.set("decimal", decimal)?;
 
     Ok(())
+}
+
+///
+/// Run the lua script provided. Reporting the failing script if it errors.
+///
+pub fn eval<'lua, R: FromLuaMulti<'lua>>(lua_ctx: &rlua::Context<'lua>, lua: &str)
+    -> Result<R, rlua::Error> {
+
+    match lua_ctx.load(lua).eval::<R>() {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            log::error!("Error in Lua script:\n{}\n\n{}", lua, err.to_string());
+            Err(err)
+        },
+    }
 }
 
 ///
@@ -72,21 +88,26 @@ pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
 
     let lua_meta = lua_ctx.create_table()?;
 
-    // TODO: Put filename in meta.
-    // TODO: Put a derived unix timestamp in meta from the filename prefix.
-    // TODO: Create a test to assert all the meta fields are set.
-
     let file = match schema.files().get(record.file_idx()) {
         Some(file) => file,
         None => return Err(MatcherError::MissingFileInSchema{ index: record.file_idx() }),
     };
+
+    lua_meta.set("filename", file.filename())?;
 
     let file_schema = match schema.file_schemas().get(file.schema_idx()) {
         Some(file_schema) => file_schema,
         None => return Err(MatcherError::MissingSchemaInGrid{ index: file.schema_idx(), filename: file.filename().into() }),
     };
 
-    lua_meta.set("prefix", file_schema.prefix())?;
+    if let Some(prefix) = file_schema.prefix() {
+        lua_meta.set("prefix", prefix)?;
+    }
+
+    if let Some(timestamp) = folders::unix_timestamp(file.timestamp()) {
+        lua_meta.set("timestamp", timestamp)?;
+    }
+
     Ok(lua_meta)
 }
 
@@ -111,7 +132,7 @@ pub fn lua_filter<'a, 'b>(
         let lua_meta = lua_meta(record, accessor.schema(), lua_ctx)?;
         globals.set("meta", lua_meta)?;
 
-        if lua_ctx.load(&lua_script).eval::<bool>()? {
+        if eval(lua_ctx, &lua_script)? {
             results.push(*record);
         }
     }

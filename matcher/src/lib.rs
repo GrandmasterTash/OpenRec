@@ -18,19 +18,15 @@ use error::MatcherError;
 use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
-// BUG: No data errors the job. Write a test to ensure this doesn't happen.
-// TODO: List all files present (highlight those matching the patterns for sourcing) in waiting and unmatched at start of a job.
-// TODO: Ensure all lua script errors log the script in the message.
 // TODO: Log a warn for files in waiting, matching which DONT match ANY pattern in the charter.
 // TODO: Debug per instruction. Currently all derived are debugged at once.
 // TODO: Flesh-out examples.
-// TODO: Unit/integration tests. Lots.
 // TODO: Check code coverage.
 // TODO: Remove panics! and unwraps / expects where possible.
 // TODO: Clippy!
 // TODO: Thread-per source file for projects and merges.
 // TODO: Investigate sled for disk based groupings. Seems I'm not a pioneer :( https://en.wikipedia.org/wiki/External_sorting
-// TODO: Journal file - event log.
+// TODO: Journal file - event log - maybe callbacks when used as a component/library.
 // TODO: Jetwash to generate changesets for update files (via business key).
 // TODO: Consider an 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 
@@ -187,11 +183,7 @@ fn init_job(charter: &str, base_dir: &str) -> Result<Context, MatcherError> {
 fn init_folders(ctx: &Context) -> Result<(), MatcherError> {
     folders::ensure_dirs_exist(&ctx)?;
 
-    // TODO: Ensure nothing in waiting folder is already in the archive folder.
-
     // On start-up, any matching files should log warning and be moved to waiting.
-    // TODO: Delete any modified unmatched files (if there's an associated .bak file)
-    // TODO: rename any unmatched.bak to remove the .bak suffix.
     folders::rollback_any_incomplete(&ctx)?;
 
     // Move any waiting files to the matching folder.
@@ -241,6 +233,9 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
                 grid.schema_mut().add_projected_column(Column::new(column.into(), None, *as_type))?;
             },
             Instruction::MergeColumns { into, from } => {
+                if grid.is_empty() {
+                    continue;
+                }
                 let data_type = merge_col::validate(from, grid)?;
                 grid.schema_mut().add_merged_column(Column::new(into.into(), None, data_type))?;
             },

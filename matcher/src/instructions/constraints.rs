@@ -114,6 +114,6 @@ fn custom_constraint(
 
     globals.set("metas", lua_metas)?;
     globals.set("records", lua_records)?;
-    lua_ctx.load(&script).eval::<bool>()
+    lua::eval(lua_ctx, &script)
         .map_err(|source| MatcherError::CustomConstraintError { source })
 }

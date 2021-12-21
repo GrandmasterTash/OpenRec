@@ -34,6 +34,10 @@ pub struct Grid {
 }
 
 impl Grid {
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+    
     pub fn schema(&self) -> &GridSchema {
         &self.schema
     }
