@@ -47,14 +47,14 @@ pub const UNMATCHED: &str = ".unmatched.csv";
 pub const DERIVED: &str = "derived.csv";
 pub const MODIFYING: &str = "modifying";
 pub const PRE_MODIFIED: &str = "pre_modified";
-pub const MODIFIED: &str = "modified.csv";
 const CHANGESET_PATTERN: &str = r"^(\d{8}_\d{9})_changeset\.json$";
 
 lazy_static! {
     static ref FILENAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.csv$").unwrap();
-    pub static ref UNMATCHED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.unmatched\.csv$").unwrap();
+    static ref SHORTNAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*?)(\.unmatched)*\.csv$").unwrap();
     static ref DERIVED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.derived\.csv$").unwrap();
     static ref CHANGESET_REGEX: Regex = Regex::new(CHANGESET_PATTERN).unwrap();
+    pub static ref UNMATCHED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.unmatched\.csv$").unwrap();
 }
 
 ///
@@ -153,16 +153,19 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
 
                 // Ensure we don't blat existing files. This can happen if a changeset has been
                 // applied to a file. There will be a non-modified version of it already present.
-                let dest = match dest.exists() {
-                    true  => dest.with_extension(MODIFIED),
-                    false => dest,
-                };
+                if dest.exists() {
+                    log::debug!("Removing file [{file}] from [{src}] - archive version already exists",
+                        file = entry.file_name().to_string_lossy(),
+                        src = entry.path().parent().unwrap().to_string_lossy());
+                    fs::remove_file(entry.path())?;
 
-                log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
-                    file = entry.file_name().to_string_lossy(),
-                    src = entry.path().parent().unwrap().to_string_lossy(),
-                    dest = dest.parent().unwrap().to_string_lossy());
-                fs::rename(entry.path(), dest)?;
+                } else {
+                    log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
+                        file = entry.file_name().to_string_lossy(),
+                        src = entry.path().parent().unwrap().to_string_lossy(),
+                        dest = dest.parent().unwrap().to_string_lossy());
+                    fs::rename(entry.path(), dest)?;
+                }
             }
         }
     }
@@ -437,8 +440,8 @@ pub fn timestamp<'a>(filename: &'a str) -> Result<&'a str, MatcherError> {
 /// e.g. 20191209_020405000_INV.unmatched.csv -> INV
 ///
 pub fn shortname<'a>(filename: &'a str) -> &'a str {
-    match FILENAME_REGEX.captures(filename) {
-        Some(captures) if captures.len() == 3 => captures.get(2).map_or(filename, |m| m.as_str()),
+    match SHORTNAME_REGEX.captures(filename) {
+        Some(captures) if captures.len() == 4 => captures.get(2).map_or(filename, |m| m.as_str()),
         Some(_captures) => filename,
         None => filename,
     }

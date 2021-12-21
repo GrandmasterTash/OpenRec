@@ -214,7 +214,7 @@ fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>) -> Result
                 // Then rename the modifying file, eg. 20210110_inv.csv.modifying -> 20210110_inv.csv
                 folders::archive_immediately(ctx, data_file.path())?;
 
-                log::debug!("Moving {} to {}", data_file.modifying_filename(), data_file.filename());
+                log::debug!("Renaming {} to {}", data_file.modifying_filename(), data_file.filename());
                 folders::rename(data_file.modifying_path(), data_file.path())?;
 
             } else {
@@ -296,5 +296,5 @@ fn init_metrics(grid: &Grid) -> HashMap<DataFile, Metrics> {
 /// 20201118_053000000_invoices.unmatched.csv.modifying -> true
 ///
 fn is_unmatched(file: &DataFile) -> bool {
-    folders::UNMATCHED_REGEX.is_match(file.original_filename())
+    folders::UNMATCHED_REGEX.is_match(file.filename())
 }

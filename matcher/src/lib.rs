@@ -18,11 +18,10 @@ use error::MatcherError;
 use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
-// BUG: Unmatched files concat the .unmatched segment multiple times. Write a test to ensure this doesn't happen.
 // BUG: No data errors the job. Write a test to ensure this doesn't happen.
 // TODO: List all files present (highlight those matching the patterns for sourcing) in waiting and unmatched at start of a job.
 // TODO: Ensure all lua script errors log the script in the message.
-// TODO: Re-instate accumulated timings for projections and mergers.
+// TODO: Log a warn for files in waiting, matching which DONT match ANY pattern in the charter.
 // TODO: Debug per instruction. Currently all derived are debugged at once.
 // TODO: Flesh-out examples.
 // TODO: Unit/integration tests. Lots.

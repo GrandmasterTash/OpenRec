@@ -41,9 +41,7 @@ impl UnmatchedHandler {
 
         // Create an unmatched file for each original sourced data file (i.e. there may be )
         for file in grid.schema().files() {
-            // We're using original_filename here to ensure files like 'x.unmatched.csv' don't create
-            // files 'x.unmatched.unmatched.csv'.
-            if !files.contains_key(file.original_filename()) {
+            if !files.contains_key(file.filename()) {
                 // Create an new unmatched file.
                 let output_path = folders::new_unmatched_file(ctx, file); // $REC_HOME/unmatched/timestamp_invoices.unmatched.csv
                 let full_filename = folders::filename(&output_path)?; // timestamp_invoices.unmatched.csv
@@ -61,9 +59,9 @@ impl UnmatchedHandler {
                 writer.write_record(schema.columns().iter().map(|c| c.data_type().as_str()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteSchema{ filename: file.filename().into(), source })?;
 
-                files.insert(file.original_filename().into(), UnmatchedFile{ full_filename, path: output_path.clone(), rows: 0, writer });
+                files.insert(file.filename().into(), UnmatchedFile{ full_filename, path: output_path.clone(), rows: 0, writer });
 
-                log::trace!("Created file {}", output_path.to_canoncial_string());
+                log::debug!("Created file {}", output_path.to_canoncial_string());
             }
         }
 
@@ -111,7 +109,7 @@ impl UnmatchedHandler {
                 // Rename any remaining .inprogress files.
                 let path = folders::complete_file(&unmatched.path.to_canoncial_string())?;
                 unmatched.full_filename = folders::filename(&path)?;
-                log::info!("Created unmatched file {}", path.to_canoncial_string());
+                log::debug!("Created unmatched file {}", path.to_canoncial_string());
             }
         }
 

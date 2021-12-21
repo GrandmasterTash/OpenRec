@@ -32,7 +32,7 @@ impl MatchedHandler {
                 "version": ctx.charter().version(),
                 "file": ctx.charter_path()
             },
-            "files": grid.schema().files().iter().map(|f|f.original_filename()).collect::<Vec<&str>>()
+            "files": grid.schema().files().iter().map(|f|f.filename()).collect::<Vec<&str>>()
         });
 
         if let Err(source) = serde_json::to_writer_pretty(&mut writer, &job_header) {
