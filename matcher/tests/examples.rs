@@ -1,5 +1,4 @@
-mod common; pub use common::*; // Removes dead-code warnings: https://github.com/rust-lang/rust/issues/46379
-
+use crate::common;
 use serde_json::json;
 
 // TODO: Write a test for each of the examples.
@@ -28,8 +27,11 @@ fn test_01_basic_match_from_examples() {
     common::assert_matched_contents(matched, json!(
     [
         {
-            "charter_name": "Basic Match",
-            "charter_version": 1,
+            "charter": {
+                "name": "Basic Match",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
             "files": [
                 "20211129_043300000_01-invoices.csv",
                 "20211129_043300000_01-payments.csv" ]
@@ -63,8 +65,11 @@ fn test_02_projected_columns_from_examples() {
     common::assert_matched_contents(matched, json!(
     [
         {
-            "charter_name": "Projected Columns",
-            "charter_version": 1,
+            "charter": {
+                "name": "Projected Columns",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
             "files": [
                 "20211129_043300000_02-invoices.csv",
                 "20211129_043300000_02-payments.csv"
@@ -101,8 +106,11 @@ fn test_03_net_with_tolerance_match_from_examples() {
     common::assert_matched_contents(matched, json!(
     [
         {
-            "charter_name": "NET with Tolerance",
-            "charter_version": 1,
+            "charter": {
+                "name": "NET with Tolerance",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
             "files": [
                 "20211129_043300000_03-invoices.csv",
                 "20211129_043300000_03-payments.csv"
@@ -139,8 +147,11 @@ fn test_04_3_way_match_from_examples() {
     common::assert_matched_contents(matched, json!(
     [
         {
-            "charter_name": "Three-way invoice match",
-            "charter_version": 1,
+            "charter": {
+                "name": "Three-way invoice match",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
             "files": [
                 "20211129_043300000_04-invoices.csv",
                 "20211129_043300000_04-payments.csv",
@@ -176,8 +187,11 @@ fn test_05_2_stage_match_from_examples() {
     common::assert_matched_contents(matched, json!(
     [
         {
-            "charter_name": "Two-stage match",
-            "charter_version": 1,
+            "charter": {
+                "name": "Two-stage match",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
             "files": [ "20211129_043300000_05-2-stage.csv" ]
         },
         {
@@ -216,8 +230,11 @@ fn test_07_unmatched_data_from_examples() {
     common::assert_matched_contents(matched, json!(
     [
         {
-            "charter_name": "Unatched Data",
-            "charter_version": 1,
+            "charter": {
+                "name": "Unmatched Data",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
             "files": [
                 "20211129_043300000_07-invoices.csv",
                 "20211129_043300000_07-payments-a.csv"
@@ -259,8 +276,11 @@ fn test_07_unmatched_data_from_examples() {
     common::assert_matched_contents(matched, json!(
     [
         {
-            "charter_name": "Unatched Data",
-            "charter_version": 1,
+            "charter": {
+                "name": "Unmatched Data",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
             "files": [
                 "20211129_043300000_07-invoices.unmatched.csv",
                 "20211129_043300000_07-payments-a.unmatched.csv",

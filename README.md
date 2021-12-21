@@ -3,6 +3,5 @@ A blazingly fast reconciliation server written in Rust with an emphasis on low s
 
 
 ## Experimentation around a Rust reconcilliation engine and gRPC server.
-TODO: Generate/apply changesets from file deltas (full file refresh or a file with just deltas).
-TODO: Handle schema modifications.
-TODO: Create an example gRPC server to stream data to clients and be notified of changes.
+TODO: Jetwash to clean and prep data.
+TODO: Steward example UI to config and build a charter.

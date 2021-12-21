@@ -27,8 +27,11 @@ impl MatchedHandler {
         let job_header = json!(
         {
             "job_id": ctx.job_id().to_hyphenated().to_string(),
-            "charter_name": ctx.charter().name(),
-            "charter_version": ctx.charter().version(),
+            "charter": {
+                "name": ctx.charter().name(),
+                "version": ctx.charter().version(),
+                "file": ctx.charter_path()
+            },
             "files": grid.schema().files().iter().map(|f|f.original_filename()).collect::<Vec<&str>>()
         });
 
@@ -70,9 +73,6 @@ impl MatchedHandler {
     /// Terminate the matched file to make it's contents valid JSON.
     ///
     pub fn complete_files(&mut self, unmatched: &UnmatchedHandler, changesets: Vec<ChangeSet>) -> Result<(), MatcherError> {
-
-        // TODO: Record charter filename PATH in the match job too - update tests.
-        // TODO: Log this files creation and path.
 
         // Terminate the groups object.
         write!(&mut self.writer, "]\n}},\n")

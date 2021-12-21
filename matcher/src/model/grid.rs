@@ -1,7 +1,7 @@
 use ubyte::ToByteUnit;
-use std::fs::DirEntry;
+use std::{fs::DirEntry, time::Instant};
 use rlua::Error as LuaError;
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, data_accessor::DataAccessor};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, data_accessor::DataAccessor, formatted_duration_rate};
 
 
 ///
@@ -79,7 +79,8 @@ impl Grid {
             let mut last_schema_idx = None;
 
             for file in folders::files_in_matching(ctx, pattern)? {
-                log::info!("Reading file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
+                let started = Instant::now();
+                log::debug!("Reading file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
 
                 // For now, just count all the records in a file and log them.
                 let mut count = 0;
@@ -114,9 +115,12 @@ impl Grid {
                     count += 1;
                 }
 
-                log::info!("{} records read from file {}", count, file.file_name().to_string_lossy());
+                let (duration, _rate) = formatted_duration_rate(count, started.elapsed());
 
-                log::info!("Grid Memory Size: {}",
+                log::info!("  {} records read from file {} in {}. Memory Usage {}.",
+                    count,
+                    file.file_name().to_string_lossy(),
+                    blue(&duration),
                     blue(&format!("{:.0}", memory_usage(&records).bytes())));
             }
         }

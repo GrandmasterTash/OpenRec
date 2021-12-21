@@ -1,7 +1,6 @@
+use crate::common;
 use fs_extra::dir::get_dir_content;
 use serde_json::json;
-
-mod common; pub use common::*; // Removes dead-code warnings: https://github.com/rust-lang/rust/issues/46379
 
 #[test]
 fn test_changesets_are_recorded() {
@@ -49,8 +48,11 @@ r#""TransId","Date","Amount","Type"
     common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
     [
         {
-            "charter_name": "changeset test",
-            "charter_version": 1,
+            "charter": {
+                "name": "changeset test",
+                "version": 1,
+                "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
+            },
             "files": [ "20211219_082900000_transactions.csv" ]
         },
         {
@@ -90,8 +92,11 @@ r#"    [
     common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
     [
         {
-            "charter_name": "changeset test",
-            "charter_version": 1,
+            "charter": {
+                "name": "changeset test",
+                "version": 1,
+                "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
+            },
             "files": [ "20211219_082900000_transactions.unmatched.csv" ]
         },
         {

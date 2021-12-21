@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{io::BufReader, fs::File, collections::HashMap};
-use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, data_accessor::DataAccessor};
+use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instant}};
+use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, data_accessor::DataAccessor, formatted_duration_rate, blue};
 
 /*
     Changeset files are instructions to modified unmatched or yet-to-be-matched data.
@@ -70,6 +70,9 @@ pub struct ChangeSet {
     effected: usize,
 
     #[serde(skip)]
+    elapsed: Duration,
+
+    #[serde(skip)]
     filename: String,
 }
 
@@ -133,6 +136,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
             accessor.load_modifying_record(record)?;
 
             for (c_idx, changeset) in &mut changesets.iter_mut().enumerate() {
+                let started = Instant::now();
                 eval_ctx = (r_idx, c_idx);
 
                 let lua_filter = match changeset.change() {
@@ -157,6 +161,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
                     }
 
                     changeset.effected += 1;
+                    changeset.elapsed += started.elapsed();
                 }
             }
 
@@ -181,7 +186,8 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
     let any_applied = finalise_files(ctx, &metrics)?;
 
     for changeset in &changesets {
-        log::info!("ChangeSet {} effected {} record(s)", changeset.id, changeset.effected);
+        let (duration, rate) = formatted_duration_rate(grid.records().len(), changeset.elapsed);
+        log::info!("ChangeSet {} effected {} record(s) in {} ({}/row)", changeset.id, changeset.effected, blue(&duration), rate);
     }
 
     Ok((any_applied, changesets))

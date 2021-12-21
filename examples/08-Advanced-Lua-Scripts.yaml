@@ -38,10 +38,11 @@ instructions:
               -- For every record in the group there is a corresponding 'metas' array item
               -- which contains record context details, such as the 'prefix' - a value extracted
               -- from the record's original filename.
-              -- TODO: The file timestamp should go in meta.
+              -- The meta table also contains filename and the timestamp extracted from the filename. i.e.
+              -- meta["prefix"]
+              -- meta["timestamp"]
+              -- meta["filename"]
 
-              -- Note: For this charter the metas items will be empty - because we've disabled
-              -- field_prefixes.
               for idx, meta in ipairs(metas) do
                 for field, value in pairs(meta) do
                     print("F [" ..field.. "] V [" ..value.. "]")

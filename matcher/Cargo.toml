@@ -3,6 +3,9 @@ name = "matcher"
 version = "0.1.0"
 edition = "2018"
 
+# Disable cargo standard integration test structure. We don't want one test binary per .rs file.
+autotests = false
+
 [lib]
 name = "matcher"
 path = "src/lib.rs"
@@ -11,6 +14,12 @@ doctest = false
 [[bin]]
 name = "matcher"
 path = "src/bin.rs"
+test = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+harness = true
 
 [dependencies]
 log = "0.4.14"

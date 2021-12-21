@@ -79,7 +79,7 @@ pub fn remove_file(filename: &str) -> Result<(), MatcherError> {
 pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), MatcherError> {
     let home = Path::new(ctx.base_dir());
 
-    log::info!("Using folder REC_HOME [{}]", home.to_canoncial_string());
+    log::debug!("Creating folder structure in [{}]", home.to_canoncial_string());
 
     let mut folders = vec!(waiting(ctx), matching(ctx), matched(ctx), unmatched(ctx), archive(ctx));
     if ctx.charter().debug() {
@@ -104,7 +104,7 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
             if is_unmatched_data_file(&entry) {
                 let dest = matching(ctx).join(entry.file_name());
 
-                log::info!("Moving file [{file}] from [{src}] to [{dest}]",
+                log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
                     file = entry.file_name().to_string_lossy(),
                     src = entry.path().parent().unwrap().to_string_lossy(),
                     dest = dest.parent().unwrap().to_string_lossy());
@@ -119,7 +119,7 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
             if is_data_file(&entry) || is_changeset_file(&entry) {
                 let dest = matching(ctx).join(entry.file_name());
 
-                log::info!("Moving file [{file}] from [{src}] to [{dest}]",
+                log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
                     file = entry.file_name().to_string_lossy(),
                     src = entry.path().parent().unwrap().to_string_lossy(),
                     dest = dest.parent().unwrap().to_string_lossy());
@@ -141,7 +141,7 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
                 // Delete .unmatched files don't move them to archive. At the end of a match job,
                 // their contents will have been written to a new unmatched file in the unmatched folder.
                 fs::remove_file(entry.path())?;
-                log::info!("Deleted unmatched file [{}]", entry.path().to_string_lossy())
+                log::debug!("Deleted unmatched file [{}]", entry.path().to_string_lossy())
 
             } else if is_derived_file(&entry) {
                 // Delete .derived files don't move them to archive.
@@ -158,7 +158,7 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
                     false => dest,
                 };
 
-                log::info!("Moving file [{file}] from [{src}] to [{dest}]",
+                log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
                     file = entry.file_name().to_string_lossy(),
                     src = entry.path().parent().unwrap().to_string_lossy(),
                     dest = dest.parent().unwrap().to_string_lossy());
@@ -176,7 +176,7 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
 pub fn progress_to_matched_now(ctx: &Context, entry: &DirEntry) -> Result<(), MatcherError> {
     let dest = matched(ctx).join(entry.file_name());
 
-    log::info!("Moving file [{file}] from [{src}] to [{dest}]",
+    log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
         file = entry.file_name().to_string_lossy(),
         src = entry.path().parent().unwrap().to_string_lossy(),
         dest = dest.parent().unwrap().to_string_lossy());
@@ -204,7 +204,7 @@ pub fn archive_immediately(ctx: &Context, path: &str) -> Result<(), MatcherError
 
     let dest = archive(ctx).join(filename);
 
-    log::info!("Moving file [{file}] from [{src}] to [{dest}]",
+    log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
         file = filename.to_string_lossy(),
         src = p.parent().unwrap().to_string_lossy(),
         dest = dest.parent().unwrap().to_string_lossy());

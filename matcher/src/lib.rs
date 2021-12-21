@@ -10,11 +10,12 @@ mod instructions;
 mod data_accessor;
 
 use changeset::ChangeSet;
+use itertools::Itertools;
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::MatcherError;
-use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell};
+use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
 // BUG: Unmatched files concat the .unmatched segment multiple times. Write a test to ensure this doesn't happen.
@@ -71,21 +72,23 @@ impl Phase {
 /// Created for each match job. Used to pass the main top-level job 'things' around.
 ///
 pub struct Context {
-    started: Instant,   // When the job started.
-    job_id: Uuid,       // Each job is given a unique id.
-    charter: Charter,   // The charter of instructions to run.
-    base_dir: String,   // The root of the working folder for data (see the folders module).
-    timestamp: String,  // A unique timestamp to prefix any generated files with for this job.
-    lua: rlua::Lua,     // Lua engine state.
-    phase: Cell<Phase>, // The current point in the linear state transition of the job.
+    started: Instant,      // When the job started.
+    job_id: Uuid,          // Each job is given a unique id.
+    charter: Charter,      // The charter of instructions to run.
+    charter_path: PathBuf, // The path to the charter being run.
+    base_dir: String,      // The root of the working folder for data (see the folders module).
+    timestamp: String,     // A unique timestamp to prefix any generated files with for this job.
+    lua: rlua::Lua,        // Lua engine state.
+    phase: Cell<Phase>,    // The current point in the linear state transition of the job.
 }
 
 impl Context {
-    pub fn new(charter: Charter, base_dir: String) -> Self {
+    pub fn new(charter: Charter, charter_path: PathBuf, base_dir: String) -> Self {
         Self {
             started: Instant::now(),
             job_id: Uuid::new_v4(),
             charter,
+            charter_path,
             base_dir,
             timestamp: folders::new_timestamp(),
             lua: rlua::Lua::new(),
@@ -103,6 +106,10 @@ impl Context {
 
     pub fn charter(&self) -> &Charter {
         &self.charter
+    }
+
+    pub fn charter_path(&self) -> &PathBuf {
+        &self.charter_path
     }
 
     pub fn base_dir(&self) -> &str {
@@ -135,29 +142,29 @@ impl Context {
 pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
 
     let ctx = init_job(charter, base_dir)?;
+
     ctx.set_phase(Phase::FolderInitialisation);
-
     init_folders(&ctx)?;
+
     ctx.set_phase(Phase::SourceData);
-
     let grid = Grid::load(&ctx)?;
+
     ctx.set_phase(Phase::ApplyChangeSets);
-
     let (mut grid, changesets) = apply_changesets(&ctx, grid)?;
+
     ctx.set_phase(Phase::DeriveSchema);
-
     let (projection_cols, mut accessor) = create_derived_schema(&ctx, &mut grid)?;
+
     ctx.set_phase(Phase::DeriveData);
-
     derive_data(&ctx, &mut grid, &mut accessor, projection_cols)?;
+
     ctx.set_phase(Phase::MatchAndGroup);
-
     let (matched, unmatched) = match_and_group(&ctx, &mut grid)?;
+
     ctx.set_phase(Phase::ComleteAndArchive);
-
     complete_and_archive(&ctx, grid, matched, unmatched, changesets)?;
-    ctx.set_phase(Phase::Complete);
 
+    ctx.set_phase(Phase::Complete);
     Ok(())
 }
 
@@ -165,8 +172,13 @@ pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
 /// Parse and load the charter configuration, return a job Context.
 ///
 fn init_job(charter: &str, base_dir: &str) -> Result<Context, MatcherError> {
-    let ctx = Context::new(Charter::load(charter)?, base_dir.into());
-    log::info!("Starting match job {}, charter {} (v{})", ctx.job_id(), ctx.charter().name(), ctx.charter().version());
+    let ctx = Context::new(Charter::load(charter)?, Path::new(charter).canonicalize()?.to_path_buf(),  base_dir.into());
+
+    log::info!("Starting match job:");
+    log::info!("    Job ID: {}", ctx.job_id());
+    log::info!("   Charter: {} (v{})", ctx.charter().name(), ctx.charter().version());
+    log::info!("  Base dir: {}", ctx.base_dir());
+
     Ok(ctx)
 }
 
@@ -253,8 +265,11 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
 ///
 fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, projection_cols: HashMap<usize, Vec<Column>>) -> Result<(), MatcherError> {
 
-    // Track the record and instruction being processed.
+    // Track the record and instruction being processed. Used in logs should an error occur.
     let mut eval_ctx = (0, 0);
+
+    // Track accumulated time in each project and merge instruction.
+    let mut metrics: HashMap<usize, Duration> = HashMap::new();
 
     ctx.lua().context(|lua_ctx| {
         lua::init_context(&lua_ctx)?;
@@ -262,6 +277,7 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
         // Calculate all projected and merged column values for each record.
         for (r_idx, record) in grid.records().iter().enumerate() {
             for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
+                let started = Instant::now();
                 eval_ctx = (r_idx, i_idx);
 
                 match inst {
@@ -277,10 +293,13 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
                             accessor,
                             script_cols,
                             &lua_ctx)?;
+
+                        record_duration(i_idx, &mut metrics, started.elapsed());
                     },
 
                     Instruction::MergeColumns { into: _, from } => {
                         record.merge_col_from(from, accessor)?;
+                        record_duration(i_idx, &mut metrics, started.elapsed());
                     },
 
                     _ => {}, // Ignore other instructions in this phase.
@@ -299,7 +318,29 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
         source
     })?;
 
+    // Report the duration spent performing each projection and merge instruction.
+    for idx in metrics.keys().sorted_by(Ord::cmp) {
+        let (duration, rate) = formatted_duration_rate(grid.records().len(), *metrics.get(idx).expect("Duration metric missing"));
+
+        match &ctx.charter().instructions()[*idx] {
+            Instruction::Project { column, .. } => log::info!("Projecting Column {} took {} ({}/row)", column, blue(&duration), rate),
+            Instruction::MergeColumns { into, .. } => log::info!("Merging Column {} took {} ({}/row)", into, blue(&duration), rate),
+            _ => {},
+        }
+    }
+
     Ok(())
+}
+
+///
+/// Set the initial or increment the existing duration for the specified charter instruction.
+///
+fn record_duration(instruction: usize, metrics: &mut HashMap<usize, Duration>, elapsed: Duration) {
+    if !metrics.contains_key(&instruction) {
+        metrics.insert(instruction, Duration::ZERO);
+    }
+
+    metrics.insert(instruction, elapsed + *metrics.get(&instruction).expect("Instruction metric missing"));
 }
 
 ///
@@ -332,7 +373,7 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
             grid.debug_grid(ctx, &format!("{}_{}_{}.output.csv", ctx.phase().ordinal(), idx + 1, ctx.ts()), &mut accessor);
         }
 
-        log::info!("Grid Memory Size: {}",
+        log::debug!("Grid Memory Size: {}",
             blue(&format!("{:.0}", grid.memory_usage().bytes())));
     }
 

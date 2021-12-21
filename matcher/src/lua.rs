@@ -74,6 +74,7 @@ pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
 
     // TODO: Put filename in meta.
     // TODO: Put a derived unix timestamp in meta from the filename prefix.
+    // TODO: Create a test to assert all the meta fields are set.
 
     let file = match schema.files().get(record.file_idx()) {
         Some(file) => file,
