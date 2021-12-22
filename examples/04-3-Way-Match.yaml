@@ -18,12 +18,12 @@ instructions:
       column: PAYMENT_AMOUNT_BASE
       as_type: Decimal
       from: record["PAY.Amount"] * record["PAY.FXRate"]
-      when: meta["prefix"] == "PAY"
+      when: record["META.prefix"] == "PAY"
   - project:
       column: RECEIPT_AMOUNT_BASE
       as_type: Decimal
       from: record["REC.Amount"] * record["REC.FXRate"]
-      when: meta["prefix"] == "REC"
+      when: record["META.prefix"] == "REC"
   - merge_columns:
       from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'INV.TotalAmount']
       into: AMOUNT_BASE
@@ -37,14 +37,14 @@ instructions:
         # First, we ensure all the payments net against the invoice(s) in the group.
         - nets_with_tolerance:
             column: AMOUNT_BASE
-            lhs: meta["prefix"] == "PAY"
-            rhs: meta["prefix"] == "INV"
+            lhs: record["META.prefix"] == "PAY"
+            rhs: record["META.prefix"] == "INV"
             tol_type: Amount
             tolerance: 1.00
         # Then we ensure all the receipts net with all the invoices in the group.
         - nets_with_tolerance:
             column: AMOUNT_BASE
-            lhs: meta["prefix"] == "REC"
-            rhs: meta["prefix"] == "INV"
+            lhs: record["META.prefix"] == "REC"
+            rhs: record["META.prefix"] == "INV"
             tol_type: Amount
             tolerance: 1.00

@@ -24,5 +24,6 @@ instructions:
       constraints:
         - nets_to_zero:
             column: AMOUNT
-            lhs: meta["prefix"] == "01-payments"
-            rhs: meta["prefix"] == "01-invoices"
+            # TODO: Don't use META in first example.
+            lhs: record["META.prefix"] == "01-payments"
+            rhs: record["META.prefix"] == "01-invoices"

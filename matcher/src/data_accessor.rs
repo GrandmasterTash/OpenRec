@@ -31,7 +31,7 @@ pub enum ModifyingAccessor {
 }
 
 ///
-/// Passed to a record so it can get one or more columns of data from the appropriate location.
+/// Passed to a record so it can get one or more columns of data from the appropriate location (buffer or file).
 ///
 pub struct DataAccessor {
     schema: GridSchema,                  // A clone of the Grid's schema - this allows us to iterate

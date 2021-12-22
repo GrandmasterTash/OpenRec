@@ -41,6 +41,11 @@ pub fn init_test(folder: &str) -> PathBuf {
     std::fs::create_dir_all(&waiting)
         .expect("Cannot create a waiting folder");
 
+    // Create an unmatched folder - some tests start with existing unmatched files.
+    let unmatched = base_dir.join("unmatched/");
+    std::fs::create_dir_all(&unmatched)
+        .expect("Cannot create a unmatched folder");
+
     base_dir
 }
 

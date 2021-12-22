@@ -15,9 +15,6 @@ pub fn project_column(
     let lua_record = lua::lua_record(record, script_cols, accessor, lua_ctx)?;
     globals.set("record", lua_record)?;
 
-    let lua_meta = lua::lua_meta(record, accessor.schema(), lua_ctx)?;
-    globals.set("meta", lua_meta)?;
-
     // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip
     // attempting to calulate values that are not relevant to the record without having to write verbose scripts.
     if when.is_none() || lua::eval(lua_ctx, when.as_ref().unwrap())? {

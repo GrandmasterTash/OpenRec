@@ -23,8 +23,6 @@ pub enum Instruction {
     Project { column: String, as_type: DataType, from: String, when: Option<String> }, // Create a derived column from one or more other columns.
     MergeColumns { into: String, from: Vec<String> }, // Merge the contents of columns together.
     MatchGroups { group_by: Vec<String>, constraints: Vec<Constraint> }, // Group the data by one or more columns (header-names)
-    _Filter, // TODO: Apply a filter so only data matching the filter is currently available.
-    _UnFilter, // TODO: Remove an applied filter.
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,8 +37,6 @@ pub enum Constraint {
     NetsToZero { column: String, lhs: String, rhs: String },
     NetsWithTolerance { column: String, lhs: String, rhs: String, tol_type: ToleranceType, tolerance: Decimal },
     Custom { script: String, fields: Option<Vec<String>> }
-    // TODO: Count, Sum, Min, Max, Avg is required!
-    // Custom Lua with access to Count, Sum and all records in the group (so table of tables): records[1]["invoices.blah"]
 }
 
 impl Charter {

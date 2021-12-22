@@ -32,8 +32,8 @@ instructions:
       constraints:
         - nets_with_tolerance:
             column: AMOUNT
-            lhs: meta["prefix"] == "INV"
-            rhs: meta["prefix"] == "PAY"
+            lhs: record["META.prefix"] == "INV"
+            rhs: record["META.prefix"] == "PAY"
             tol_type: Amount
             tolerance: 1.00
             # tol_type can also be Percent. In whice case the rhs sum must be with in

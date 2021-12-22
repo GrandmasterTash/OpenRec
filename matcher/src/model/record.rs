@@ -2,10 +2,9 @@ use uuid::Uuid;
 use bytes::Bytes;
 use std::cell::Cell;
 use rust_decimal::Decimal;
+use super::data_type::DataType;
 use csv::{Position, ByteRecord};
 use crate::{model::schema::GridSchema, error::MatcherError, convert, data_accessor::DataAccessor};
-
-use super::data_type::DataType;
 
 ///
 /// A record is essentially a point to one or two CSV rows on disk.

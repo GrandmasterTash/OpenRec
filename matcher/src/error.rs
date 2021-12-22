@@ -109,8 +109,8 @@ pub enum MatcherError {
     #[error("Lua error in script\neval: {eval}\nreturn type: {data_type}\nwhen: {when}\row: {row}")]
     ProjectColScriptError { eval: String, when: String, data_type: String, row: usize, source: rlua::Error },
 
-    #[error("Error in custom Lua constraint")]
-    CustomConstraintError { source: rlua::Error },
+    #[error("Error in custom Lua constraint: {reason}")]
+    CustomConstraintError { reason: String, source: rlua::Error },
 
     #[error("Column {header} doesn't exist in the source data and cannot be used to merge")]
     MissingSourceColumn { header: String },

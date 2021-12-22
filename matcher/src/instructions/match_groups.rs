@@ -20,6 +20,10 @@ pub fn match_groups(
     lua: &rlua::Lua,
     matched: &mut MatchedHandler) -> Result<(), MatcherError> {
 
+    if grid.is_empty() {
+        return Ok(())
+    }
+
     log::info!("Grouping by {}", group_by.iter().join(", "));
 
     let mut group_count = 0;
@@ -29,6 +33,7 @@ pub fn match_groups(
     // Create a Lua context to evaluate Constraint rules in.
     lua.context(|lua_ctx| {
         lua::init_context(&lua_ctx)?;
+        lua::create_aggregate_fns(&lua_ctx)?;
 
         // Form groups from the records.
         for (_key, group) in &grid.records().iter()

@@ -35,19 +35,14 @@ instructions:
                 end
               end
 
-              -- For every record in the group there is a corresponding 'metas' array item
-              -- which contains record context details, such as the 'prefix' - a value extracted
-              -- from the record's original filename.
+              -- There are also some additional metadata fields on the record which contains record context
+              -- details, such as the 'prefix' - a value extracted from the record's original filename.
               -- The meta table also contains filename and the timestamp extracted from the filename. i.e.
-              -- meta["prefix"]
-              -- meta["timestamp"]
-              -- meta["filename"]
-
-              for idx, meta in ipairs(metas) do
-                for field, value in pairs(meta) do
-                    print("F [" ..field.. "] V [" ..value.. "]")
-                end
-              end
+              -- Note: If the charter setting 'use_field_prefixes' is false, the prefix metadata field is
+              -- unnavailable.
+              -- record["META.prefix"]
+              -- record["META.timestamp"]
+              -- record["META.filename"]
 
               -- TODO: Document what returning true or false means.
               -- Allow the data to be passes to the next custom constraint in the match_group instruction.
@@ -74,26 +69,29 @@ instructions:
 
               return true
 
-        # # Custom constraint scripts have access to these aggregate functions which operate a group of
-        # # records being evaluated for a match: -
-        # #   sum
-        # #   count
-        # #   min
-        # #   max
-        # #   avg
-        # - custom:
-        #     # Here we will match one invoice against one or more of payments.
-        #     script: |
-        #         -- We start by creating anonymous functions used to filter data in the group of records.
-        #         -- We look at the meta data which contains which file the record came from. We could equally
-        #         -- look at a field on the record itself to identify it's type.
-        #         local invoices = function (_record, meta) return meta["prefix"] == "invoices" end
-        #         local payments = function (_record, meta) return meta["prefix"] == "payments" end
+        # Custom constraint scripts have access to these aggregate functions which operate on a group of
+        # records being evaluated for a match: -
+        #   sum
+        #   count
+        #   min
+        #   max
+        #   avg
+        - custom:
+            # Here we will match one invoice against one or more payments.
+            script: |
+                -- We start by creating two functions to filter rows in the current group being evaluated
+                -- by a constraint. One function will filter to include only invoices and the other will
+                -- filter records to only include payments.
+                --
+                -- We look at the meta data which contains which file the record came from. We could equally
+                -- look at a field on the record itself to identify it's type.
+                local invoices = function (record) return record["META.prefix"] == "invoices" end
+                local payments = function (record) return record["META.prefix"] == "payments" end
 
-        #         -- count is a function that takes a filter as an argument and counts the number
-        #         -- of records in the group matching the filter.
-        #         return count(invoices) == 1
-        #             and count(payments) > 0
+                -- count is a function that takes a filter as an argument and counts the number
+                -- of records in the group matching the filter.
+                return count(invoices) == 1
+                    and count(payments) > 0
         # - custom:
         #     # This is an example of writing a nets-to-zero constaint manually in Lua script.
         #     script: |
@@ -102,6 +100,9 @@ instructions:
         #         local payments = function (_record, meta) return meta["prefix"] == "payments" end
         # TODO: Can we create a rust filter() fn that would be used like: local invoices = filter(meta["prefix"] == "invoices")
 
+
+        # TODO: use tostring(xxx) to debug print a decimal for example.
+        
         #         -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
         #         -- the second is a filter to apply to the records in the group.
         #         local inv_sum = sum("AMOUNT_BASE", invoices)

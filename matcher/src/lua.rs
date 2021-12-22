@@ -16,7 +16,7 @@ pub fn init_context(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
 
     // Create a decimal() function to convert a Lua number to a Rust Decimal data-type.
     let decimal = lua_ctx.create_function(|_, value: Number| {
-        Ok(LuaDecimal(Decimal::from_f64(value).unwrap())) // TODO: Don't unwrap.
+        Ok(LuaDecimal(Decimal::from_f64(value).expect("Unable to convert number from Lua into a Decimal type")))
     })?;
 
     globals.set("decimal", decimal)?;
@@ -37,6 +37,147 @@ pub fn eval<'lua, R: FromLuaMulti<'lua>>(lua_ctx: &rlua::Context<'lua>, lua: &st
             Err(err)
         },
     }
+}
+
+///
+/// Plug-in aggregate Rust functions that can be called from Lua script inside matching group constraints.
+///
+pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
+    let globals = lua_ctx.globals();
+
+    // Provide a count(filter, records) function to the custom Lua script.
+    let count = lua_ctx.create_function(|_, (filter, data): (rlua::Function, rlua::Table)| {
+        let mut count = 0;
+        for idx in 1..=data.len()? {
+            let record: rlua::Table = data.get(idx)?;
+
+            if filter.call::<_, bool>(record)? {
+                count += 1;
+            }
+        }
+
+        Ok(count)
+    })?;
+
+    // Provide a sum("field", filter, records) function to the custom Lua script.
+    let sum = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+        let mut sum = Decimal::ZERO;
+
+        for idx in 1..=data.len()? {
+            let record: rlua::Table = data.get(idx)?;
+
+            if filter.call::<_, bool>(record.clone())? {
+                sum += record.get::<String, LuaDecimal>(field.clone())
+                    .map_err(|source| MatcherError::CustomConstraintError { reason: format!("Field {} not found in record or not a DECIMAL. If you are trying to sum an INTEGER use sum_int() instead", field), source })?
+                    .0;
+            }
+        }
+
+        Ok(LuaDecimal(sum))
+    })?;
+
+    // Provide a sum_int("field", filter, records) function to the custom Lua script.
+    let sum_int = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+        let mut sum = 0u64;
+
+        for idx in 1..=data.len()? {
+            let record: rlua::Table = data.get(idx)?;
+
+            if filter.call::<_, bool>(record.clone())? {
+                sum += record.get::<String, u64>(field.clone())
+                    .map_err(|source| MatcherError::CustomConstraintError { reason: format!("Field {} not found in record or not an INTEGER.", field), source })?;
+            }
+        }
+
+        Ok(sum)
+    })?;
+
+    // Provide a max("field", filter, records) function to the custom Lua script.
+    let max = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+        let mut max = Decimal::MIN;
+
+        for idx in 1..=data.len()? {
+            let record: rlua::Table = data.get(idx)?;
+
+            if filter.call::<_, bool>(record.clone())? {
+                let value = record.get::<String, LuaDecimal>(field.clone())
+                    .map_err(|source| MatcherError::CustomConstraintError { reason: format!("Field {} not found in record or not a DECIMAL. If you are trying to max an INTEGER use max_int() instead", field), source })?
+                    .0;
+
+                max = std::cmp::max(max, value);
+            }
+        }
+
+        Ok(LuaDecimal(max))
+    })?;
+
+    // Provide a max_int("field", filter, records) function to the custom Lua script.
+    let max_int = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+        let mut max = u64::MIN;
+
+        for idx in 1..=data.len()? {
+            let record: rlua::Table = data.get(idx)?;
+
+            if filter.call::<_, bool>(record.clone())? {
+                let value = record.get::<String, u64>(field.clone())
+                    .map_err(|source| MatcherError::CustomConstraintError { reason: format!("Field {} not found in record or not a INTEGER.", field), source })?;
+
+                max = std::cmp::max(max, value);
+            }
+        }
+
+        Ok(max)
+    })?;
+
+    // Provide a min("field", filter, records) function to the custom Lua script.
+    let min = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+        let mut min = Decimal::MAX;
+
+        // println!("MIN-START: {}", min);
+
+        for idx in 1..=data.len()? {
+            let record: rlua::Table = data.get(idx)?;
+
+            if filter.call::<_, bool>(record.clone())? {
+                let value = record.get::<String, LuaDecimal>(field.clone())
+                    .map_err(|source| MatcherError::CustomConstraintError { reason: format!("Field {} not found in record or not a DECIMAL. If you are trying to max an INTEGER use min_int() instead", field), source })?
+                    .0;
+
+                    // println!("MIN-CMP: {} / {}", min, value);
+                    min = std::cmp::min(min, value);
+                    // println!("MIN-NOW: {}", min);
+            }
+        }
+
+        Ok(LuaDecimal(min))
+    })?;
+
+    // Provide a min_int("field", filter, records) function to the custom Lua script.
+    let min_int = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+        let mut min = u64::MAX;
+
+        for idx in 1..=data.len()? {
+            let record: rlua::Table = data.get(idx)?;
+
+            if filter.call::<_, bool>(record.clone())? {
+                let value = record.get::<String, u64>(field.clone())
+                    .map_err(|source| MatcherError::CustomConstraintError { reason: format!("Field {} not found in record or not a INTEGER.", field), source })?;
+
+                min = std::cmp::min(min, value);
+            }
+        }
+
+        Ok(min)
+    })?;
+
+    globals.set("count", count)?;
+    globals.set("sum", sum)?;
+    globals.set("sum_int", sum_int)?;
+    globals.set("max", max)?;
+    globals.set("max_int", max_int)?;
+    globals.set("min", min)?;
+    globals.set("min_int", min_int)?;
+    Ok(())
 }
 
 ///
@@ -77,23 +218,27 @@ pub fn lua_record<'a>(
         }
     }
 
+    append_meta(record, &lua_record, accessor.schema())?;
+
     Ok(lua_record)
 }
 
 ///
 /// Create some contextural information regarding the file that loaded a record.
 ///
-pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
-    -> Result<Table<'a>, MatcherError> {
+// fn append_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
+//     -> Result<Table<'a>, MatcherError> {
+fn append_meta<'a>(record: &Record, lua_record: &Table, schema: &GridSchema)
+    -> Result<(), MatcherError> {
 
-    let lua_meta = lua_ctx.create_table()?;
+    // let lua_meta = lua_ctx.create_table()?;
 
     let file = match schema.files().get(record.file_idx()) {
         Some(file) => file,
         None => return Err(MatcherError::MissingFileInSchema{ index: record.file_idx() }),
     };
 
-    lua_meta.set("filename", file.filename())?;
+    lua_record.set("META.filename", file.filename())?;
 
     let file_schema = match schema.file_schemas().get(file.schema_idx()) {
         Some(file_schema) => file_schema,
@@ -101,14 +246,14 @@ pub fn lua_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
     };
 
     if let Some(prefix) = file_schema.prefix() {
-        lua_meta.set("prefix", prefix)?;
+        lua_record.set("META.prefix", prefix)?;
     }
 
     if let Some(timestamp) = folders::unix_timestamp(file.timestamp()) {
-        lua_meta.set("timestamp", timestamp)?;
+        lua_record.set("META.timestamp", timestamp)?;
     }
 
-    Ok(lua_meta)
+    Ok(())
 }
 
 ///
@@ -129,8 +274,8 @@ pub fn lua_filter<'a, 'b>(
         let lua_record = lua_record(record, &script_cols, accessor, lua_ctx)?;
         globals.set("record", lua_record)?;
 
-        let lua_meta = lua_meta(record, accessor.schema(), lua_ctx)?;
-        globals.set("meta", lua_meta)?;
+        // let lua_meta = lua_meta(record, accessor.schema(), lua_ctx)?;
+        // globals.set("meta", lua_meta)?;
 
         if eval(lua_ctx, &lua_script)? {
             results.push(*record);

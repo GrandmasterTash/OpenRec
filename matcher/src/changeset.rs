@@ -63,7 +63,7 @@ pub struct ChangeSet {
     change: Change,
     source: Option<String>,
     comment: Option<String>,
-    approved_by: Option<Vec<String>>, // TODO: Consider metadata for changesets and charters.
+    approved_by: Option<Vec<String>>,
     timestamp: DateTime<Utc>,
 
     #[serde(skip)]

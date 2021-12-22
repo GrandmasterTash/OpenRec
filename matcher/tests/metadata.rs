@@ -26,20 +26,20 @@ instructions:
         constraints:
         - custom:
             script: |
-              for idx, meta in ipairs(metas) do
+              for idx, record in ipairs(records) do
                 -- There must be a prefix metadata field for each record.
-                if meta["prefix"] ~= "TRN" then
+                if record["META.prefix"] ~= "TRN" then
                   print("Record meta prefix field was not set in Lua script test will fail as no match.")
-                  print("EXPECTED: meta['prefix'] -> TRN")
-                  print("ACTUAL:   meta['prefix'] -> " .. meta["prefix"])
+                  print("EXPECTED: record['META.prefix'] -> TRN")
+                  print("ACTUAL:   record['META.prefix'] -> " .. record["META.prefix"])
                   return false
                 end
 
                 -- There must be a filename metadata field for each record.
-                if meta["filename"] ~= "20211219_082900000_transactions.csv" then
+                if record["META.filename"] ~= "20211219_082900000_transactions.csv" then
                   print("Record meta filename field was not set in Lua script test will fail as no match.")
-                  print("EXPECTED: meta['filename'] -> 20211219_082900000_transactions.csv")
-                  print("ACTUAL:   meta['filename'] -> " .. meta["filename"])
+                  print("EXPECTED: record['META.filename'] -> 20211219_082900000_transactions.csv")
+                  print("ACTUAL:   record['META.filename'] -> " .. record["META.filename"])
                   return false
                 end
 
@@ -47,10 +47,10 @@ instructions:
                 -- from the file prefix ('20211219_082900000' in this case) and then turned
                 -- into a unix timestamp.
 
-                if meta["timestamp"] ~= 1639902540000 then
+                if record["META.timestamp"] ~= 1639902540000 then
                   print("Record meta timestamp field was not set in Lua script test will fail as no match.")
-                  print("EXPECTED: meta['timestamp'] -> 1639902540000")
-                  print("ACTUAL:   meta['timestamp'] -> " .. meta["timestamp"])
+                  print("EXPECTED: record['META.timestamp'] -> 1639902540000")
+                  print("ACTUAL:   record['META.timestamp'] -> " .. record["META.timestamp"])
                   return false
                 end
               end

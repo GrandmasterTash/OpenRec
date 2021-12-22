@@ -31,17 +31,17 @@ instructions:
       column: PAYMENT_AMOUNT_BASE
       as_type: DECIMAL
       from: record["PAY.Amount"] * record["PAY.FXRate"]
-      when: meta["prefix"] == "PAY"
+      when: record["META.prefix"] == "PAY"
   - project:
       column: RECEIPT_AMOUNT_BASE
       as_type: DECIMAL
       from: record["REC.Amount"] * record["REC.FXRate"]
-      when: meta["prefix"] == "REC"
+      when: record["META.prefix"] == "REC"
   - project:
       column: TOTAL_AMOUNT_BASE
       as_type: DECIMAL
       from: record["INV.TotalAmount"] * record["INV.FXRate"]
-      when: meta["prefix"] == "INV"
+      when: record["META.prefix"] == "INV"
   - merge_columns:
       from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
       into: AMOUNT_BASE
@@ -53,9 +53,9 @@ instructions:
       constraints:
         - nets_to_zero:
             column: AMOUNT_BASE
-            lhs: meta["prefix"] == "PAY"
-            rhs: meta["prefix"] == "INV"
+            lhs: record["META.prefix"] == "PAY"
+            rhs: record["META.prefix"] == "INV"
         - nets_to_zero:
             column: AMOUNT_BASE
-            lhs: meta["prefix"] == "REC"
-            rhs: meta["prefix"] == "INV"
+            lhs: record["META.prefix"] == "REC"
+            rhs: record["META.prefix"] == "INV"

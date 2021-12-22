@@ -9,12 +9,12 @@ mod unmatched;
 mod instructions;
 mod data_accessor;
 
-use changeset::ChangeSet;
-use itertools::Itertools;
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::MatcherError;
+use itertools::Itertools;
+use changeset::ChangeSet;
 use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
@@ -25,7 +25,7 @@ use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}
 // TODO: Remove panics! and unwraps / expects where possible.
 // TODO: Clippy!
 // TODO: Thread-per source file for projects and merges.
-// TODO: Investigate sled for disk based groupings. Seems I'm not a pioneer :( https://en.wikipedia.org/wiki/External_sorting
+// TODO: https://en.wikipedia.org/wiki/External_sorting
 // TODO: Journal file - event log - maybe callbacks when used as a component/library.
 // TODO: Jetwash to generate changesets for update files (via business key).
 // TODO: Consider an 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
@@ -358,8 +358,6 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
             Instruction::Project { .. } => {},
             Instruction::MergeColumns { .. } => {},
             Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, grid, &schema, &mut accessor, ctx.lua(), &mut matched)?,
-            Instruction::_Filter   => todo!(),
-            Instruction::_UnFilter => todo!(),
         };
 
         // If charter.debug - dump the grid with instr idx in filename.

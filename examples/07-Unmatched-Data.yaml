@@ -34,5 +34,5 @@ instructions:
       constraints:
         - nets_to_zero:
             column: AMOUNT
-            lhs: meta["prefix"] == "I"
-            rhs: meta["prefix"] == "P"
+            lhs: record["META.prefix"] == "I"
+            rhs: record["META.prefix"] == "P"

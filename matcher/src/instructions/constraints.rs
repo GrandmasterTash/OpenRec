@@ -101,19 +101,14 @@ fn custom_constraint(
     };
 
     let globals = lua_ctx.globals();
-    let lua_metas = lua_ctx.create_table()?;
     let lua_records = lua_ctx.create_table()?;
 
     for (idx, record) in records.iter().enumerate() {
         let lua_record = lua::lua_record(record, &script_cols, accessor, lua_ctx)?;
         lua_records.set(idx + 1, lua_record)?;
-
-        let lua_meta = lua::lua_meta(record, accessor.schema(), lua_ctx)?;
-        lua_metas.set(idx + 1, lua_meta)?;
     }
 
-    globals.set("metas", lua_metas)?;
     globals.set("records", lua_records)?;
     lua::eval(lua_ctx, &script)
-        .map_err(|source| MatcherError::CustomConstraintError { source })
+        .map_err(|source| MatcherError::CustomConstraintError { reason: "Unknown".into(), source })
 }

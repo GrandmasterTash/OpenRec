@@ -38,14 +38,14 @@ instructions:
       # Because we have loaded both invoices and payments into our virtual grid of data
       # (see 01-Basic-Match.yaml), we need to ensure the above Lua is not evaluated against an invoice
       # record in a grid, and only evaluated against a payment record. We can do this either by checking
-      # a field on the record which denotes it's type or, if this isn't available, we can use the 'meta'
-      # Lua table and use the 'prefix' field. This is a special field set to the (short) filename where
-      # the record originated from or, in our case, the field_alias defined above.
+      # a field on the record which denotes it's type or, if this isn't available, we can use the 'META'
+      # prefixed field which is derived from the filename. This is a special field set to the (short) filename
+      # where the record originated from or, in our case, the field_alias defined above.
       #
       # NOTE: If we didn't have theh following when clause (which is optional), then our from script
       # above, would cause an error as soon as it was evaluated against an invoice record, because
       # invoices don't have a field called 'PAY.Amount' or 'PAY.FXRate'.
-      when: meta["prefix"] == "PAY"
+      when: record["META.prefix"] == "PAY"
       # TODO: Consider removing when clauses and just capture a nil ref and projecting a blank.
 
   - project:
@@ -62,7 +62,7 @@ instructions:
         local _start, _end, inv_ref = string.find(record["PAY.Reference"], ".*XX(.*)XX.*")
         return inv_ref
       # Again, we only want to evaluate this against payment records, not invoices.
-      when: meta["prefix"] == "PAY"
+      when: record["META.prefix"] == "PAY"
 
   - merge_columns:
       # We're merging the (converted) paymount amount and the invoice's total amount into a new column
@@ -81,5 +81,5 @@ instructions:
       constraints:
         - nets_to_zero:
             column: AMOUNT
-            lhs: meta["prefix"] == "PAY"
-            rhs: meta["prefix"] == "INV"
+            lhs: record["META.prefix"] == "PAY"
+            rhs: record["META.prefix"] == "INV"
