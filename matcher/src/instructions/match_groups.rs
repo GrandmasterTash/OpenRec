@@ -12,6 +12,8 @@ use crate::{error::MatcherError, formatted_duration_rate, model::{charter::Const
 /// file and any records which fail to be matched are written to un-matched files.
 ///
 pub fn match_groups(
+    ctx: &crate::Context,
+    inst_idx: usize,
     group_by: &[String],
     constraints: &[Constraint],
     grid: &mut Grid,
@@ -29,6 +31,9 @@ pub fn match_groups(
     let mut group_count = 0;
     let mut match_count = 0;
     let lua_time = Cell::new(Duration::from_millis(0));
+
+    // Create/open a debug file - we'll debug them in their grouping order.
+    let mut wtr = grid.start_debug_records(ctx, inst_idx);
 
     // Create a Lua context to evaluate Constraint rules in.
     lua.context(|lua_ctx| {
@@ -50,6 +55,9 @@ pub fn match_groups(
             // Collect the records in the group.
             let records = group.map(|(_key, record)| record.deref()).collect::<Vec<&Record>>();
 
+            // Write this group out to the debug file.
+            grid.debug_records(&mut wtr, &records, accessor);
+
             // Test any constraints on the group to see if it's a match.
             if is_match(&records, constraints, schema, accessor, &lua_ctx, &lua_time)? {
                 records.iter().for_each(|r| r.set_deleted());
@@ -66,6 +74,9 @@ pub fn match_groups(
 
     // Remove matched records from the grid now.
     grid.remove_deleted();
+
+    // Complete the debug file.
+    grid.finish_debug_records(wtr);
 
     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",

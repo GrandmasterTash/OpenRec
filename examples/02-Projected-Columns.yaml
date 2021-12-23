@@ -29,24 +29,24 @@ instructions:
       # We must define the type of this column.
       as_type: Decimal
       # The Lua script below has access to a table called 'record' which is populated with the values of
-      # each column on the underlying record. In this case, we are multipling the Amount by the FXRate
+      # each column from the underlying file. In this case, we are multipling the Amount by the FXRate
       # for the payment to derive a GBP value in a new column called PAYMENT_AMOUNT_BASE.
       #
       # NOTE: Decimal amounts use a precise backing data-type, something not normally possible with standard
-      # Lua - which uses floating point numbers without the aid of additional libraries.
+      # Lua - which uses floating point numbers - without the aid of additional libraries.
       from: record["PAY.Amount"] * record["PAY.FXRate"]
       # Because we have loaded both invoices and payments into our virtual grid of data
       # (see 01-Basic-Match.yaml), we need to ensure the above Lua is not evaluated against an invoice
       # record in a grid, and only evaluated against a payment record. We can do this either by checking
       # a field on the record which denotes it's type or, if this isn't available, we can use the 'META'
-      # prefixed field which is derived from the filename. This is a special field set to the (short) filename
-      # where the record originated from or, in our case, the field_alias defined above.
+      # prefixed field which set to the field alias defined above. This is a special field set to the
+      # (short) filename where the record originated from or, in our case, the field_alias defined above.
+      # There are other META. fields available and these are discussed later.
       #
-      # NOTE: If we didn't have theh following when clause (which is optional), then our from script
+      # NOTE: If we didn't have the following 'when' clause (which is optional), then our from script
       # above, would cause an error as soon as it was evaluated against an invoice record, because
       # invoices don't have a field called 'PAY.Amount' or 'PAY.FXRate'.
       when: record["META.prefix"] == "PAY"
-      # TODO: Consider removing when clauses and just capture a nil ref and projecting a blank.
 
   - project:
       # In this example our payment records have an invoice reference but it's embedded in the payment reference
@@ -58,6 +58,8 @@ instructions:
       # Here we use the Lua function (https://www.lua.org/pil/20.3.html) to capture the portion of the field
       # we require into a variable called inv_ref then return that variable. Note, the '_' represent values
       # returned from string.find that we do not need (in this case the start and end position of the match).
+      # Lua uses it's own regular expression syntax, similar to standard POSIX (https://www.lua.org/pil/20.2.html).
+      # In the pattern below, the brackets (.*) capture the value we want to use.
       from: |
         local _start, _end, inv_ref = string.find(record["PAY.Reference"], ".*XX(.*)XX.*")
         return inv_ref
@@ -66,19 +68,23 @@ instructions:
 
   - merge_columns:
       # We're merging the (converted) paymount amount and the invoice's total amount into a new column
-      # called AMOUNT which we'll use in our group constraints to NET on.
+      # called AMOUNT which we'll use in our group constraints to NET together and test the validity of each group.
       from: ['PAYMENT_AMOUNT_BASE', 'INV.TotalAmount']
       into: AMOUNT
 
   - merge_columns:
-      # Now we'll merge the invoice reference and our projected payment's invoice reference (with the Xs
-      # removed) into a column to group records together with.
+      # Now that values in PAYMENT_IN_REF share the same format as values in INV.Reference, we'll merge
+      # the invoice reference and our projected payment's invoice reference (with the Xs removed) into a
+      # column to group records together with.
       from: ['INV.Reference', 'PAYMENT_INV_REF']
       into: REFERENCE
 
   - match_groups:
+      # This will group all records together that relate to the same invoice.
       group_by: ['REFERENCE']
       constraints:
+          # Finally, if the amounts add-up in the base invoice currency (GBP in this case), then the
+          # group is a good match and it will be written off to history.
         - nets_to_zero:
             column: AMOUNT
             lhs: record["META.prefix"] == "PAY"

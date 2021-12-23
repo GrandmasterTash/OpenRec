@@ -1,5 +1,5 @@
 use ubyte::ToByteUnit;
-use std::{fs::DirEntry, time::Instant};
+use std::{fs::{DirEntry, File}, time::Instant};
 use rlua::Error as LuaError;
 use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, data_accessor::DataAccessor, formatted_duration_rate};
 
@@ -135,19 +135,70 @@ impl Grid {
     ///
     /// Writes all the grid's data to a file at this point
     ///
-    pub fn debug_grid(&self, ctx: &Context, filename: &str, accessor: &mut DataAccessor) {
-        let output_path = folders::debug_path(ctx).join(filename);
-        log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
+    pub fn debug_grid(&self, ctx: &Context, sequence: usize, accessor: &mut DataAccessor) {
+        if ctx.charter().debug() {
+            let output_path = folders::debug_path(ctx)
+                .join(format!("{timestamp}_{phase_num}_{phase_name:?}_{sequence}.debug.csv",
+                phase_num = ctx.phase().ordinal(),
+                phase_name = ctx.phase(),
+                sequence = sequence,
+                timestamp = ctx.ts()
+            ));
 
-        let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
-        wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
+            log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
-        for record in &self.records {
-            wtr.write_record(record.as_strings(self.schema(), accessor)).expect("Unable to write record");
+            let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
+            wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
+
+            for record in &self.records {
+                wtr.write_record(record.as_strings(self.schema(), accessor)).expect("Unable to write record");
+            }
+
+            wtr.flush().expect("Unable to flush the debug file");
+            log::debug!("...{} rows written to {}", self.records.len(), output_path.to_canoncial_string());
         }
+    }
 
-        wtr.flush().expect("Unable to flush the debug file");
-        log::debug!("...{} rows written to {}", self.records.len(), output_path.to_canoncial_string());
+    ///
+    /// Writes all the grid's data to a file at this point
+    ///
+    pub fn start_debug_records(&self, ctx: &Context, sequence: usize) -> Option<csv::Writer<File>> {
+        if ctx.charter().debug() {
+            let output_path = folders::debug_path(ctx)
+                .join(format!("{timestamp}_{phase_num}_{phase_name:?}_{sequence}.debug.csv",
+                phase_num = ctx.phase().ordinal(),
+                phase_name = ctx.phase(),
+                sequence = sequence,
+                timestamp = ctx.ts()
+            ));
+
+            log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
+
+            let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
+            wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
+            return Some(wtr)
+        }
+        None
+    }
+
+    ///
+    /// Writes all the data specified to a file at this point
+    ///
+    pub fn debug_records(&self, wtr: &mut Option<csv::Writer<File>>, records: &[&Record], accessor: &mut DataAccessor) {
+        if let Some(wtr) = wtr {
+            for record in records {
+                wtr.write_record(record.as_strings(self.schema(), accessor)).expect("Unable to write record");
+            }
+        }
+    }
+
+    ///
+    /// Ensure all debug data is written.
+    ///
+    pub fn finish_debug_records(&self, wtr: Option<csv::Writer<File>>) {
+        if let Some(mut wtr) = wtr {
+            wtr.flush().expect("Unable to flush the debug file");
+        }
     }
 }
 

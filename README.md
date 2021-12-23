@@ -3,5 +3,6 @@ A blazingly fast reconciliation server written in Rust with an emphasis on low s
 
 
 ## Experimentation around a Rust reconcilliation engine and gRPC server.
-TODO: Jetwash to clean and prep data.
 TODO: Steward example UI to config and build a charter.
+TODO: Herald - match job orchistrator
+TODO: Document child projects in this file.

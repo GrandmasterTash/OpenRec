@@ -1,8 +1,7 @@
 use crate::common;
 use serde_json::json;
 
-// TODO: Write a test for each of the examples.
-// TODO: Test where nothing matches.
+// TODO: A test where nothing matches.
 // TODO: Add the unmatched counts to tests in this file (in the matched job json).
 
 #[test]

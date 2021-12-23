@@ -117,6 +117,11 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
     // required modified data out to new files.
     let mut accessor = DataAccessor::for_modifying(grid)?;
 
+    if !changesets.is_empty() {
+        // Debug the grid if we have any changesets - before they are evaluated.
+        grid.debug_grid(ctx, 1, &mut accessor);
+    }
+
     // Track how many changes are made to each file.
     let mut metrics = init_metrics(grid);
 

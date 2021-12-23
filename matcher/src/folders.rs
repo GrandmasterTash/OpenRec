@@ -43,7 +43,6 @@ use crate::{model::{datafile::DataFile, grid::Grid}, error::MatcherError, Contex
 // The root folder under which all data files are processed. In future this may become a mandatory command-line arg.
 pub const IN_PROGRESS: &str = ".inprogress";
 pub const UNMATCHED: &str = ".unmatched.csv";
-
 pub const DERIVED: &str = "derived.csv";
 pub const MODIFYING: &str = "modifying";
 pub const PRE_MODIFIED: &str = "pre_modified";
@@ -348,8 +347,6 @@ pub fn new_timestamp() -> String {
 
     Utc::now().format("%Y%m%d_%H%M%S%3f").to_string()
 }
-
-// TODO: Lots of duplicated code in this module. Needs some refactoring.
 
 ///
 /// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with

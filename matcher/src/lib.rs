@@ -18,17 +18,14 @@ use changeset::ChangeSet;
 use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
-// TODO: Log a warn for files in waiting, matching which DONT match ANY pattern in the charter.
-// TODO: Debug per instruction. Currently all derived are debugged at once.
 // TODO: Flesh-out examples.
-// TODO: Check code coverage.
+// TODO: Check code coverage. Need error tests.
 // TODO: Remove panics! and unwraps / expects where possible.
 // TODO: Clippy!
-// TODO: Thread-per source file for projects and merges.
-// TODO: https://en.wikipedia.org/wiki/External_sorting
-// TODO: Journal file - event log - maybe callbacks when used as a component/library.
-// TODO: Jetwash to generate changesets for update files (via business key).
-// TODO: Consider an 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
+// TODO: An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
+// TODO: Rename this lib to celerity.
+// TODO: Thread-per source file for col-projects and col-merges.
+// TODO: https://en.wikipedia.org/wiki/External_sorting external-merge-sort.
 
 ///
 /// These are the linear state transitions of a match Job.
@@ -198,8 +195,13 @@ fn init_folders(ctx: &Context) -> Result<(), MatcherError> {
 /// If data is modified, we re-load/index the records in a new instance of the grid.
 ///
 fn apply_changesets(ctx: &Context, mut grid: Grid) -> Result<(Grid, Vec<ChangeSet>), MatcherError> {
+
     let (any_applied, changesets) = changeset::apply(ctx, &mut grid)?;
     if any_applied {
+        // Debug the grid after any changesets have been applied.
+        let mut accessor = DataAccessor::for_reading_no_derived(&mut grid)?;
+        grid.debug_grid(ctx, 2, &mut accessor);
+
         return Ok((Grid::load(ctx)?, changesets))
     }
     Ok((grid, changesets))
@@ -215,10 +217,8 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
     // meaning it will be writing derived values to a buffer for each record and flushing to disk.
     let mut accessor = DataAccessor::for_deriving(&grid)?;
 
-    // If charter.debug - dump the grid with instr idx in filename.
-    if ctx.charter().debug() {
-        grid.debug_grid(ctx, &format!("{}_{}.output.csv", ctx.phase().ordinal(), ctx.ts()), &mut accessor);
-    }
+    // Debug the grid before the new columns are added.
+    grid.debug_grid(ctx, 1, &mut accessor);
 
     let mut projection_cols = HashMap::new();
 
@@ -248,6 +248,9 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
 
     // Now we know what columns are derived, write their headers to the .derived files.
     accessor.write_derived_headers()?;
+
+    // Debug the grid after the columns are added (but before values are derived).
+    grid.debug_grid(ctx, 2, &mut accessor);
 
     Ok((projection_cols, accessor))
 }
@@ -323,6 +326,10 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
         }
     }
 
+    // Debug the derived data now.
+    let mut debug_accessor = DataAccessor::for_reading(grid)?;
+    grid.debug_grid(ctx, 1, &mut debug_accessor);
+
     Ok(())
 }
 
@@ -353,17 +360,23 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
     let mut accessor = DataAccessor::for_reading(grid)?;
     let schema = grid.schema().clone();
 
-    for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
+    for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
         match inst {
             Instruction::Project { .. } => {},
             Instruction::MergeColumns { .. } => {},
-            Instruction::MatchGroups { group_by, constraints } => instructions::match_groups::match_groups(group_by, constraints, grid, &schema, &mut accessor, ctx.lua(), &mut matched)?,
+            Instruction::MatchGroups { group_by, constraints } => {
+                instructions::match_groups::match_groups(
+                    ctx,
+                    i_idx,
+                    group_by,
+                    constraints,
+                    grid,
+                    &schema,
+                    &mut accessor,
+                    ctx.lua(),
+                    &mut matched)?;
+            },
         };
-
-        // If charter.debug - dump the grid with instr idx in filename.
-        if ctx.charter().debug() {
-            grid.debug_grid(ctx, &format!("{}_{}_{}.output.csv", ctx.phase().ordinal(), idx + 1, ctx.ts()), &mut accessor);
-        }
 
         log::debug!("Grid Memory Size: {}",
             blue(&format!("{:.0}", grid.memory_usage().bytes())));
@@ -379,7 +392,7 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
 ///
 fn complete_and_archive(
     ctx: &Context,
-    grid: Grid,
+    mut grid: Grid,
     mut matched: MatchedHandler,
     mut unmatched: UnmatchedHandler,
     changesets: Vec<ChangeSet>) -> Result<(), MatcherError> {
@@ -390,11 +403,23 @@ fn complete_and_archive(
     // Complete the matched JSON file.
     matched.complete_files(&unmatched, changesets)?;
 
+    // Debug the final grid now.
+    let mut accessor = DataAccessor::for_reading(&mut grid)?;
+    grid.debug_grid(ctx, 1, &mut accessor);
+
     // Move matching files to the archive.
-    // TODO: Delete unmatched.bak files if there has been no error.
     folders::progress_to_archive(&ctx, grid)?;
 
-    // TODO: Log how many records processed, rate, MB size, etc.
+    // Log a warning for any file left in matching at the end of a job.
+    let left_overs = folders::matching(ctx).read_dir()?
+        .map(|entry| entry.expect("unable to read matching file").file_name().to_str().unwrap_or("no-name").to_string())
+        .join("\n");
+
+    if !left_overs.is_empty() {
+        log::warn!("The following files were still in the matching folder at the end of the job:\n{}", left_overs);
+    }
+
+    // TODO: Log (and record in job json) how many records processed, rate, MB size, etc.
     log::info!("Completed match job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, ctx.started().elapsed()).0));
 
     Ok(())

@@ -70,6 +70,15 @@ impl DataAccessor {
         })
     }
 
+    pub fn for_reading_no_derived(grid: &mut Grid) -> Result<Self, MatcherError> {
+        Ok(Self {
+            schema: grid.schema().clone(),
+            data_readers: csv_readers(grid)?,
+            derived_accessor: DerivedAccessor::None,
+            modifying_accessor: ModifyingAccessor::None,
+        })
+    }
+
     pub fn schema(&self) -> &GridSchema {
         &self.schema
     }
