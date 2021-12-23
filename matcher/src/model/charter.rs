@@ -10,19 +10,41 @@ pub struct Charter {
     description: Option<String>,
     version: u64, // Epoch millis at UTC.
     debug: Option<bool>,
-    file_patterns: Vec<String>,
-    field_aliases: Option<Vec<String>>,
+    matching: Matching,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Matching {
+    source_files: Vec<SourceFile>,
     use_field_prefixes: Option<bool>,
     instructions: Option<Vec<Instruction>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceFile {
+    pattern: String,
+    field_prefix: Option<String>
+}
+
+impl SourceFile {
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    pub fn field_prefix(&self) -> &Option<String> {
+        &self.field_prefix
+    }
 }
 
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum Instruction {
-    Project { column: String, as_type: DataType, from: String, when: Option<String> }, // Create a derived column from one or more other columns.
-    MergeColumns { into: String, from: Vec<String> }, // Merge the contents of columns together.
-    MatchGroups { group_by: Vec<String>, constraints: Vec<Constraint> }, // Group the data by one or more columns (header-names)
+    Project { column: String, as_a: DataType, from: String, when: Option<String> }, // Create a derived column from one or more other columns.
+    Merge { into: String, columns: Vec<String> }, // Merge the contents of columns together.
+    Group { by: Vec<String>, match_when: Vec<Constraint> }, // Group the data by one or more columns (header-names)
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,20 +74,16 @@ impl Charter {
         self.version
     }
 
-    pub fn file_patterns(&self) -> &[String] {
-        &self.file_patterns
-    }
-
-    pub fn field_aliases(&self) -> &Option<Vec<String>> {
-        &self.field_aliases
+    pub fn source_files(&self) -> &[SourceFile] {
+        &self.matching.source_files
     }
 
     pub fn use_field_prefixes(&self) -> bool {
-        self.use_field_prefixes.unwrap_or(true)
+        self.matching.use_field_prefixes.unwrap_or(true)
     }
 
     pub fn instructions(&self) -> &[Instruction] {
-        match &self.instructions {
+        match &self.matching.instructions {
             Some(instructions) => &instructions,
             None => &[],
         }
@@ -80,8 +98,9 @@ impl Charter {
             .map_err(|source| MatcherError::InvalidCharter { path: path.into(), source })?;
 
         // If field_aliases are defined, there should be one for every file_pattern.
-        if let Some(aliases) = charter.field_aliases() {
-            if aliases.len() != charter.file_patterns().len() {
+        let count_aliases = charter.source_files().iter().filter(|df| df.field_prefix.is_some() ).count();
+        if count_aliases > 0 {
+            if count_aliases != charter.source_files().len() {
                 return Err(MatcherError::CharterValidationError { reason: "If field_aliases are defined, there must be one for each defined file_pattern".into() })
             }
         }

@@ -1,22 +1,11 @@
 use md5::Digest;
 use serde_json::Value;
-use assert_json_diff::assert_json_include;
+use assert_json_diff::assert_json_eq;
 use std::{path::{PathBuf, Path}, fs::File, io::{Read, BufReader}};
 use fs_extra::{dir::{CopyOptions, get_dir_content, remove}, copy_items};
 
 const FIXED_TS: &str = "20211201_053700000";
-
-///
-/// Set-up logging and ensure a fixed timestamp is used when writing output matched files.
-///
-/// Set the working folder for the test to put data and write output files to.
-///
-// pub fn init_test(folder: &str) -> PathBuf {
-//     dotenv::dotenv().ok();
-//     let _ = env_logger::builder().is_test(true).try_init();
-//     use_fixed_timestamp();
-//     Path::new(env!("CARGO_TARGET_TMPDIR")).join(folder)
-// }
+pub const FIXED_JOB_ID: &str = "74251904-63d9-11ec-a665-00155dd15f9e";
 
 ///
 /// Set-up logging and ensure a fixed timestamp is used when writing output matched files.
@@ -30,6 +19,7 @@ pub fn init_test(folder: &str) -> PathBuf {
     let _ = env_logger::builder().is_test(true).try_init();
 
     use_fixed_timestamp();
+    use_fixed_job_id();
     let base_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(folder);
 
     // Delete everything in base_dir.
@@ -117,10 +107,11 @@ pub fn example_data_files(filenames: Vec<&str>) -> Vec<PathBuf> {
 ///
 /// Check the matched file contents are as expected.
 ///
-pub fn assert_matched_contents(matched: PathBuf, e: Value) {
-    let a = read_json_file(matched);
-    assert!(!a[0]["job_id"].as_str().expect("No jobId").is_empty()); // Uuid. Note the '!' in this assert!
-    assert_json_include!(actual: a, expected: e);
+pub fn assert_matched_contents(matched: PathBuf, expected: Value) {
+    let actual = read_json_file(matched);
+    assert!(!actual[0]["job_id"].as_str().expect("No jobId").is_empty()); // Uuid. Note the '!' in this assert!
+    // assert_json_include!(actual: a, expected: e);
+    assert_json_eq!(actual, expected);
 }
 
 ///
@@ -210,4 +201,15 @@ pub fn md5(path: &PathBuf) -> Digest {
 ///
 fn use_fixed_timestamp() {
     std::env::set_var("OPENREC_FIXED_TS", FIXED_TS);
+}
+
+///
+/// Ensure each match job uses this uuid. This allows us to do exact matching on the json output
+/// files.
+///
+/// Important: Use the same value across all tests otherwise we can't run them in parrallel as they would
+/// corrupt each other's expected ENV value.
+///
+fn use_fixed_job_id() {
+    std::env::set_var("OPENREC_FIXED_JOB_ID", FIXED_JOB_ID);
 }

@@ -59,7 +59,7 @@ instructions:
 
   - project:
       column: 'Stage1_Date'
-      as_type: DATE
+      as_a: DATE
       from: record["Date_1"]
       when: record["Type"] == "TYP1" or record["Type"] == "TYP2"
 
@@ -73,8 +73,8 @@ instructions:
   # ------------- TYP3   250.00   ------ 1643110400000 -------------
   # ------------- TYP4   250.00   ------ ------------- 1643110400000
 
-  - merge_columns:
-      from: ['Amount_1', 'Amount_2']
+  - merge:
+      columns: ['Amount_1', 'Amount_2']
       into: AMOUNT
 
   # This gives us something to NET the records together with for both stages 1 and 2.
@@ -108,7 +108,7 @@ instructions:
 
   - project:
       column: 'Stage2_Date'
-      as_type: DATE
+      as_a: DATE
       from: record["Date_1"] or record["Date_2"]
       when: record["Type"] == "TYP3" or record["Type"] == "TYP4"
 

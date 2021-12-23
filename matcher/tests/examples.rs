@@ -1,8 +1,5 @@
-use crate::common;
+use crate::common::{self, FIXED_JOB_ID};
 use serde_json::json;
-
-// TODO: A test where nothing matches.
-// TODO: Add the unmatched counts to tests in this file (in the matched job json).
 
 #[test]
 fn test_01_basic_match_from_examples() {
@@ -30,6 +27,7 @@ fn test_01_basic_match_from_examples() {
                 "version": 1,
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [
                 "20211129_043300000_01-invoices.csv",
                 "20211129_043300000_01-payments.csv" ]
@@ -38,6 +36,10 @@ fn test_01_basic_match_from_examples() {
             "groups": [
                 [[0,3],[1,3],[1,5]],
                 [[0,4],[1,4]] ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
         }
     ]));
 }
@@ -68,6 +70,7 @@ fn test_02_projected_columns_from_examples() {
                 "version": 1,
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [
                 "20211129_043300000_02-invoices.csv",
                 "20211129_043300000_02-payments.csv"
@@ -79,6 +82,10 @@ fn test_02_projected_columns_from_examples() {
                 [[0,4], [1,4], [1,5]],
                 [[0,5], [1,6]]
             ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
         }
     ]));
 }
@@ -109,6 +116,7 @@ fn test_03_net_with_tolerance_match_from_examples() {
                 "version": 1,
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [
                 "20211129_043300000_03-invoices.csv",
                 "20211129_043300000_03-payments.csv"
@@ -119,6 +127,10 @@ fn test_03_net_with_tolerance_match_from_examples() {
                 [[0,3],[1,3],[1,5]],
                 [[0,4],[1,4]]
             ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
         }
     ]));
 }
@@ -150,6 +162,7 @@ fn test_04_3_way_match_from_examples() {
                 "version": 1,
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [
                 "20211129_043300000_04-invoices.csv",
                 "20211129_043300000_04-payments.csv",
@@ -162,6 +175,10 @@ fn test_04_3_way_match_from_examples() {
                 [[0,3],[1,3],[2,3]],
                 [[0,5],[1,6],[2,6]]
             ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
         }
     ]));
 }
@@ -190,6 +207,7 @@ fn test_05_2_stage_match_from_examples() {
                 "version": 1,
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [ "20211129_043300000_05-2-stage.csv" ]
         },
         {
@@ -198,17 +216,16 @@ fn test_05_2_stage_match_from_examples() {
                 [[0,5],[0,6]],
                 [[0,7],[0,8]]
             ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
         }
     ]));
 }
 
 #[test]
 fn test_07_unmatched_data_from_examples() {
-
-    // TODO: This test should have 3 attempts.
-    // The 1st attempt matches one group, and partially another, leaving a partial group and an unmatched group.
-    // The 2nd attempt matches the unmatched group leaving the partial group.
-    // The 3rd attempt matches the final group.
 
     let charter = common::example_charter("07-Unmatched-Data.yaml");
     let mut data_files = common::example_data_files(vec!(
@@ -233,6 +250,7 @@ fn test_07_unmatched_data_from_examples() {
                 "version": 1,
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [
                 "20211129_043300000_07-invoices.csv",
                 "20211129_043300000_07-payments-a.csv"
@@ -240,6 +258,19 @@ fn test_07_unmatched_data_from_examples() {
         },
         {
             "groups": [ [[0,4],[1,4]] ]
+        },
+        {
+          "changesets": [],
+          "unmatched": [
+            {
+                "file": "20211129_043300000_07-invoices.unmatched.csv",
+                "rows": 1
+            },
+            {
+                "file": "20211129_043300000_07-payments-a.unmatched.csv",
+                "rows": 1
+            }
+          ]
         }
     ]));
 
@@ -268,7 +299,6 @@ fn test_07_unmatched_data_from_examples() {
 
     // Check the output files.
     let matched = common::assert_matched_ok(&data_files, &base_dir);
-    // TODO: assert there's only 3 files in archive.
 
     // Check the matched file contains the correct groupings.
     common::assert_matched_contents(matched, json!(
@@ -279,6 +309,7 @@ fn test_07_unmatched_data_from_examples() {
                 "version": 1,
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [
                 "20211129_043300000_07-invoices.unmatched.csv",
                 "20211129_043300000_07-payments-a.unmatched.csv",
@@ -289,6 +320,10 @@ fn test_07_unmatched_data_from_examples() {
             "groups": [
                 [[0,3],[1,3],[2,3]]
             ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
         }
     ]));
 }

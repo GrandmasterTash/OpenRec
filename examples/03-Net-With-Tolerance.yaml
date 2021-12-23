@@ -17,24 +17,29 @@ description: |
 # "P1","INV0001","1000.00","1638074168000"
 
 version: 1
-file_patterns: ['.*03-invoices\.csv', '.*03-payments\.csv']
-field_aliases: ['INV', 'PAY']
 debug: true
-instructions:
-  - merge_columns:
-      from: ['INV.Amount', 'PAY.Amount']
-      into: AMOUNT
-  - merge_columns:
-      from: ['INV.Ref', 'PAY.Ref']
-      into: REF
-  - match_groups:
-      group_by: ['REF']
-      constraints:
-        - nets_with_tolerance:
-            column: AMOUNT
-            lhs: record["META.prefix"] == "INV"
-            rhs: record["META.prefix"] == "PAY"
-            tol_type: Amount
-            tolerance: 1.00
-            # tol_type can also be Percent. In whice case the rhs sum must be with in
-            # x percent of the lhs sum where x is the tolerance value. so 10.0 for 10%.
+
+matching:
+  source_files:
+    - pattern: .*03-invoices.*\.csv
+      field_prefix: INV
+    - pattern: .*03-payments.*\.csv
+      field_prefix: PAY
+  instructions:
+    - merge:
+        columns: ['INV.Amount', 'PAY.Amount']
+        into: AMOUNT
+    - merge:
+        columns: ['INV.Ref', 'PAY.Ref']
+        into: REF
+    - group:
+        by: ['REF']
+        match_when:
+          - nets_with_tolerance:
+              column: AMOUNT
+              lhs: record["META.prefix"] == "INV"
+              rhs: record["META.prefix"] == "PAY"
+              tol_type: Amount
+              tolerance: 1.00
+              # tol_type can also be Percent. In whice case the rhs sum must be with in
+              # x percent of the lhs sum where x is the tolerance value. so 10.0 for 10%.

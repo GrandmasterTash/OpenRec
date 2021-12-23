@@ -481,16 +481,6 @@ pub fn original_filename(filename: &str) -> Result<String, MatcherError> {
 }
 
 ///
-/// Remove the timestamp prefix and the file-extension suffix from the filename.
-///
-/// e.g. 20191209_020405000_INV.unmatched.csv -> INV
-///
-pub fn entry_shortname<'a>(entry: &'a DirEntry) -> String {
-    let filename: String = entry.file_name().to_string_lossy().into();
-    shortname(&filename).into()
-}
-
-///
 /// Return the filename part of the path.
 ///
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv -> 20191209_020405000_INV.unmatched.csv

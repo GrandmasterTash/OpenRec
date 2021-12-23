@@ -17,13 +17,15 @@ r#""TransId","Date","Amount","Type"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: lua metadata test
 version: 1
-file_patterns: ['.*.csv']
-field_aliases: ['TRN']
-use_field_prefixes: true
-instructions:
-    - match_groups:
-        group_by: ['TRN.Date']
-        constraints:
+matching:
+  use_field_prefixes: true
+  source_files:
+    - pattern: .*.csv
+      field_prefix: TRN
+  instructions:
+    - group:
+        by: ['TRN.Date']
+        match_when:
         - custom:
             script: |
               for idx, record in ipairs(records) do

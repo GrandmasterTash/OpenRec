@@ -3,6 +3,7 @@ A data scrubbing and preparation component used to convert bespoke csv files int
 
 ## TODOs
 - Fixed schema or adaptive?
+- Add an OpenRec_UUID column.
 - Adaptive MUST have column headers already.
 - Adaptive must scan entire file to ascertain schema.
 - Adaptive Date recognition and conversion. Allow overrides.
@@ -51,3 +52,6 @@ jetwash:
        # from the file usd_fxrates.csv. i.e. we get the rate to convert to USD and we create a new column called NewColumn_FXRate.
        # (in.csv, get_csv_col, where_record_col, is_value)
        mapping: lookup("usd_fxrates.csv", "FXRate", "Currency", record["Currency"]:ucase())
+    # Optional key - when specified, if new records also exist in the unmatched folder (matching the record by this composite key) then the new record is dropped and a changeset is generated with any deltas to apply to the existing record to make it look like this record.
+    # If multiple unmatched record are found an error occurs as the composite key is not specific enough.
+    changeset_composite_keys: [ "Column1", "Column2" ]

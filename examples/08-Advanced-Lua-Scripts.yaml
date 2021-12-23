@@ -2,119 +2,124 @@ name: Advance Scripts
 description: |
   TODO: Document sub-string regex in projected columns.
   TODO: Implement and document custom constraint logic.
-
 version: 1637208553000
-file_patterns: ['.*08-invoices\.csv', '.*08-payments\.csv']
-use_field_prefixes: false
 debug: false
-instructions:
-  - merge_columns:
-      from: ['InvoiceAmount', 'PaymentAmount']
-      into: AMOUNT
-  - merge_columns:
-      from: ['InvoiceDate', 'PaymentDate']
-      into: INVOICE_DATE
-  - match_groups:
-      group_by: ['INVOICE_DATE']
-      constraints:
-        - custom:
-            # As well as the pre-baked constraints nets_to_zero and nets_with_tolerance,
-            # constraints can also be implemented using bespoke Lua script which will
-            # have access to all the record data in a potential grouping and can call
-            # certain aggregate functions (see further examples below) on the group.
-            script: |
-              -- The 'records' Lua table contains all the records in the potential group.
-              -- You can iterate them with standard Lua script.
-              print("Lua debugging works in the console output too!")
 
-              -- Note: Lua array indexes start at 1 not 0.
-              for idx, record in ipairs(records) do
-                -- Each record is a table of field values which you can also reference and/or iterate.
-                for field, value in pairs(record) do
-                  print("Record [" ..idx.. "] has a value of [" .. value .. "] in field [" .. field .. "]")
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*08-invoices.*\.csv
+    - pattern: .*08-payments.*\.csv
+  instructions:
+    - merge:
+        columns: ['InvoiceAmount', 'PaymentAmount']
+        into: AMOUNT
+    - merge:
+        columns: ['InvoiceDate', 'PaymentDate']
+        into: INVOICE_DATE
+    - group:
+        by: ['INVOICE_DATE']
+        match_when:
+          - custom:
+          # TODO: Remove the extra level in this configuration.
+              # As well as the pre-baked constraints nets_to_zero and nets_with_tolerance,
+              # constraints can also be implemented using bespoke Lua script which will
+              # have access to all the record data in a potential grouping and can call
+              # certain aggregate functions (see further examples below) on the group.
+              script: |
+                -- The 'records' Lua table contains all the records in the potential group.
+                -- You can iterate them with standard Lua script.
+                print("Lua debugging works in the console output too!")
+
+                -- Note: Lua array indexes start at 1 not 0.
+                for idx, record in ipairs(records) do
+                  -- Each record is a table of field values which you can also reference and/or iterate.
+                  for field, value in pairs(record) do
+                    print("Record [" ..idx.. "] has a value of [" .. value .. "] in field [" .. field .. "]")
+                  end
                 end
-              end
 
-              -- There are also some additional metadata fields on the record which contains record context
-              -- details, such as the 'prefix' - a value extracted from the record's original filename.
-              -- The meta table also contains filename and the timestamp extracted from the filename. i.e.
-              -- Note: If the charter setting 'use_field_prefixes' is false, the prefix metadata field is
-              -- unnavailable.
-              -- record["META.prefix"]
-              -- record["META.timestamp"]
-              -- record["META.filename"]
+                -- There are also some additional metadata fields on the record which contains record context
+                -- details, such as the 'prefix' - a value extracted from the record's original filename.
+                -- The meta table also contains filename and the timestamp extracted from the filename. i.e.
+                -- Note: If the charter setting 'use_field_prefixes' is false, the prefix metadata field is
+                -- unnavailable.
+                -- record["META.prefix"]
+                -- record["META.timestamp"]
+                -- record["META.filename"]
 
-              -- TODO: Document what returning true or false means.
-              -- Allow the data to be passes to the next custom constraint in the match_group instruction.
-              return false
+                -- TODO: Document what returning true or false means.
+                -- Allow the data to be passes to the next custom constraint in the match_group instruction.
+                return false
 
-        - custom:
-            # By default a custom constraint will have access to all record fields.
-            # This can result in a performance hit on large numbers of columns and records.
-            # To alleviate this, when the script is complete and ready for production, you
-            # can use the 'fields' array to restrict which columns on a record are available in
-            # the Lua script below. You should strive to keep this fields array as small as
-            # possible
-            fields: ['INVOICE_DATE', 'InvoiceRef', 'PaymentRef']
+          - custom:
+              # By default a custom constraint will have access to all record fields.
+              # This can result in a performance hit on large numbers of columns and records.
+              # To alleviate this, when the script is complete and ready for production, you
+              # can use the 'fields' array to restrict which columns on a record are available in
+              # the Lua script below. You should strive to keep this fields array as small as
+              # possible
+              fields: ['INVOICE_DATE', 'InvoiceRef', 'PaymentRef']
+              #TODO: Rename above to available_fields
 
-            script: |
-              print("Hello from Lua - In custom constraint 1")
+              script: |
+                print("Hello from Lua - In custom constraint 1")
 
-              for idx, record in ipairs(records) do
-                -- Each record is a table of field values which you can also reference or iterate.
-                for field, value in pairs(record) do
-                  print("Record [" ..idx.. "] F [" ..field.. "] V [" ..value.. "]")
+                for idx, record in ipairs(records) do
+                  -- Each record is a table of field values which you can also reference or iterate.
+                  for field, value in pairs(record) do
+                    print("Record [" ..idx.. "] F [" ..field.. "] V [" ..value.. "]")
+                  end
                 end
-              end
 
-              return true
+                return true
 
-        # Custom constraint scripts have access to these aggregate functions which operate on a group of
-        # records being evaluated for a match: -
-        #   sum
-        #   count
-        #   min
-        #   max
-        #   avg
-        - custom:
-            # Here we will match one invoice against one or more payments.
-            script: |
-                -- We start by creating two functions to filter rows in the current group being evaluated
-                -- by a constraint. One function will filter to include only invoices and the other will
-                -- filter records to only include payments.
-                --
-                -- We look at the meta data which contains which file the record came from. We could equally
-                -- look at a field on the record itself to identify it's type.
-                local invoices = function (record) return record["META.prefix"] == "invoices" end
-                local payments = function (record) return record["META.prefix"] == "payments" end
+          # Custom constraint scripts have access to these aggregate functions which operate on a group of
+          # records being evaluated for a match: -
+          #   sum
+          #   count
+          #   min
+          #   max
+          #   avg
+          - custom:
+              # Here we will match one invoice against one or more payments.
+              script: |
+                  -- We start by creating two functions to filter rows in the current group being evaluated
+                  -- by a constraint. One function will filter to include only invoices and the other will
+                  -- filter records to only include payments.
+                  --
+                  -- We look at the meta data which contains which file the record came from. We could equally
+                  -- look at a field on the record itself to identify it's type.
+                  local invoices = function (record) return record["META.prefix"] == "invoices" end
+                  local payments = function (record) return record["META.prefix"] == "payments" end
 
-                -- count is a function that takes a filter as an argument and counts the number
-                -- of records in the group matching the filter.
-                return count(invoices) == 1
-                    and count(payments) > 0
-        # - custom:
-        #     # This is an example of writing a nets-to-zero constaint manually in Lua script.
-        #     script: |
-        #         -- We start by creating anonymous functions used to filter data in the group of records.
-        #         local invoices = function (_record, meta) return meta["prefix"] == "invoices" end
-        #         local payments = function (_record, meta) return meta["prefix"] == "payments" end
-        # TODO: Can we create a rust filter() fn that would be used like: local invoices = filter(meta["prefix"] == "invoices")
+                  -- count is a function that takes a filter as an argument and counts the number
+                  -- of records in the group matching the filter.
+                  return count(invoices) == 1
+                      and count(payments) > 0
+          # - custom:
+          #     # This is an example of writing a nets-to-zero constaint manually in Lua script.
+          #     script: |
+          #         -- We start by creating anonymous functions used to filter data in the group of records.
+          #         local invoices = function (_record, meta) return meta["prefix"] == "invoices" end
+          #         local payments = function (_record, meta) return meta["prefix"] == "payments" end
+          # TODO: Can we create a rust filter() fn that would be used like: local invoices = filter(meta["prefix"] == "invoices")
 
 
-        # TODO: use tostring(xxx) to debug print a decimal for example.
-        
-        #         -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
-        #         -- the second is a filter to apply to the records in the group.
-        #         local inv_sum = sum("AMOUNT_BASE", invoices)
-        #         local pay_sum = sum("AMOUNT_BASE", payments)
+          # TODO: use tostring(xxx) to debug print a decimal for example.
+          
+          #         -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
+          #         -- the second is a filter to apply to the records in the group.
+          #         local inv_sum = sum("AMOUNT_BASE", invoices)
+          #         local pay_sum = sum("AMOUNT_BASE", payments)
 
-        #         -- count is a function that takes a filter as an argument and counts the number
-        #         -- of records in the group matching the filter.
-        #         local has_records = count(invoices) > 0
-        #             and count(payments) > 0
+          #         -- count is a function that takes a filter as an argument and counts the number
+          #         -- of records in the group matching the filter.
+          #         local has_records = count(invoices) > 0
+          #             and count(payments) > 0
 
-        #         -- Finally, our group matches if it has all types of records and invoices net to zero with
-        #         -- the payments.
-        #         return has_records
-        #             and (math.abs(inv_sum) - math.abs(pay_sum)) == 0
+          #         -- Finally, our group matches if it has all types of records and invoices net to zero with
+          #         -- the payments.
+          #         return has_records
+          #             and (math.abs(inv_sum) - math.abs(pay_sum)) == 0
 

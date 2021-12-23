@@ -15,7 +15,7 @@ use ubyte::ToByteUnit;
 use error::MatcherError;
 use itertools::Itertools;
 use changeset::ChangeSet;
-use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}};
+use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr};
 use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
 // TODO: Flesh-out examples.
@@ -76,9 +76,14 @@ pub struct Context {
 
 impl Context {
     pub fn new(charter: Charter, charter_path: PathBuf, base_dir: String) -> Self {
+        let job_id = match std::env::var("OPENREC_FIXED_JOB_ID") {
+            Ok(job_id) => uuid::Uuid::from_str(&job_id).expect("Test JOB_ID has invalid format"),
+            Err(_) => uuid::Uuid::new_v4(),
+        };
+
         Self {
             started: Instant::now(),
-            job_id: Uuid::new_v4(),
+            job_id,
             charter,
             charter_path,
             base_dir,
@@ -228,15 +233,15 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
 
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
         match inst {
-            Instruction::Project { column, as_type, from, when } => {
+            Instruction::Project { column, as_a, from, when } => {
                 projection_cols.insert(idx, script_cols(from, when.as_ref().map(String::as_ref), &schema));
-                grid.schema_mut().add_projected_column(Column::new(column.into(), None, *as_type))?;
+                grid.schema_mut().add_projected_column(Column::new(column.into(), None, *as_a))?;
             },
-            Instruction::MergeColumns { into, from } => {
+            Instruction::Merge { into, columns } => {
                 if grid.is_empty() {
                     continue;
                 }
-                let data_type = merge_col::validate(from, grid)?;
+                let data_type = merge_col::validate(columns, grid)?;
                 grid.schema_mut().add_merged_column(Column::new(into.into(), None, data_type))?;
             },
             _ => { /* Ignore other instructions. */}
@@ -278,12 +283,12 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
                 eval_ctx = (r_idx, i_idx);
 
                 match inst {
-                    Instruction::Project { column: _, as_type, from, when } => {
+                    Instruction::Project { column: _, as_a, from, when } => {
                         let script_cols = projection_cols.get(&i_idx)
                             .ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
 
                         project_column(
-                            *as_type,
+                            *as_a,
                             from,
                             when,
                             record,
@@ -294,8 +299,8 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
                         record_duration(i_idx, &mut metrics, started.elapsed());
                     },
 
-                    Instruction::MergeColumns { into: _, from } => {
-                        record.merge_col_from(from, accessor)?;
+                    Instruction::Merge { into: _, columns } => {
+                        record.merge_col_from(columns, accessor)?;
                         record_duration(i_idx, &mut metrics, started.elapsed());
                     },
 
@@ -321,7 +326,7 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
 
         match &ctx.charter().instructions()[*idx] {
             Instruction::Project { column, .. } => log::info!("Projecting Column {} took {} ({}/row)", column, blue(&duration), rate),
-            Instruction::MergeColumns { into, .. } => log::info!("Merging Column {} took {} ({}/row)", into, blue(&duration), rate),
+            Instruction::Merge { into, .. } => log::info!("Merging Column {} took {} ({}/row)", into, blue(&duration), rate),
             _ => {},
         }
     }
@@ -363,13 +368,13 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
     for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
         match inst {
             Instruction::Project { .. } => {},
-            Instruction::MergeColumns { .. } => {},
-            Instruction::MatchGroups { group_by, constraints } => {
+            Instruction::Merge { .. } => {},
+            Instruction::Group { by, match_when } => {
                 instructions::match_groups::match_groups(
                     ctx,
                     i_idx,
-                    group_by,
-                    constraints,
+                    by,
+                    match_when,
                     grid,
                     &schema,
                     &mut accessor,

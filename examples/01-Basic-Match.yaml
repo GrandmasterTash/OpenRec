@@ -8,22 +8,28 @@ description: |
 
 # TODO: Document that all waiting files must have a particular file format.
 # TODO: Document that fields are case-sensitive.
-
 version: 1
-file_patterns: ['.*01-invoices\.csv', '.*01-payments\.csv']
 debug: true
-instructions:
-  - merge_columns:
-      from: ['01-invoices.Amount', '01-payments.Amount']
-      into: AMOUNT
-  - merge_columns:
-      from: ['01-invoices.Ref', '01-payments.Ref']
-      into: REF
-  - match_groups:
-      group_by: ['REF']
-      constraints:
-        - nets_to_zero:
-            column: AMOUNT
-            # TODO: Don't use META in first example.
-            lhs: record["META.prefix"] == "01-payments"
-            rhs: record["META.prefix"] == "01-invoices"
+
+
+matching:
+  # TODO: Explain how the pattern works and how it allows unmatched files as well.
+  source_files:
+    - pattern: .*01-invoices.*\.csv
+      field_prefix: INV
+    - pattern: .*01-payments.*\.csv
+      field_prefix: PAY
+  instructions:
+    - merge:
+        columns: ['INV.Amount', 'PAY.Amount']
+        into: AMOUNT
+    - merge:
+        columns: ['INV.Ref', 'PAY.Ref']
+        into: REF
+    - group:
+        by: ['REF']
+        match_when:
+          - nets_to_zero:
+              column: AMOUNT
+              lhs: record["META.prefix"] == "PAY"
+              rhs: record["META.prefix"] == "INV"

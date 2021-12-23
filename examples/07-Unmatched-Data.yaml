@@ -19,20 +19,24 @@ version: 1
 # Note, in-order to re-process un-matched records, the file pattern must allow for files that
 # have the name format yyyymmdd_hhmmssmmm_XXXXXX.unmatched.csv. These files contain previously
 # unmatched data and are moved back into the matching folder during subsequent match jobs.
-file_patterns: ['.*07-invoices.*\.csv', '.*07-payments.*\.csv']
-field_aliases: ['I', 'P']
 debug: true
-instructions:
-  - merge_columns:
-      from: ['I.InvoiceAmount', 'P.PaymentAmount']
-      into: AMOUNT
-  - merge_columns:
-      from: ['I.InvoiceRef', 'P.PaymentRef']
-      into: REF
-  - match_groups:
-      group_by: ['REF']
-      constraints:
-        - nets_to_zero:
-            column: AMOUNT
-            lhs: record["META.prefix"] == "I"
-            rhs: record["META.prefix"] == "P"
+matching:
+  source_files:
+    - pattern: .*07-invoices.*\.csv
+      field_prefix: I
+    - pattern: .*07-payments.*\.csv
+      field_prefix: P
+  instructions:
+    - merge:
+        columns: ['I.InvoiceAmount', 'P.PaymentAmount']
+        into: AMOUNT
+    - merge:
+        columns: ['I.InvoiceRef', 'P.PaymentRef']
+        into: REF
+    - group:
+        by: ['REF']
+        match_when:
+          - nets_to_zero:
+              column: AMOUNT
+              lhs: record["META.prefix"] == "I"
+              rhs: record["META.prefix"] == "P"

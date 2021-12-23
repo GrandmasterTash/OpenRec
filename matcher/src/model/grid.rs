@@ -1,6 +1,5 @@
 use ubyte::ToByteUnit;
-use std::{fs::{DirEntry, File}, time::Instant};
-use rlua::Error as LuaError;
+use std::{fs::File, time::Instant};
 use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, data_accessor::DataAccessor, formatted_duration_rate};
 
 
@@ -73,16 +72,16 @@ impl Grid {
         let mut records = vec!();
         let mut grid_schema = GridSchema::default();
 
-        // Load and index al pending records.
-        for (idx, pattern) in ctx.charter().file_patterns().iter().enumerate() {
-            log::info!("Sourcing data with pattern [{}]", pattern);
+        // Load and index all pending records.
+        for source_file in ctx.charter().source_files().iter() {
+            log::info!("Sourcing data with pattern [{}]", source_file.pattern());
             // TODO: Validate the source path is canonicalised in the rec base.
 
             // Track schema's added for this source instruction - if any do not equal, return a validation error.
             // Because all files of the same record type will need the same schema for any single match run.
             let mut last_schema_idx = None;
 
-            for file in folders::files_in_matching(ctx, pattern)? {
+            for file in folders::files_in_matching(ctx, source_file.pattern())? {
                 let started = Instant::now();
                 log::debug!("Reading file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
 
@@ -93,16 +92,12 @@ impl Grid {
                     .from_path(file.path())
                     .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
 
-                // Build a schema from the file's header rows.
-                let prefix = field_prefix(ctx, &file, idx, pattern)
-                    .map_err(LuaError::external)?;
-
-                let schema = FileSchema::new(prefix, &mut rdr)
+                let schema = FileSchema::new(source_file.field_prefix(), &mut rdr)
                     .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;
 
                 // Use an existing schema from the grid, if there is one, otherwise add this one.
                 let schema_idx = grid_schema.add_file_schema(schema.clone());
-                last_schema_idx = validate_schema(&grid_schema, schema_idx, &last_schema_idx, &schema, pattern)?;
+                last_schema_idx = validate_schema(&grid_schema, schema_idx, &last_schema_idx, &schema, source_file.pattern())?;
 
                 // Register the data file with the grid.
                 let file_idx = grid_schema.add_file(DataFile::new(&file, schema_idx)?);
@@ -200,22 +195,6 @@ impl Grid {
             wtr.flush().expect("Unable to flush the debug file");
         }
     }
-}
-
-
-fn field_prefix(ctx: &Context, file: &DirEntry, pattern_idx: usize, pattern: &str) -> Result<Option<String>, MatcherError> {
-    Ok(match ctx.charter().use_field_prefixes() {
-        true => {
-            match ctx.charter().field_aliases() {
-                Some(aliases) => match aliases.get(pattern_idx) {
-                    Some(alias) => Some(alias.clone()),
-                    None => return Err(MatcherError::CharterValidationError { reason: format!("No alias for file pattern {} idx {}", pattern, pattern_idx)}),
-                },
-                None => Some(folders::entry_shortname(file)),
-            }
-        },
-        false => None,
-    })
 }
 
 // TODO: This seems like it should be part of add_file_schema in GridSchema.....

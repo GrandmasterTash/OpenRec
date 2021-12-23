@@ -19,12 +19,14 @@ r#""TransId","Date","Amount","Type"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: count aggregate test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - custom:
             script: |
               local t1s = function (record) return record["Type"] == "T1" end
@@ -61,12 +63,14 @@ r#""TransId","Date","Amount","Type","IntAmount"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: count aggregate test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - custom:
             script: |
               local t1 = function (record) return record["Type"] == "T1" end
@@ -106,12 +110,14 @@ r#""TransId","Date","Amount","Type","IntAmount"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: count aggregate test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - custom:
             script: |
               local t1 = function (record) return record["Type"] == "T1" end
@@ -151,12 +157,14 @@ r#""TransId","Date","Amount","Type","IntAmount"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: count aggregate test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - custom:
             script: |
               local t1 = function (record) return record["Type"] == "T1" end

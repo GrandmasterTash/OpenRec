@@ -1,4 +1,4 @@
-use crate::common;
+use crate::common::{self, FIXED_JOB_ID};
 use fs_extra::dir::get_dir_content;
 use serde_json::json;
 
@@ -22,12 +22,14 @@ r#""TransId","Date","Amount","Type"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: changeset test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+   - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - nets_to_zero:
             column: Amount
             lhs: record["Type"] == "T1"
@@ -53,12 +55,14 @@ r#""TransId","Date","Amount","Type"
                 "version": 1,
                 "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [ "20211219_082900000_transactions.csv" ]
         },
         {
             "groups": [ [[0,3],[0,4]] ]
         },
         {
+            "changesets": [],
             "unmatched": [ { "file": "20211219_082900000_transactions.unmatched.csv", "rows": 2 } ]
         }
     ]));
@@ -97,6 +101,7 @@ r#"    [
                 "version": 1,
                 "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [ "20211219_082900000_transactions.unmatched.csv" ]
         },
         {
@@ -167,12 +172,14 @@ r#"    [
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: changeset test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - nets_to_zero:
             column: Amount
             lhs: record["Type"] == "T1"
@@ -193,6 +200,7 @@ instructions:
                 "version": 1,
                 "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [
                 "20211218_082900000_transactions.unmatched.csv",
                 "20211219_082900000_transactions.csv"
@@ -231,12 +239,14 @@ r#""TransId","Date","Amount","Type"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: changeset test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - nets_to_zero:
             column: Amount
             lhs: record["Type"] == "T1"
@@ -306,6 +316,7 @@ r#"    [
                 "version": 1,
                 "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [ "20211219_082900000_transactions.csv" ]
         },
         {
@@ -347,12 +358,14 @@ r#""TransId","Date","Amount","Type"
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: changeset test
 version: 1
-file_patterns: ['.*.csv']
-use_field_prefixes: false
-instructions:
-    - match_groups:
-        group_by: ['Date']
-        constraints:
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
         - nets_to_zero:
             column: Amount
             lhs: record["Type"] == "T1"
@@ -395,6 +408,7 @@ r#"    [
                 "version": 1,
                 "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
             },
+            "job_id": FIXED_JOB_ID,
             "files": [ "20211219_082900000_transactions.unmatched.csv" ]
         },
         {

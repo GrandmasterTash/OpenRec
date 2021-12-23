@@ -20,42 +20,48 @@ description: |
   The above is a fairly extreme example, if you're impatient you can scale back the number of
   rows and/or columnes to create smaller datasets.
 version: 1637208553000
-file_patterns: ['.*09-BIG-invoices\.csv', '.*09-BIG-payments\.csv', '.*09-BIG-receipts\.csv']
-field_aliases: ['INV', 'PAY', 'REC']
-# TODO: prefix_aliases: ['INV', 'PAY', 'REC']
 # Ensure debug is false - there is significant overhead when true as the matcher will be writing all
 # data out to multiple files after each instruction if it's set to true.
 debug: false
-instructions:
-  - project:
-      column: PAYMENT_AMOUNT_BASE
-      as_type: DECIMAL
-      from: record["PAY.Amount"] * record["PAY.FXRate"]
-      when: record["META.prefix"] == "PAY"
-  - project:
-      column: RECEIPT_AMOUNT_BASE
-      as_type: DECIMAL
-      from: record["REC.Amount"] * record["REC.FXRate"]
-      when: record["META.prefix"] == "REC"
-  - project:
-      column: TOTAL_AMOUNT_BASE
-      as_type: DECIMAL
-      from: record["INV.TotalAmount"] * record["INV.FXRate"]
-      when: record["META.prefix"] == "INV"
-  - merge_columns:
-      from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
-      into: AMOUNT_BASE
-  - merge_columns:
-      from: ['INV.Reference', 'PAY.Reference', 'REC.Reference']
-      into: REFERENCE
-  - match_groups:
-      group_by: ['REFERENCE']
-      constraints:
-        - nets_to_zero:
-            column: AMOUNT_BASE
-            lhs: record["META.prefix"] == "PAY"
-            rhs: record["META.prefix"] == "INV"
-        - nets_to_zero:
-            column: AMOUNT_BASE
-            lhs: record["META.prefix"] == "REC"
-            rhs: record["META.prefix"] == "INV"
+
+matching:
+  source_files:
+    - pattern: .*09-BIG-invoices\.csv
+      field_prefix: INV
+    - pattern: .*09-BIG-payments\.csv
+      field_prefix: PAY
+    - pattern: .*09-BIG-receipts\.csv
+      field_prefix: REC
+  instructions:
+    - project:
+        column: PAYMENT_AMOUNT_BASE
+        as_a: DECIMAL
+        from: record["PAY.Amount"] * record["PAY.FXRate"]
+        when: record["META.prefix"] == "PAY"
+    - project:
+        column: RECEIPT_AMOUNT_BASE
+        as_a: DECIMAL
+        from: record["REC.Amount"] * record["REC.FXRate"]
+        when: record["META.prefix"] == "REC"
+    - project:
+        column: TOTAL_AMOUNT_BASE
+        as_a: DECIMAL
+        from: record["INV.TotalAmount"] * record["INV.FXRate"]
+        when: record["META.prefix"] == "INV"
+    - merge:
+        columns: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
+        into: AMOUNT_BASE
+    - merge:
+        columns: ['INV.Reference', 'PAY.Reference', 'REC.Reference']
+        into: REFERENCE
+    - group:
+        by: ['REFERENCE']
+        match_when:
+          - nets_to_zero:
+              column: AMOUNT_BASE
+              lhs: record["META.prefix"] == "PAY"
+              rhs: record["META.prefix"] == "INV"
+          - nets_to_zero:
+              column: AMOUNT_BASE
+              lhs: record["META.prefix"] == "REC"
+              rhs: record["META.prefix"] == "INV"

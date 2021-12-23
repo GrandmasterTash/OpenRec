@@ -246,7 +246,7 @@ impl FileSchema {
     /// Build a hashmap of column header to parsed data-types. The data types should be on the first
     /// csv row after the headers.
     ///
-    pub fn new(prefix: Option<String>, rdr: &mut csv::Reader<fs::File>) -> Result<Self, MatcherError> {
+    pub fn new(prefix: &Option<String>, rdr: &mut csv::Reader<fs::File>) -> Result<Self, MatcherError> {
         let mut type_record = csv::StringRecord::new();
 
         if let Err(source) = rdr.read_record(&mut type_record) {
@@ -273,7 +273,7 @@ impl FileSchema {
             columns.push(Column::new(hdr.into(), prefix.clone(), data_type));
         }
 
-        Ok(Self { prefix, columns })
+        Ok(Self { prefix: prefix.clone(), columns })
     }
 
     pub fn columns(&self) -> &[Column] {

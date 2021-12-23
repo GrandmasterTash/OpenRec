@@ -32,7 +32,12 @@ impl MatchedHandler {
                 "version": ctx.charter().version(),
                 "file": ctx.charter_path()
             },
-            "files": grid.schema().files().iter().map(|f|f.filename()).collect::<Vec<&str>>()
+            "files": grid.schema()
+                .files()
+                .iter()
+                .sorted_by(|f1, f2| Ord::cmp(&f1.filename(), &f2.filename()))
+                .map(|f|f.filename())
+                .collect::<Vec<&str>>()
         });
 
         if let Err(source) = serde_json::to_writer_pretty(&mut writer, &job_header) {
@@ -106,6 +111,7 @@ fn summerise_unmatched(unmatched: &UnmatchedHandler) -> Vec<Value> {
     unmatched.unmatched_files()
         .iter()
         .filter(|uf| uf.rows() > 0)
+        .sorted_by(|uf1, uf2| Ord::cmp(&uf1.filename(), &uf2.filename()))
         .map(|uf| json!({
             "file": uf.filename(),
             "rows": uf.rows()

@@ -8,43 +8,48 @@ description: |
   Each record contains it's own currency amount along with an FXRate column denoting the exchange
   rate to conert that to a common currency.
 version: 1
-file_patterns: ['.*04-invoices.*\.csv', '.*04-payments.*\.csv', '.*04-receipts.*\.csv']
-field_aliases: ['INV', 'PAY', 'REC']
-# TODO: Consider merging above two lines into array of objects { "pattern": ".*04-invoices\.csv", alias: "INV" }
-# TODO: Automerge same names and datatypes with ability to opt-out of that feature.
 debug: false
-instructions:
-  - project:
-      column: PAYMENT_AMOUNT_BASE
-      as_type: Decimal
-      from: record["PAY.Amount"] * record["PAY.FXRate"]
-      when: record["META.prefix"] == "PAY"
-  - project:
-      column: RECEIPT_AMOUNT_BASE
-      as_type: Decimal
-      from: record["REC.Amount"] * record["REC.FXRate"]
-      when: record["META.prefix"] == "REC"
-  - merge_columns:
-      from: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'INV.TotalAmount']
-      into: AMOUNT_BASE
-  - merge_columns:
-      from: ['INV.SettlementDate', 'PAY.PaymentDate', 'REC.ReceiptDate']
-      into: SETTLEMENT_DATE
-  - match_groups:
-      group_by: ['SETTLEMENT_DATE']
-      constraints:
-        # Here we have two netting constraints and both must pass for the group to be valid.
-        # First, we ensure all the payments net against the invoice(s) in the group.
-        - nets_with_tolerance:
-            column: AMOUNT_BASE
-            lhs: record["META.prefix"] == "PAY"
-            rhs: record["META.prefix"] == "INV"
-            tol_type: Amount
-            tolerance: 1.00
-        # Then we ensure all the receipts net with all the invoices in the group.
-        - nets_with_tolerance:
-            column: AMOUNT_BASE
-            lhs: record["META.prefix"] == "REC"
-            rhs: record["META.prefix"] == "INV"
-            tol_type: Amount
-            tolerance: 1.00
+
+matching:
+  source_files:
+    - pattern: .*04-invoices.*\.csv
+      field_prefix: INV
+    - pattern: .*04-payments.*\.csv
+      field_prefix: PAY
+    - pattern: .*04-receipts.*\.csv
+      field_prefix: REC
+  instructions:
+    - project:
+        column: PAYMENT_AMOUNT_BASE
+        as_a: Decimal
+        from: record["PAY.Amount"] * record["PAY.FXRate"]
+        when: record["META.prefix"] == "PAY"
+    - project:
+        column: RECEIPT_AMOUNT_BASE
+        as_a: Decimal
+        from: record["REC.Amount"] * record["REC.FXRate"]
+        when: record["META.prefix"] == "REC"
+    - merge:
+        columns: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'INV.TotalAmount']
+        into: AMOUNT_BASE
+    - merge:
+        columns: ['INV.SettlementDate', 'PAY.PaymentDate', 'REC.ReceiptDate']
+        into: SETTLEMENT_DATE
+    - group:
+        by: ['SETTLEMENT_DATE']
+        match_when:
+          # Here we have two netting constraints and both must pass for the group to be valid.
+          # First, we ensure all the payments net against the invoice(s) in the group.
+          - nets_with_tolerance:
+              column: AMOUNT_BASE
+              lhs: record["META.prefix"] == "PAY"
+              rhs: record["META.prefix"] == "INV"
+              tol_type: Amount
+              tolerance: 1.00
+          # Then we ensure all the receipts net with all the invoices in the group.
+          - nets_with_tolerance:
+              column: AMOUNT_BASE
+              lhs: record["META.prefix"] == "REC"
+              rhs: record["META.prefix"] == "INV"
+              tol_type: Amount
+              tolerance: 1.00
