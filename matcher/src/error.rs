@@ -1,5 +1,5 @@
 use thiserror::Error;
-use crate::model::data_type::DataType;
+use core::data_type::DataType;
 
 #[derive(Error, Debug)]
 pub enum MatcherError {
@@ -148,8 +148,8 @@ pub enum MatcherError {
     #[error("Constraint {index} evaluation failed")]
     ConstraintError { index: usize, source: rlua::Error },
 
-    #[error("Chart configuration is invalid - {reason}")]
-    CharterValidationError { reason: String },
+    #[error("Charter failed to load")]
+    CharterLoadError ( #[from] core::error::Error ),
 
     #[error("Cannot create a derived file for {path}")]
     FileCantBeDerived { path: String },

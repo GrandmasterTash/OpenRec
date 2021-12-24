@@ -15,8 +15,9 @@ use ubyte::ToByteUnit;
 use error::MatcherError;
 use itertools::Itertools;
 use changeset::ChangeSet;
+use core::charter::{Charter, Instruction};
 use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr};
-use crate::{model::{charter::{Charter, Instruction}, grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
+use crate::{model::{grid::Grid, schema::Column}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler, data_accessor::DataAccessor};
 
 // TODO: Flesh-out examples.
 // TODO: Check code coverage. Need error tests.
@@ -290,7 +291,7 @@ fn derive_data(ctx: &Context, grid: &mut Grid, accessor: &mut DataAccessor, proj
                         project_column(
                             *as_a,
                             from,
-                            when,
+                            &when,
                             record,
                             accessor,
                             script_cols,

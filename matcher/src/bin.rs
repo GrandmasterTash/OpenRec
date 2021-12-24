@@ -5,7 +5,7 @@ pub fn main() -> Result<()> {
 
     let options = App::new("matcher")
         .version("1.0")
-        .about("TODO: Some info here")
+        .about("TODO: Some info here") // TODO: Cmdline help
         .arg(Arg::with_name("CHARTER")
             .help("The charter yaml file")
             .required(true)

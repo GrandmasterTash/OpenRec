@@ -87,10 +87,6 @@ impl DataAccessor {
         self.schema = schema;
     }
 
-    pub fn data_readers(&mut self) -> &mut CsvReaders {
-        &mut self.data_readers
-    }
-
     pub fn derived_accessor(&mut self) -> &mut DerivedAccessor {
         &mut self.derived_accessor
     }

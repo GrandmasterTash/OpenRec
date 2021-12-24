@@ -1,7 +1,8 @@
 use itertools::Itertools;
 use super::datafile::DataFile;
+use core::data_type::DataType;
 use std::{collections::HashMap, fs};
-use crate::{model::{data_type::DataType, record::Record}, error::MatcherError};
+use crate::{model::record::Record, error::MatcherError};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Column {

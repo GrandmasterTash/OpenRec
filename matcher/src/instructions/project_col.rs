@@ -1,5 +1,6 @@
 use itertools::Itertools;
-use crate::{error::MatcherError, model::{data_type::DataType, schema::{Column, GridSchema}, record::Record}, lua, data_accessor::DataAccessor};
+use core::data_type::DataType;
+use crate::{error::MatcherError, model::{schema::{Column, GridSchema}, record::Record}, lua, data_accessor::DataAccessor};
 
 pub fn project_column(
     data_type: DataType,

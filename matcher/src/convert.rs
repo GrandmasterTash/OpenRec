@@ -1,8 +1,9 @@
 use uuid::Uuid;
 use bytes::Bytes;
 use rust_decimal::Decimal;
+use crate::error::MatcherError;
+use core::data_type::{DataType, TRUE, FALSE};
 use chrono::{DateTime, Utc, TimeZone, SecondsFormat};
-use crate::{model::data_type::{TRUE, DataType, FALSE}, error::MatcherError};
 
 fn unparseable_csv_err(data_type: DataType, bytes: Bytes) -> MatcherError {
     MatcherError::UnparseableCsvField { data_type: data_type.as_str().into(), bytes: format!("{:?}", bytes) }

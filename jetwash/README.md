@@ -39,19 +39,22 @@ jetwash:
     # Map columns - only specify columns that are altered, any columns not specified are imported as-is.
     column_mappings:
        # If the column exists then the mapping script is given access to the 'value' of that column for each row.
-     - column: "Column1"
+     - map: "Column1"
        # Convert whatever the source value is to upper case.
        mapping: value:ucase()
-     - column: "Column2"
+       as_a: String
+     - map: "Column2"
        # Trip white space from the start and end of the value - trim is a provided helper function.
        mapping: trim(value)
+       as_a: String
        # If a named column doesn't exist in the source file (or add_header_row) it is appended to the right of existing columns as a new column - these kind of mappings will be given access to the record[] Lua table.
-     - column: "NewColumn_FXRate"
+     - map: "NewColumn_FXRate"
        # Find a value from another CSV file in the 'lookups' folder. In the example below, we are getting the exchange
        # rate for each row, using the Currency column's value. For each value, we get the value in the FXRate column
        # from the file usd_fxrates.csv. i.e. we get the rate to convert to USD and we create a new column called NewColumn_FXRate.
        # (in.csv, get_csv_col, where_record_col, is_value)
        mapping: lookup("usd_fxrates.csv", "FXRate", "Currency", record["Currency"]:ucase())
+       as_a: Decimal
     # Optional key - when specified, if new records also exist in the unmatched folder (matching the record by this composite key) then the new record is dropped and a changeset is generated with any deltas to apply to the existing record to make it look like this record.
     # If multiple unmatched record are found an error occurs as the composite key is not specific enough.
     changeset_composite_keys: [ "Column1", "Column2" ]

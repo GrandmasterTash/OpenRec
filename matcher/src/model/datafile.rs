@@ -79,20 +79,12 @@ impl DataFile {
         &self.path
     }
 
-    pub fn set_path(&mut self, path: &str) {
-        self.path = path.to_string();
-    }
-
     pub fn derived_path(&self) -> &str {
         &self.derived_path
     }
 
     pub fn derived_filename(&self) -> &str {
         &self.derived_filename
-    }
-
-    pub fn original_filename(&self) -> &str {
-        &self.original_filename
     }
 
     pub fn modifying_path(&self) -> &str {

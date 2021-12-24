@@ -1,48 +1,47 @@
 use rlua::Context;
 use rust_decimal::Decimal;
-use crate::{model::{charter::{Constraint, ToleranceType}, data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua, data_accessor::DataAccessor};
+use core::{data_type::DataType, charter::{Constraint, ToleranceType}};
+use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua, data_accessor::DataAccessor};
 
-impl Constraint {
-    pub fn passes(
-        &self,
-        records: &[&Record],
-        schema: &GridSchema,
-        accessor: &mut DataAccessor,
-        lua_ctx: &Context) -> Result<bool, MatcherError> {
+pub fn passes(
+    constraint: &Constraint,
+    records: &[&Record],
+    schema: &GridSchema,
+    accessor: &mut DataAccessor,
+    lua_ctx: &Context) -> Result<bool, MatcherError> {
 
-        match self {
-            // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
-            Constraint::NetsToZero { column, lhs, rhs } => {
-                let sum_checker = |lhs_sum: Decimal, rhs_sum: Decimal| {
-                    let result = (lhs_sum - rhs_sum).abs() == Decimal::ZERO;
-                    log::trace!("(lhs_sum - rhs_sum).abs() < 0 : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, Decimal::ZERO, result);
-                    result
-                };
-                net(column, lhs, rhs, sum_checker, records, schema, accessor, lua_ctx)
-            },
+    match constraint {
+        // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
+        Constraint::NetsToZero { column, lhs, rhs } => {
+            let sum_checker = |lhs_sum: Decimal, rhs_sum: Decimal| {
+                let result = (lhs_sum - rhs_sum).abs() == Decimal::ZERO;
+                log::trace!("(lhs_sum - rhs_sum).abs() < 0 : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, Decimal::ZERO, result);
+                result
+            };
+            net(column, lhs, rhs, sum_checker, records, schema, accessor, lua_ctx)
+        },
 
-            // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
-            Constraint::NetsWithTolerance {column, lhs, rhs, tol_type, tolerance } => {
-                let sum_checker: Box<dyn Fn(Decimal, Decimal) -> bool> = match tol_type {
-                    ToleranceType::Amount => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
-                            let result = (lhs_sum - rhs_sum).abs() < *tolerance;
-                            log::trace!("(lhs_sum - rhs_sum).abs() < tolerance : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, *tolerance, result);
-                            result
-                        }),
+        // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
+        Constraint::NetsWithTolerance {column, lhs, rhs, tol_type, tolerance } => {
+            let sum_checker: Box<dyn Fn(Decimal, Decimal) -> bool> = match tol_type {
+                ToleranceType::Amount => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
+                        let result = (lhs_sum - rhs_sum).abs() < *tolerance;
+                        log::trace!("(lhs_sum - rhs_sum).abs() < tolerance : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, *tolerance, result);
+                        result
+                    }),
 
-                    ToleranceType::Percent => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
-                            let percent_tol = lhs_sum / (Decimal::ONE_HUNDRED / *tolerance);
-                            let result = (lhs_sum - rhs_sum).abs() < percent_tol;
-                            log::trace!("(lhs_sum - rhs_sum).abs() < percent_tol : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, percent_tol, result);
-                            result
-                        }),
-                };
+                ToleranceType::Percent => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
+                        let percent_tol = lhs_sum / (Decimal::ONE_HUNDRED / *tolerance);
+                        let result = (lhs_sum - rhs_sum).abs() < percent_tol;
+                        log::trace!("(lhs_sum - rhs_sum).abs() < percent_tol : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, percent_tol, result);
+                        result
+                    }),
+            };
 
-                net(column, lhs, rhs, sum_checker, records, schema, accessor, lua_ctx)
-            },
+            net(column, lhs, rhs, sum_checker, records, schema, accessor, lua_ctx)
+        },
 
-            Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, accessor, lua_ctx),
-        }
+        Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, accessor, lua_ctx),
     }
 }
 

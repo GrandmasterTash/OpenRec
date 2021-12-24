@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::io::BufReader;
 use rust_decimal::Decimal;
-use crate::{model::data_type::DataType, error::MatcherError};
+use crate::{data_type::DataType, error::Error};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,6 +66,10 @@ impl Charter {
         &self.name
     }
 
+    pub fn description(&self) -> &Option<String> {
+        &self.description
+    }
+
     pub fn debug(&self) -> bool {
         self.debug.unwrap_or(false)
     }
@@ -89,19 +93,19 @@ impl Charter {
         }
     }
 
-    pub fn load(path: &str) -> Result<Self, MatcherError> {
+    pub fn load(path: &str) -> Result<Self, Error> {
         let rdr = BufReader::new(std::fs::File::open(path)
-            .map_err(|source| MatcherError::CharterFileNotFound { path: path.into(), source })?);
+            .map_err(|source| Error::CharterFileNotFound { path: path.into(), source })?);
 
 
         let charter: Self = serde_yaml::from_reader(rdr)
-            .map_err(|source| MatcherError::InvalidCharter { path: path.into(), source })?;
+            .map_err(|source| Error::InvalidCharter { path: path.into(), source })?;
 
         // If field_aliases are defined, there should be one for every file_pattern.
         let count_aliases = charter.source_files().iter().filter(|df| df.field_prefix.is_some() ).count();
         if count_aliases > 0 {
             if count_aliases != charter.source_files().len() {
-                return Err(MatcherError::CharterValidationError { reason: "If field_aliases are defined, there must be one for each defined file_pattern".into() })
+                return Err(Error::CharterValidationError { reason: "If field_aliases are defined, there must be one for each defined file_pattern".into() })
             }
         }
 

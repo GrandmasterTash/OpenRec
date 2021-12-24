@@ -1,4 +1,5 @@
-use crate::{error::MatcherError, model::{data_type::DataType, grid::Grid}};
+use core::data_type::DataType;
+use crate::{error::MatcherError, model::grid::Grid};
 
 ///
 /// Ensure each source column exists in the grid and has the same datatype.

@@ -1,8 +1,9 @@
 use regex::Regex;
 use lazy_static::lazy_static;
+use core::data_type::DataType;
 use rlua::{Context, Table, Number, FromLuaMulti};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
-use crate::{model::{data_type::DataType, record::Record, schema::{Column, GridSchema}}, error::MatcherError, data_accessor::DataAccessor, folders};
+use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, data_accessor::DataAccessor, folders};
 
 lazy_static! {
     static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();

@@ -2,7 +2,7 @@ use uuid::Uuid;
 use bytes::Bytes;
 use std::cell::Cell;
 use rust_decimal::Decimal;
-use super::data_type::DataType;
+use core::data_type::DataType;
 use csv::{Position, ByteRecord};
 use crate::{model::schema::GridSchema, error::MatcherError, convert, data_accessor::DataAccessor};
 

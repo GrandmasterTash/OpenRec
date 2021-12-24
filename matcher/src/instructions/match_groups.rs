@@ -1,9 +1,12 @@
-use lazy_static::__Deref;
 use rlua::Context;
+use lazy_static::__Deref;
 use itertools::Itertools;
+use core::charter::Constraint;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}};
-use crate::{error::MatcherError, formatted_duration_rate, model::{charter::Constraint, grid::Grid, record::Record, schema::GridSchema}, matched::MatchedHandler, blue, lua, data_accessor::DataAccessor};
+use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, matched::MatchedHandler, blue, lua, data_accessor::DataAccessor};
+
+use super::constraints::passes;
 
 ///
 /// Bring groups of records together using the columns specified.
@@ -116,7 +119,7 @@ fn is_match(
     let start = Instant::now();
 
     for (_index, constraint) in constraints.iter().enumerate() {
-        if !constraint.passes(group, schema, accessor, lua_ctx)? {
+        if !passes(constraint, group, schema, accessor, lua_ctx)? {
             failed.push(constraint);
         }
     }
