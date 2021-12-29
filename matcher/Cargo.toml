@@ -35,9 +35,9 @@ lazy_static = "1.4.0"
 chrono = { version = "0.4.19", features = ["serde"] }
 ubyte = "0.10.1"
 rlua = "0.18.0"
-ansi_term = "0.12"
+#ansi_term = "0.12"
 rust_decimal = "1.17.0"
-humantime = "2.1.0"
+#humantime = "2.1.0"
 bytes = "1.1.0"
 itertools = "0.10.1"
 serde = { version = "1.0.130", features = ["derive"] }

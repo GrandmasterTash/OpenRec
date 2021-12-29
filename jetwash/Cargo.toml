@@ -3,5 +3,33 @@ name = "jetwash"
 version = "0.1.0"
 edition = "2018"
 
+[lib]
+name = "jetwash"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "jetwash"
+path = "src/bin.rs"
+test = false
+
+[[test]]
+name = "integration"
+path = "tests/mod.rs"
+harness = true
+
 [dependencies]
 core = { path = "../core" }
+log = "0.4.14"
+env_logger = "0.9.0"
+dotenv = "0.15.0"
+anyhow = "1.0"
+thiserror = "1.0.30"
+csv = "1.1.6"
+uuid = { version = "0.8.2", features = ["v4", "serde"] }
+chrono = { version = "0.4.19", features = ["serde"] }
+clap = "2.33.3"
+regex = "1.5.4"
+ubyte = "0.10.1"
+lazy_static = "1.4.0"
+itertools = "0.10.1"

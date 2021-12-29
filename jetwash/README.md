@@ -20,7 +20,7 @@ A data scrubbing and preparation component used to convert bespoke csv files int
 - Jetwash config as part of charter.
 
 Happy path flow: -
-INBOX          ARCHIVE       WAITING
+INBOX          ORIGINAL       WAITING
 Wibble                                                                    <<<< External system is writing the data file.
 
 Wibble.ready                                                              <<<< External system renames file to indicate writing is complete.
@@ -36,8 +36,22 @@ jetwash:
   - file_pattern: '^Wibble$'
     # Optionally add a header row if the source file doesn't have headers.
     add_header_row: [ "Column1", "Column2" ]
+
+    # TODO: Debating if the mappings aren't just replicating project logic already present. NO THEY ARE NOT
+    # e.g. 201201 -> might actually mean 1st dec 2020. Important to be able to have some helper fns in Lua to constust a date from this. i.e. date('20' .. yr, mnth, day) where yr mnth day have been parsed from above.
+    # TODO: Add a trim, and lookup fn to projections....
+
     # Map columns - only specify columns that are altered, any columns not specified are imported as-is.
     column_mappings:
+       # Take a value like "28/5/2020" and turn into a date.
+     - map: "Date1"
+       mapping: ymd("(.*)/(.*)/(.*)")
+       as_a: Datetime
+
+       # Take a value like "28/5/2020 12:30a" and turn into a datetime.
+     - map: "Date2"
+       mapping: ymd_hms("(.*)/(.*)/(.*) (.*):(.*)a")
+       as_a: Datetime
        # If the column exists then the mapping script is given access to the 'value' of that column for each row.
      - map: "Column1"
        # Convert whatever the source value is to upper case.

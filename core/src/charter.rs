@@ -11,33 +11,36 @@ pub struct Charter {
     version: u64, // Epoch millis at UTC.
     debug: Option<bool>,
     matching: Matching,
+    jetwash: Option<Jetwash>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Matching {
-    source_files: Vec<SourceFile>,
+    source_files: Vec<MatchingSourceFile>,
     use_field_prefixes: Option<bool>,
     instructions: Option<Vec<Instruction>>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SourceFile {
+#[serde(deny_unknown_fields, rename = "SourceFile")]
+pub struct MatchingSourceFile {
     pattern: String,
     field_prefix: Option<String>
 }
 
-impl SourceFile {
-    pub fn pattern(&self) -> &str {
-        &self.pattern
-    }
-
-    pub fn field_prefix(&self) -> &Option<String> {
-        &self.field_prefix
-    }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Jetwash {
+    source_files: Vec<JetwashSourceFile>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename = "SourceFile")]
+pub struct JetwashSourceFile {
+    pattern: String,
+    headers: Option<Vec<String>>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
@@ -61,6 +64,32 @@ pub enum Constraint {
     Custom { script: String, fields: Option<Vec<String>> }
 }
 
+impl Jetwash {
+    pub fn source_files(&self) -> &[JetwashSourceFile] {
+        &self.source_files
+    }
+}
+
+impl JetwashSourceFile {
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    pub fn headers(&self) -> &Option<Vec<String>> {
+        &self.headers
+    }
+}
+
+impl MatchingSourceFile {
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    pub fn field_prefix(&self) -> &Option<String> {
+        &self.field_prefix
+    }
+}
+
 impl Charter {
     pub fn name(&self) -> &str {
         &self.name
@@ -78,7 +107,7 @@ impl Charter {
         self.version
     }
 
-    pub fn source_files(&self) -> &[SourceFile] {
+    pub fn source_files(&self) -> &[MatchingSourceFile] {
         &self.matching.source_files
     }
 
@@ -91,6 +120,10 @@ impl Charter {
             Some(instructions) => &instructions,
             None => &[],
         }
+    }
+
+    pub fn jetwash(&self) -> &Option<Jetwash> {
+        &self.jetwash
     }
 
     pub fn load(path: &str) -> Result<Self, Error> {
