@@ -65,6 +65,13 @@ pub fn analyse_types(data_types: &mut [DataType], csv_record: &csv::ByteRecord) 
 		}
 	}
 
+	// Convert Unknowns to strings.
+	for col_idx in 0..data_types.len() {
+		if data_types[col_idx] == DataType::Unknown {
+			data_types[col_idx] = DataType::String;
+		}
+	}
+
 	Ok(())
 }
 

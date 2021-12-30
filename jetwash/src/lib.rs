@@ -2,19 +2,31 @@ mod analyser;
 mod error;
 mod folders;
 
-use rlua::FromLuaMulti;
+use regex::Regex;
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
+use rlua::FromLuaMulti;
 use error::JetwashError;
 use itertools::Itertools;
+use chrono::{Utc, TimeZone};
+use lazy_static::lazy_static;
+use bytes::{Bytes, BytesMut, BufMut};
 use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
 use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType};
 
+// TODO: Append a uuid column to each record.
+// TODO: Changeset generation. Suggest this is a new component.
 
-// TODO: Process instructions to map columns.
-// TODO: Changeset generation.
+lazy_static! {
+    static ref DATES: Vec<Regex> = vec!(
+        Regex::new(r"^(\d{1,4})-(\d{1,4})-(\d{1,4})$").unwrap(),   // d-m-y
+        Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").unwrap(), // d/m/y
+        Regex::new(r"^(\d{1,4})\\(\d{1,4})\\(\d{1,4})$").unwrap(), // d\m\y
+        Regex::new(r"^(\d{1,4})\W(\d{1,4})\W(\d{1,4})$").unwrap(), // d m y
+    );
+}
 
 ///
 /// Created for each match job. Used to pass the main top-level job 'things' around.
@@ -121,6 +133,8 @@ pub fn run_charter(charter_path: &str, base_dir: &str) -> Result<(), JetwashErro
 
         // Create sanitised copies of the original files for celerity. Mapping any columns with mapping config.
         for file in results.keys() {
+            // TODO: This for loop block needs to go in a fn....
+
             let result = results.get(file).expect(&format!("Result for {:?} was not found", file));
             let new_file = folders::new_waiting_file(&ctx, file);
             let mut reader = csv_reader(file, result.source_file())?;
@@ -196,35 +210,112 @@ fn transform_record(
 
             for (idx, header) in header_record.iter().enumerate() {
                 let header = String::from_utf8_lossy(header);
-                let original = record.get(idx).unwrap(); // TODO: Don't unwrap.
 
-                // Provide the original value to the Lua script as a string variable called 'value'.
-                let value = String::from_utf8_lossy(original).to_string();
-                lua_ctx.globals().set("value", value.clone())?;
+                // Get the record field data into a Bytes snapshot to avoid lifetime issues.
+                let mut original = BytesMut::new();
+                original.put(record.get(idx).expect("No data"));
+                let original = original.freeze();
 
-                // If there's a mapping perform it now.
-                match mappings.iter().find(|m| m.column() == header) {
+                // If there's a mapping perform it now - otherwise just copy the source record value.
+                let new_value = match mappings.iter().find(|m| m.column() == header) {
                     Some(mapping) => {
-                        // Perform some Lua to evaluate the mapped value to push into the new record.
-                        let mapped: String = eval(lua_ctx, mapping.from())?;
+                        let new_value = map_field(lua_ctx, mapping, original.clone())?;
 
-                        log::info!("Mapping row {row}, column {column} from [{from}] to [{to}]",
+                        log::trace!("Mapping row {row}, column {column} from [{from}] to [{to}]",
                             column = header,
                             row = record.position().expect("no row position").line(),
-                            from = value,
-                            to = mapped);
+                            from = String::from_utf8_lossy(&original),
+                            to = String::from_utf8_lossy(&new_value.to_vec()));
 
-                        new_record.push_field(mapped.as_bytes())
+                        new_value
                     },
-                    None => new_record.push_field(original), // Otherwise just copy the source record value.
-                }
+                    None => original.clone(),
+                };
 
+                new_record.push_field(&new_value);
             }
 
             Ok(new_record)
         },
         None => Ok(record),
     }
+}
+
+///
+/// Perform a column mapping on the value specified.
+///
+/// Mappings could be raw Lua script or one of a preset help mappings, trim, dmy, etc.
+///
+fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Bytes) -> Result<Bytes, JetwashError> {
+    // Provide the original value to the Lua script as a string variable called 'value'.
+    let value = String::from_utf8_lossy(&original).to_string();
+
+    let mapped: String = match mapping {
+        ColumnMapping::Map { from, .. } => {
+            // Perform some Lua to evaluate the mapped value to push into the new record.
+            lua_ctx.globals().set("value", value.clone())?;
+            eval(lua_ctx, from)?
+        },
+
+        ColumnMapping::Dmy( _column ) => {
+            // If there's a value, try to parse as d/m/y, then d-m-y, then d\m\y, then d m y.
+            match date_captures(&value) {
+                Some(captures) => {
+                    let dt = Utc.ymd(captures.2 as i32, captures.1, captures.0).and_hms_milli(0, 0, 0, 0);
+                    dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                },
+                None => value,
+            }
+        },
+
+        ColumnMapping::Mdy( _column ) => {
+            // If there's a value, try to parse as m/d/y, then m-d-y, then m\d\y, then m d y.
+            match date_captures(&value) {
+                Some(captures) => {
+                    let dt = Utc.ymd(captures.2 as i32, captures.0, captures.1).and_hms_milli(0, 0, 0, 0);
+                    dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                },
+                None => value,
+            }
+        },
+
+        ColumnMapping::Ymd( _column ) => {
+            // If there's a value, try to parse as y/m/d, then y-m-d, then y/m/d, then y m d.
+            match date_captures(&value) {
+                Some(captures) => {
+                    let dt = Utc.ymd(captures.0 as i32, captures.1, captures.0).and_hms_milli(0, 0, 0, 0);
+                    dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                },
+                None => value,
+            }
+        },
+
+        ColumnMapping::Trim( _column ) => value.trim().to_string(),
+    };
+
+    Ok(mapped.into())
+}
+
+///
+/// Iterate the date pattern combinations and if we get a match, return the three component/captures
+///
+fn date_captures(value: &str) -> Option<(u32, u32, u32)> {
+    for pattern in &*DATES {
+        match pattern.captures(&value) {
+            Some(captures) if captures.len() == 4 => {
+                if let Ok(n1) = captures.get(1).expect("capture 1 missing").as_str().parse::<u32>() {
+                    if let Ok(n2) = captures.get(2).expect("capture 2 missing").as_str().parse::<u32>() {
+                        if let Ok(n3) = captures.get(3).expect("capture 3 missing").as_str().parse::<u32>() {
+                            return Some((n1, n2, n3))
+                        }
+                    }
+                }
+            },
+            Some(_capture) => {},
+            None => {},
+        }
+    }
+    None
 }
 
 ///
@@ -379,7 +470,15 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
             let header = String::from_utf8_lossy(hdr).to_string();
 
             let mapped_type = match source_file.column_mappings() {
-                Some(mappings) => mappings.iter().find(|mapping| mapping.column() == header).map(ColumnMapping::as_a),
+                Some(mappings) => mappings.iter().find(|mapping| mapping.column() == header).map(|cm| {
+                    match cm {
+                        ColumnMapping::Map { as_a, .. } => *as_a,
+                        ColumnMapping::Dmy { .. } => DataType::Datetime,
+                        ColumnMapping::Mdy { .. } => DataType::Datetime,
+                        ColumnMapping::Ymd { .. } => DataType::Datetime,
+                        ColumnMapping::Trim { .. } => *analysed_schema.get(idx).expect("no analyed type"),
+                    }
+                }),
                 None => None,
             };
 
@@ -403,5 +502,15 @@ fn eval<'lua, R: FromLuaMulti<'lua>>(lua_ctx: &rlua::Context<'lua>, lua: &str)
             log::error!("Error in Lua script:\n{}\n\n{}", lua, err.to_string());
             Err(err)
         },
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_date() {
+        let re = regex::Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").unwrap();
+        assert!(re.is_match("16/03/2009"));
+
     }
 }

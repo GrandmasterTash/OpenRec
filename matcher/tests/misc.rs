@@ -1,6 +1,8 @@
 use serde_json::json;
 use crate::common::{self, FIXED_JOB_ID};
 
+// TODO: Test where net to zero considers a positive netted against a negative - i.e. ensure both values are abs before subtraction.
+
 #[test]
 fn test_no_data_files() {
     let charter = common::example_charter("02-Projected-Columns.yaml");

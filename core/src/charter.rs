@@ -12,7 +12,7 @@ pub struct Charter {
     debug: Option<bool>,
     matching: Matching,
     jetwash: Option<Jetwash>,
-}
+} // TODO: Allow global lua functions to be defined and ensure they are available in all contexts.
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,13 +43,23 @@ pub struct JetwashSourceFile {
     column_mappings: Option<Vec<ColumnMapping>>,
 }
 
+// #[derive(Clone, Debug, Deserialize)]
+// #[serde(deny_unknown_fields)]
+// pub struct ColumnMapping {
+//     #[serde(rename = "map")]
+//     column: String,    // The column (header) to transform.
+//     as_a: DataType, // The final type of the column.
+//     from: String, // The Lua script to evaluate.
+// }
+
 #[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ColumnMapping {
-    #[serde(rename = "map")]
-    column: String,    // The column (header) to transform.
-    as_a: DataType, // The final type of the column.
-    from: String, // The Lua script to evaluate.
+#[serde(rename_all = "snake_case")]
+pub enum ColumnMapping {
+    Map { column: String, as_a: DataType, from: String  }, // Lua script mapping.
+    Dmy ( String /* column */ ),  // Parse a day/month/year into a UTC Datetime
+    Mdy ( String /* column */ ),  // Parse a month/day/year into a UTC Datetime
+    Ymd ( String /* column */ ),  // Parse a year/month/day into a UTC Datetime
+    Trim ( String /* column */ ), // Trim whitespace from the value.
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,16 +116,22 @@ impl MatchingSourceFile {
 
 impl ColumnMapping {
     pub fn column(&self) -> &str {
-        &self.column
+        match self {
+            ColumnMapping::Map { column, .. } => &column,
+            ColumnMapping::Dmy( column )     => &column,
+            ColumnMapping::Mdy( column )     => &column,
+            ColumnMapping::Ymd( column )     => &column,
+            ColumnMapping::Trim( column )     => &column,
+        }
     }
 
-    pub fn as_a(&self) -> DataType {
-        self.as_a
-    }
+    // pub fn as_a(&self) -> DataType {
+    //     self.as_a
+    // }
 
-    pub fn from(&self) -> &str {
-        &self.from
-    }
+    // pub fn from(&self) -> &str {
+    //     &self.from
+    // }
 }
 
 impl Charter {

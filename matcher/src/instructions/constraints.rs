@@ -14,8 +14,8 @@ pub fn passes(
         // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
         Constraint::NetsToZero { column, lhs, rhs } => {
             let sum_checker = |lhs_sum: Decimal, rhs_sum: Decimal| {
-                let result = (lhs_sum - rhs_sum).abs() == Decimal::ZERO;
-                log::trace!("(lhs_sum - rhs_sum).abs() < 0 : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, Decimal::ZERO, result);
+                let result = (lhs_sum.abs() - rhs_sum.abs()).abs() == Decimal::ZERO;
+                log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < 0 : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, Decimal::ZERO, result);
                 result
             };
             net(column, lhs, rhs, sum_checker, records, schema, accessor, lua_ctx)
@@ -25,15 +25,15 @@ pub fn passes(
         Constraint::NetsWithTolerance {column, lhs, rhs, tol_type, tolerance } => {
             let sum_checker: Box<dyn Fn(Decimal, Decimal) -> bool> = match tol_type {
                 ToleranceType::Amount => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
-                        let result = (lhs_sum - rhs_sum).abs() < *tolerance;
-                        log::trace!("(lhs_sum - rhs_sum).abs() < tolerance : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, *tolerance, result);
+                        let result = (lhs_sum.abs() - rhs_sum.abs()).abs() < *tolerance;
+                        log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < tolerance : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, *tolerance, result);
                         result
                     }),
 
                 ToleranceType::Percent => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
                         let percent_tol = lhs_sum / (Decimal::ONE_HUNDRED / *tolerance);
-                        let result = (lhs_sum - rhs_sum).abs() < percent_tol;
-                        log::trace!("(lhs_sum - rhs_sum).abs() < percent_tol : ({} - {}).abs() < {} = {}", lhs_sum, rhs_sum, percent_tol, result);
+                        let result = (lhs_sum.abs() - rhs_sum.abs()).abs() < percent_tol;
+                        log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < percent_tol : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, percent_tol, result);
                         result
                     }),
             };

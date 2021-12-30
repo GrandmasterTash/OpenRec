@@ -37,7 +37,7 @@ pub enum MatcherError {
     #[error("The file {filename} doesn't have a valid timestamp prefix")]
     InvalidTimestampPrefix { filename: String },
 
-    #[error("Unable to read a sourced data file {path}")]
+    #[error("Unable to read a sourced data file {path} due to {description}")]
     BadSourceFile { path: String, description: String },
 
     #[error("Unable to open file {path}")]
