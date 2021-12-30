@@ -40,6 +40,16 @@ pub struct Jetwash {
 pub struct JetwashSourceFile {
     pattern: String,
     headers: Option<Vec<String>>,
+    column_mappings: Option<Vec<ColumnMapping>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColumnMapping {
+    #[serde(rename = "map")]
+    column: String,    // The column (header) to transform.
+    as_a: DataType, // The final type of the column.
+    from: String, // The Lua script to evaluate.
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +88,10 @@ impl JetwashSourceFile {
     pub fn headers(&self) -> &Option<Vec<String>> {
         &self.headers
     }
+
+    pub fn column_mappings(&self) -> &Option<Vec<ColumnMapping>> {
+        &self.column_mappings
+    }
 }
 
 impl MatchingSourceFile {
@@ -87,6 +101,20 @@ impl MatchingSourceFile {
 
     pub fn field_prefix(&self) -> &Option<String> {
         &self.field_prefix
+    }
+}
+
+impl ColumnMapping {
+    pub fn column(&self) -> &str {
+        &self.column
+    }
+
+    pub fn as_a(&self) -> DataType {
+        self.as_a
+    }
+
+    pub fn from(&self) -> &str {
+        &self.from
     }
 }
 

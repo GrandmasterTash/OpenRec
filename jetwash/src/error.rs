@@ -15,6 +15,9 @@ pub enum JetwashError {
     #[error("Unable to read row from {path}")]
     CannotParseCsvRow { path: String, source: csv::Error },
 
+    #[error("Unable to write row to {path}")]
+    CannotWriteCsvRow { path: String, source: csv::Error },
+
     #[error("Unable to write schema to {filename}")]
     CannotWriteSchema { filename: String, source: csv::Error },
 
@@ -30,6 +33,12 @@ pub enum JetwashError {
     #[error("Charter failed to load")]
     CharterLoadError ( #[from] core::error::Error ),
 
+    #[error("A problem occured mapping a record")]
+    TransformRecordError { source: rlua::Error },
+
+    #[error(transparent)]
+    LuaError(#[from] rlua::Error),
+
     #[error(transparent)]
     CSVError(#[from] csv::Error),
 
@@ -40,12 +49,12 @@ pub enum JetwashError {
     IOError(#[from] std::io::Error),
 }
 
-// ///
-// /// This allows us to return JetwashErrors inside Lua contexts and have them wrapped
-// /// and exposed outside the context without having to map_err everywhere.
-// ///
-// impl From<JetwashError> for rlua::Error {
-//     fn from(err: JetwashError) -> Self {
-//         rlua::Error::external(err)
-//     }
-// }
+///
+/// This allows us to return JetwashErrors inside Lua contexts and have them wrapped
+/// and exposed outside the context without having to map_err everywhere.
+///
+impl From<JetwashError> for rlua::Error {
+    fn from(err: JetwashError) -> Self {
+        rlua::Error::external(err)
+    }
+}

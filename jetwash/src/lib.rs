@@ -2,6 +2,7 @@ mod analyser;
 mod error;
 mod folders;
 
+use rlua::FromLuaMulti;
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
@@ -9,7 +10,7 @@ use error::JetwashError;
 use itertools::Itertools;
 use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
-use core::{charter::{Charter, JetwashSourceFile, Jetwash}, formatted_duration_rate, blue, data_type::DataType};
+use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType};
 
 
 // TODO: Process instructions to map columns.
@@ -25,8 +26,7 @@ pub struct Context {
     charter_path: PathBuf, // The path to the charter being run.
     base_dir: String,      // The root of the working folder for data (see the folders module).
     timestamp: String,     // A unique timestamp to prefix any generated files with for this job.
-    // lua: rlua::Lua,        // Lua engine state.
-    // phase: Cell<Phase>,    // The current point in the linear state transition of the job.
+    lua: rlua::Lua,        // Lua engine state.
 }
 
 impl Context {
@@ -43,8 +43,7 @@ impl Context {
             charter_path,
             base_dir,
             timestamp: folders::new_timestamp(),
-            // lua: rlua::Lua::new(),
-            // phase: Cell::new(Phase::FolderInitialisation),
+            lua: rlua::Lua::new(),
         }
     }
 
@@ -72,32 +71,27 @@ impl Context {
         &self.timestamp
     }
 
-    // pub fn lua(&self) -> &rlua::Lua {
-    //     &self.lua
-    // }
-
-    // pub fn phase(&self) -> Phase {
-    //     self.phase.get()
-    // }
-
-    // pub fn set_phase(&self, phase: Phase) {
-    //     self.phase.set(phase);
-    // }
+    pub fn lua(&self) -> &rlua::Lua {
+        &self.lua
+    }
 }
 
 #[derive(Debug)]
 struct AnalysisResult {
     source_file: JetwashSourceFile,
-    schema: Vec<DataType>
+    analysed_schema: Vec<DataType>
 }
 
+///
+/// Represents the result of analysing a csv file.
+///
 impl AnalysisResult {
     pub fn source_file(&self) -> &JetwashSourceFile {
         &self.source_file
     }
 
-    pub fn schema(&self) -> &Vec<DataType> {
-        &self.schema
+    pub fn analysed_schema(&self) -> &Vec<DataType> {
+        &self.analysed_schema
     }
 }
 
@@ -131,6 +125,7 @@ pub fn run_charter(charter_path: &str, base_dir: &str) -> Result<(), JetwashErro
             let new_file = folders::new_waiting_file(&ctx, file);
             let mut reader = csv_reader(file, result.source_file())?;
 
+            // TODO: Push this line into fn as per above.
             // Create new file to start transforming the data into.
             let mut writer = csv::WriterBuilder::new()
                 .has_headers(true)
@@ -147,16 +142,23 @@ pub fn run_charter(charter_path: &str, base_dir: &str) -> Result<(), JetwashErro
             writer.write_byte_record(&header_record)?;
 
             // Write the schema row to the new file.
-            writer.write_record(result.schema().iter().map(|dt| dt.as_str()).collect::<Vec<&str>>())
+            let schema = final_schema(result.analysed_schema(), result.source_file(), &header_record);
+            writer.write_record(schema.iter().map(|dt| dt.as_str()).collect::<Vec<&str>>())
                 .map_err(|source| JetwashError::CannotWriteSchema{ filename: new_file.to_canoncial_string(), source })?;
 
-            // Read each row in, write to new file.
-            for result in reader.byte_records() {
-                let record = result // Ensure we can read the record - but ignore it at this point.
-                    .map_err(|source| JetwashError::CannotParseCsvRow { source, path: new_file.to_canoncial_string() })?;
+            ctx.lua().context(|lua_ctx| {
+                // Read each row in, write to new file.
+                for record_result in reader.byte_records() {
+                    let record = record_result // Ensure we can read the record - but ignore it at this point.
+                        .map_err(|source| JetwashError::CannotParseCsvRow { source, path: new_file.to_canoncial_string() })?;
 
-                writer.write_byte_record(&record)?;
-            }
+                    let record = transform_record(&lua_ctx, result.source_file(), &header_record, record)?; // TODO: Track lua eval context for errors....
+
+                    writer.write_byte_record(&record).map_err(|source| JetwashError::CannotWriteCsvRow {source, path: new_file.to_canoncial_string() })?;
+                }
+                Ok(())
+            })
+            .map_err(|source| JetwashError::TransformRecordError { source })?;
 
             writer.flush()?;
 
@@ -175,6 +177,59 @@ pub fn run_charter(charter_path: &str, base_dir: &str) -> Result<(), JetwashErro
     Ok(())
 }
 
+///
+/// Perform any column Lua script transformations on the data.
+///
+fn transform_record(
+    lua_ctx: &rlua::Context,
+    source_file: &JetwashSourceFile,
+    header_record: &csv::ByteRecord,
+    record: csv::ByteRecord) -> Result<csv::ByteRecord, JetwashError> {
+
+    match source_file.column_mappings() {
+        Some(mappings) => {
+            if mappings.is_empty() {
+                return Ok(record)
+            }
+
+            let mut new_record = csv::ByteRecord::new();
+
+            for (idx, header) in header_record.iter().enumerate() {
+                let header = String::from_utf8_lossy(header);
+                let original = record.get(idx).unwrap(); // TODO: Don't unwrap.
+
+                // Provide the original value to the Lua script as a string variable called 'value'.
+                let value = String::from_utf8_lossy(original).to_string();
+                lua_ctx.globals().set("value", value.clone())?;
+
+                // If there's a mapping perform it now.
+                match mappings.iter().find(|m| m.column() == header) {
+                    Some(mapping) => {
+                        // Perform some Lua to evaluate the mapped value to push into the new record.
+                        let mapped: String = eval(lua_ctx, mapping.from())?;
+
+                        log::info!("Mapping row {row}, column {column} from [{from}] to [{to}]",
+                            column = header,
+                            row = record.position().expect("no row position").line(),
+                            from = value,
+                            to = mapped);
+
+                        new_record.push_field(mapped.as_bytes())
+                    },
+                    None => new_record.push_field(original), // Otherwise just copy the source record value.
+                }
+
+            }
+
+            Ok(new_record)
+        },
+        None => Ok(record),
+    }
+}
+
+///
+/// Remove any .inprogress files left-over from a previous job.
+///
 fn remove_incomplete_files(ctx: &Context) -> Result<(), JetwashError> {
     let incomplete = folders::incomplete_in_waiting(ctx)?;
     for entry in incomplete {
@@ -185,6 +240,9 @@ fn remove_incomplete_files(ctx: &Context) -> Result<(), JetwashError> {
     Ok(())
 }
 
+///
+/// Do not allow a new job to commence if there are .failed files from a previous job.
+///
 fn abort_if_previous_failures(ctx: &Context) -> Result<(), JetwashError> {
     let failed = folders::failed_files_in_inbox(ctx)?;
     match failed.is_empty() {
@@ -213,7 +271,6 @@ fn init_job(charter: &str, base_dir: &str) -> Result<Context, JetwashError> {
 
     Ok(ctx)
 }
-
 
 ///
 /// Read each cell in and deduce what each column's data_type should be.
@@ -277,7 +334,7 @@ fn analyse_and_validate(ctx: &Context, jetwash: &Jetwash) -> Result<AnalysisResu
 
             } else {
                 // Store the analysis results for this file.
-                results.insert(file.path(), AnalysisResult { source_file: source_file.clone(), schema: data_types });
+                results.insert(file.path(), AnalysisResult { source_file: source_file.clone(), analysed_schema: data_types });
             }
 
             let (duration, _rate) = formatted_duration_rate(row_count, started.elapsed());
@@ -307,4 +364,44 @@ fn csv_reader(path: &PathBuf, source_file: &JetwashSourceFile) -> Result<csv::Re
         .has_headers(!source_file.headers().is_some())
         .from_path(path)
         .map_err(|source| JetwashError::CannotOpenCsv { source, path: path.to_canoncial_string() })
+}
+
+
+///
+/// The analysed schema datatype adjusted for mapped column datatypes in the charter.
+///
+fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile, header_record: &csv::ByteRecord) -> Vec<DataType> {
+    header_record.iter()
+        .enumerate()
+        // Use the analysed data-type for this column - unless there's a column mapping in the charter.
+        // in which case, use the configured 'as_a' data-type.
+        .map(|(idx, hdr)| {
+            let header = String::from_utf8_lossy(hdr).to_string();
+
+            let mapped_type = match source_file.column_mappings() {
+                Some(mappings) => mappings.iter().find(|mapping| mapping.column() == header).map(ColumnMapping::as_a),
+                None => None,
+            };
+
+            match mapped_type {
+                Some(data_type) => data_type,
+                None => *analysed_schema.get(idx).expect("no analyed type"),
+            }
+        })
+        .collect::<Vec<DataType>>()
+}
+
+///
+/// Run the lua script provided. Reporting the failing script if it errors.
+///
+fn eval<'lua, R: FromLuaMulti<'lua>>(lua_ctx: &rlua::Context<'lua>, lua: &str)
+    -> Result<R, rlua::Error> {
+
+    match lua_ctx.load(lua).eval::<R>() {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            log::error!("Error in Lua script:\n{}\n\n{}", lua, err.to_string());
+            Err(err)
+        },
+    }
 }
