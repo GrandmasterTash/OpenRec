@@ -26,7 +26,7 @@ pub struct Matching {
 #[serde(deny_unknown_fields, rename = "SourceFile")]
 pub struct MatchingSourceFile {
     pattern: String,
-    field_prefix: Option<String>
+    field_prefix: Option<String> // TODO: Prevent duplicate aliases.
 }
 
 #[derive(Debug, Deserialize)]

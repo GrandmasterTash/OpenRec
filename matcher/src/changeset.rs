@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instant}};
-use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, data_accessor::DataAccessor, formatted_duration_rate, blue};
+use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, CsvWriters, CSV_BUFFER};
 
 /*
     Changeset files are instructions to modified unmatched or yet-to-be-matched data.
@@ -102,6 +102,12 @@ struct Metrics {
     ignored: usize
 }
 
+struct EvalContext {
+    change_idx: usize,  // Which changeset is being evaluated?
+    row: usize,         // What row number is being evalutated?
+    file: usize         // Which file is being evaludated?
+}
+
 ///
 /// Apply any ChangeSets to the csv data now.
 ///
@@ -109,90 +115,98 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
 
     // Load any changesets for the data.
     let mut changesets = load_changesets(ctx)?;
-
-    // Clone the grid schema - some lower level fns need mut accessor, mut grid and an immutable schema.
-    let schema = grid.schema().clone();
-
-    // Create a DataAccessor to read real CSV data only (derived data wont exist yet) and to write any
-    // required modified data out to new files.
-    let mut accessor = DataAccessor::for_modifying(grid)?;
+    let mut any_applied = false;
 
     if !changesets.is_empty() {
+        // Clone the grid schema - some lower level fns need mut accessor, mut grid and an immutable schema.
+        let schema = grid.schema().clone();
+
+        // Create a DataAccessor to read real CSV data only (derived data wont exist yet) and to write any
+        // required modified data out to new files.
+        let mut writers = writers(grid)?;
+
         // Debug the grid if we have any changesets - before they are evaluated.
-        grid.debug_grid(ctx, 1, &mut accessor);
-    }
+        grid.debug_grid(ctx, 1);
 
-    // Track how many changes are made to each file.
-    let mut metrics = init_metrics(grid);
+        // Track how many changes are made to each file.
+        let mut metrics = init_metrics(grid);
 
-    // Track the record and changeset being processed.
-    let mut eval_ctx = (0, 0);
+        // Track the record and changeset being processed.
+        let mut eval_ctx = EvalContext { change_idx: 0, row: 0, file: 0 };
 
-    ctx.lua().context(|lua_ctx| {
-        lua::init_context(&lua_ctx)?;
+        ctx.lua().context(|lua_ctx| {
+            lua::init_context(&lua_ctx)?;
 
-        // Apply each changeset in order to each record.
-        for (r_idx, record) in grid.records_mut().iter().enumerate() {
-            eval_ctx = (r_idx, 0);
+            // Apply each changeset in order to each record.
+            for mut record in grid.iter(ctx) {
+                eval_ctx.change_idx = 0;
+                eval_ctx.row = record.row();
+                eval_ctx.file = record.file_idx();
 
-            let data_file = &schema.files()[record.file_idx()];
+                let data_file = &schema.files()[record.file_idx()];
+                let mut deleted = false;
 
-            // Load the current record into a buffer.
-            accessor.load_modifying_record(record)?;
+                // Populate all the fields of the record into it's writer buffer.
+                record.load_buffer();
 
-            for (c_idx, changeset) in &mut changesets.iter_mut().enumerate() {
-                let started = Instant::now();
-                eval_ctx = (r_idx, c_idx);
+                for (c_idx, changeset) in &mut changesets.iter_mut().enumerate() {
+                    println!("WIBBLE");
+                    let started = Instant::now();
+                    eval_ctx.change_idx = c_idx;
 
-                let lua_filter = match changeset.change() {
-                    Change::UpdateFields { updates: _, lua_filter } => lua_filter,
-                    Change::IgnoreRecords { lua_filter }            => lua_filter,
-                };
+                    let lua_filter = match changeset.change() {
+                        Change::UpdateFields { updates: _, lua_filter } => lua_filter,
+                        Change::IgnoreRecords { lua_filter }            => lua_filter,
+                    };
 
-                if record_effected(record, &lua_filter, &lua_ctx, &mut accessor, &schema)? {
-                    match changeset.change() {
-                        Change::UpdateFields { updates, .. } => {
-                            // Modify the record in a buffer.
-                            for update in updates {
-                                accessor.update(record, &update.field, &update.value)?;
-                            }
-                            metrics.get_mut(data_file).expect("No metrics for record").modified += 1;
-                        },
-                        Change::IgnoreRecords { .. } => {
-                            // Stops the modified record being written and index is removed from memory.
-                            record.set_deleted();
-                            metrics.get_mut(data_file).expect("No metrics for record").ignored += 1;
-                        },
+                    if record_effected(&record, &lua_filter, &lua_ctx, &schema)? {
+                        match changeset.change() {
+                            Change::UpdateFields { updates, .. } => {
+                                // Modify the record in a buffer.
+                                for update in updates {
+                                    record.update(&update.field, &update.value)?;
+                                }
+                                metrics.get_mut(data_file).expect("No metrics for record").modified += 1;
+                            },
+                            Change::IgnoreRecords { .. } => {
+                                // Stops the modified record being written and index is removed from memory.
+                                deleted = true;
+                                metrics.get_mut(data_file).expect("No metrics for record").ignored += 1;
+                            },
+                        }
+
+                        changeset.effected += 1;
+                        changeset.elapsed += started.elapsed();
                     }
+                }
 
-                    changeset.effected += 1;
-                    changeset.elapsed += started.elapsed();
+                // Copy the record across now as-is or modified - or skip if ignored.
+                if !deleted {
+                    let csv = record.flush();
+                    let writer = &mut writers[record.file_idx()];
+                    writer.write_byte_record(&csv).map_err(|err| MatcherError::CSVError(err))?;
                 }
             }
+            Ok(())
+        })
+        .map_err(|source| MatcherError::ChangeSetError {
+            changeset: format!("{:?}", eval_ctx.change_idx),
+            row: eval_ctx.row,
+            file: grid.schema().files()[eval_ctx.file].filename().into(),
+            source
+        })?;
 
-            // Copy the record across now as-is or modified - or skip if ignored.
-            if !record.deleted() {
-                accessor.modifying_accessor().flush(record)?;
-            }
+        // TODO: (EMS) Verify this is no-longer required.
+        // Delete any ignored records from memory.
+        // grid.remove_deleted();
+
+        // Finalise the modifying files, renaming and archiving things as required.
+        any_applied = finalise_files(ctx, &metrics)?;
+
+        for changeset in &changesets {
+            let (duration, rate) = formatted_duration_rate(grid.len(), changeset.elapsed);
+            log::info!("ChangeSet {} effected {} record(s) in {} ({}/row)", changeset.id, changeset.effected, blue(&duration), rate);
         }
-        Ok(())
-    })
-    .map_err(|source| MatcherError::ChangeSetError {
-        changeset: format!("{:?}", changesets[eval_ctx.1].id),
-        row: grid.records()[eval_ctx.0].row(),
-        file: grid.schema().files()[grid.records()[eval_ctx.0].file_idx()].filename().into(),
-        source
-    })?;
-
-    // Delete any ignored records from memory.
-    grid.remove_deleted();
-
-    // Finalise the modifying files, renaming and archiving things as required.
-    let any_applied = finalise_files(ctx, &metrics)?;
-
-    for changeset in &changesets {
-        let (duration, rate) = formatted_duration_rate(grid.records().len(), changeset.elapsed);
-        log::info!("ChangeSet {} effected {} record(s) in {} ({}/row)", changeset.id, changeset.effected, blue(&duration), rate);
     }
 
     Ok((any_applied, changesets))
@@ -250,12 +264,11 @@ fn record_effected(
     record: &Record,
     lua_filter: &str,
     lua_ctx: &rlua::Context,
-    accessor: &mut DataAccessor,
     schema: &GridSchema) -> Result<bool, MatcherError> {
 
-    let effected = !lua::lua_filter(&vec!(record), &lua_filter, lua_ctx, accessor, schema)?.is_empty();
+    let effected = !lua::lua_filter(&vec!(record), &lua_filter, lua_ctx, schema)?.is_empty();
 
-    log::trace!("record_effected: {} : {:?} : {}", lua_filter, record.as_strings(schema, accessor), effected);
+    log::trace!("record_effected: {} : {:?} : {}", lua_filter, record.as_strings(), effected);
 
     Ok(effected)
 }
@@ -302,4 +315,38 @@ fn init_metrics(grid: &Grid) -> HashMap<DataFile, Metrics> {
 ///
 fn is_unmatched(file: &DataFile) -> bool {
     folders::UNMATCHED_REGEX.is_match(file.filename())
+}
+
+///
+/// A list of open CSV writers in the order of files sourced into the Grid.
+///
+fn writers(grid: &Grid) -> Result<CsvWriters, MatcherError> {
+    let mut writers = grid.schema()
+        .files()
+        .iter()
+        .map(|f| {
+            csv::WriterBuilder::new()
+                .has_headers(true)
+                .buffer_capacity(*CSV_BUFFER)
+                .quote_style(csv::QuoteStyle::Always)
+                .from_path(f.modifying_path())
+                .map_err(|source| MatcherError::CannotOpenCsv{ path: f.modifying_path().into(), source } )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Write the headers and schema rows.
+    for (idx, file) in grid.schema().files().iter().enumerate() {
+        let writer = &mut writers[idx];
+        let schema = &grid.schema().file_schemas()[file.schema_idx()];
+
+        writer.write_record(schema.columns().iter().map(|c| c.header_no_prefix()).collect::<Vec<&str>>())
+            .map_err(|source| MatcherError::CannotWriteHeaders{ filename: file.derived_filename().into(), source })?;
+
+        writer.write_record(schema.columns().iter().map(|c| c.data_type().as_str()).collect::<Vec<&str>>())
+            .map_err(|source| MatcherError::CannotWriteSchema{ filename: file.derived_filename().into(), source })?;
+
+        writer.flush()?;
+    }
+
+    Ok(writers)
 }

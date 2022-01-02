@@ -1,6 +1,9 @@
 use crate::{error::MatcherError, model::{schema::GridSchema, grid::Grid, record::Record}};
 use bytes::{Bytes, BytesMut, BufMut};
 
+// TODO: (EMS) Consider a radical refactor and ditching this file!!!!
+// I think a record can be a buffer now using the grid.iter(). To be investigated.
+
 ///
 /// A list of open CSV reader in the order of files sourced into the Grid.
 ///
@@ -324,6 +327,7 @@ fn derived_readers(grid: &mut Grid) -> Result<CsvReaders, MatcherError> {
         reader.read_byte_record(&mut ignored)?;
     }
 
+    // TODO: (EMS) Don't need this if we're doing in Record::new
     // Advance the reader in the appropriate file for each record in the grid.
     for record in grid.records_mut() {
         let reader = &mut readers[record.file_idx()];

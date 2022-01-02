@@ -1,6 +1,6 @@
 use csv::Writer;
 use std::{collections::HashMap, fs::File, path::PathBuf};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::grid::Grid, Context, CSV_BUFFER};
 
 ///
 /// Manages the unmatched files for the current job.
@@ -46,7 +46,10 @@ impl UnmatchedHandler {
                 let output_path = folders::new_unmatched_file(ctx, file); // $REC_HOME/unmatched/timestamp_invoices.unmatched.csv
                 let full_filename = folders::filename(&output_path)?; // timestamp_invoices.unmatched.csv
 
-                let mut writer = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path)
+                let mut writer = csv::WriterBuilder::new()
+                    .quote_style(csv::QuoteStyle::Always)
+                    .buffer_capacity(*CSV_BUFFER)
+                    .from_path(&output_path)
                     .map_err(|source| MatcherError::CannotCreateUnmatchedFile{ path: output_path.to_canoncial_string(), source })?;
 
                 // Add the column header and schema rows.
@@ -68,14 +71,16 @@ impl UnmatchedHandler {
         Ok(Self { files })
     }
 
-    pub fn write_records(&mut self, ctx: &Context, records: &[Box<Record>], grid: &Grid) -> Result<(), MatcherError> {
+    // TODO: rayon this up
+    pub fn write_records(&mut self, ctx: &Context, grid: &Grid) -> Result<(), MatcherError> {
         // Open readers for each sourced file of data.
         let mut readers: Vec<csv::Reader<File>> = grid.schema().files()
             .iter()
             .map(|f| csv::ReaderBuilder::new().from_path(f.path()).unwrap())
             .collect();
 
-        for record in records {
+        // TODO: (EMS) Until we do EMS, this will contain ALL records as nothing can be marked as matched.
+        for record in grid.iter(ctx) {
             // Get the unmatched-file for this record.
             let filename = grid.schema().files().get(record.file_idx())
                 .ok_or(MatcherError::UnmatchedFileNotInGrid { file_idx: record.file_idx() })?
@@ -88,9 +93,7 @@ impl UnmatchedHandler {
             unmatched.rows += 1;
 
             // Copy the original CSV record to the unmatched file.
-            let csv_data = record.read_csv_record(&mut readers[record.file_idx()])?;
-
-            unmatched.writer.write_byte_record(&csv_data)
+            unmatched.writer.write_byte_record(record.data())
                 .map_err(|source| MatcherError::CannotWriteUnmatchedRecord {
                     filename: unmatched.full_filename.clone(),
                     row: record.row(), source

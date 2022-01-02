@@ -1,117 +1,107 @@
 use uuid::Uuid;
-use bytes::Bytes;
-use std::cell::Cell;
+use std::{rc::Rc, sync::Arc};
 use rust_decimal::Decimal;
+use super::schema::GridSchema;
 use core::data_type::DataType;
-use csv::{Position, ByteRecord};
-use crate::{model::schema::GridSchema, error::MatcherError, convert, data_accessor::DataAccessor};
+use bytes::{Bytes, BytesMut, BufMut};
+use crate::{convert, error::MatcherError};
 
-///
-/// A record is essentially a point to one or two CSV rows on disk.
-/// One index points to the original CSV file of data and the second can point to the derived (calculated)
-/// data for projected columns, merged columns, etc.
-///
+
+// Attempt to remove DataAccessor with a lightweight record wrapper / buffer.
+
+// const STATUS_UNMATCHED: i64 = 0;
+// const STATUS_MATCHED: i64 = 1;
+// const STATUS_IGNORED: i64 = 2;
+
+// const STATUS_COLUMN: usize = 0; // First column must always be the status.
+
 pub struct Record {
-    file_idx: u16,
-    data_idx: Index,
-    derived_idx: Index,
-    deleted: Cell<bool>,
-}
-
-///
-/// Used to create a csv::Position to locate the record in a file.
-///
-struct Index {
-    byte: u64,
-    line: u32
+    file_idx: usize,  // Index of the DataFile in the grid(schema).
+    schema: Arc<GridSchema>,
+    data: csv::ByteRecord,    // Source csv data for the record.
+    derived: csv::ByteRecord, // Derived csv data for the record.
+    buffer: Vec<Bytes>,       // Used to modify the record or create derived data (depending upon the phase).
 }
 
 impl Record {
-    pub fn new(file_idx: u16, pos: &Position) -> Self {
+    pub fn new(file_idx: usize, schema: Arc<GridSchema>, data: csv::ByteRecord, derived: csv::ByteRecord) -> Self {
         Self {
-            data_idx: Index { byte: pos.byte(), line: pos.line() as u32 },
-            derived_idx: Index { byte: 0, line: 0 },
             file_idx,
-            deleted: Cell::new(false)
+            schema,
+            data,
+            derived,
+            buffer: vec!()
         }
     }
 
     pub fn row(&self) -> usize {
-        self.data_idx.line as usize
+        self.data.position().expect("no row position").line() as usize
+    }
+
+    pub fn data_position(&self) -> &csv::Position {
+        &self.data.position().expect("no data position")
+    }
+
+    pub fn derived_position(&self) -> &csv::Position {
+        &self.derived.position().expect("no derived position")
     }
 
     pub fn file_idx(&self) -> usize {
-        self.file_idx as usize
+        self.file_idx
     }
 
-    pub fn deleted(&self) -> bool {
-        self.deleted.get()
+    pub fn data(&self) -> &csv::ByteRecord {
+        &self.data
     }
 
-    pub fn set_deleted(&self) {
-        self.deleted.set(true);
+    pub fn schema(&self) -> Arc<GridSchema> {
+        self.schema.clone()
     }
+
+    // TODO: Not required anymore.
+    // pub fn deleted(&self) -> bool {
+    //     let bytes = self.data.get(STATUS_COLUMN).to_bytes();
+    //     let status = convert::csv_bytes_to_int(bytes).expect("status not numeric");
+    //     status != STATUS_UNMATCHED
+    // }
+
+    // TODO: Don't think this will be required with EMS...
+    // pub fn set_matched(&self, file: &mut File) {
+    //     // TODO: (EMS) Update data in buffer. WHY?
+    //     // let mut bytes = BytesMut::new();
+    //     // bytes.put_slice(format!("{}", STATUS_MATCHED).as_bytes());
+    //     // let old = std::mem::replace(&mut buffer[*pos as usize], bytes.freeze());
+    //     // let old = std::mem::replace(&mut self.buffer[STATUS_COLUMN], bytes.freeze());
+
+    //     // TODO: (EMS) Random-access to file to change status.
+    //     let buf = vec!(0x31); // "1" -> Matched.
+    //     file.write_all_at(self.data.position().expect("no csv position").byte() +/* Skip double-quotes */ 1, &buf).unwrap(); // TODO: Don't unwrap.
+    // }
+
+    // pub fn pos(&self) -> Position {
+    // }
 
     pub fn memory_usage(&self) -> usize {
-        std::mem::size_of::<Record>()
-    }
-
-    ///
-    /// Build a csv::Position struct to seek this record in the file. The inflated struct is slightly
-    /// larger than what is needed, hence we build-on-demand to keep the footprint of Record reduced.
-    ///
-    pub fn pos(&self) -> Position {
-        let mut pos = Position::new();
-        pos.set_byte(self.data_idx.byte);
-        pos.set_line(self.data_idx.line as u64);
-        pos
-    }
-
-    ///
-    /// Similar to pos, this points to the .dervived data file.
-    ///
-    pub fn derived_pos(&self) -> Option<Position> {
-        if self.derived_idx.line == 0 {
-            return None
-        }
-        let mut pos = Position::new();
-        pos.set_byte(self.derived_idx.byte);
-        pos.set_line(self.derived_idx.line as u64);
-        Some(pos)
-    }
-
-    pub fn set_derived_pos(&mut self, pos: &Position) {
-        self.derived_idx.byte = pos.byte();
-        self.derived_idx.line = pos.line() as u32;
-    }
-
-    ///
-    /// Read the source record from the CSV file.
-    ///
-    pub fn read_csv_record(&self, rdr: &mut csv::Reader<std::fs::File>) -> Result<ByteRecord, MatcherError> {
-        let mut record = csv::ByteRecord::new();
-        rdr.seek(self.pos())?;
-        rdr.read_byte_record(&mut record)?;
-        Ok(record)
+        std::mem::size_of::<Record>() // TODO: Include data in buffers.
     }
 
     ///
     /// Get the derived value, or load the real value from the backing csv reader.
     ///
-    fn get_bytes(&self, col: isize, accessor: &mut DataAccessor) -> Result<Option<Bytes>, MatcherError> {
+    fn get_bytes(&self, col: isize) -> Result<Option<Bytes>, MatcherError> {
         match col < 0 {
             true  => { // Derived column.
                 // These use negative indexes in the Grid and must be translated to a real
                 // CSV column. -1 -> 0, -2 -> 1, -3 -> 2, etc.
-                match accessor.derived_accessor().get((col.abs() - 1) as usize, self)? {
-                    Some(bytes) if !bytes.is_empty() => Ok(Some(bytes)),
+                match self.derived.get((col.abs() - 1) as usize) {
+                    Some(u8s) if !u8s.is_empty() => Ok(Some(u8s.to_bytes())),
                     Some(_) |
                     None    => Ok(None),
                 }
             },
             false => { // File column.
-                match accessor.get(col as usize, self)? {
-                    Some(bytes) if !bytes.is_empty() => Ok(Some(bytes)),
+                match self.data.get(col as usize) {
+                    Some(u8s) if !u8s.is_empty() => Ok(Some(u8s.to_bytes())),
                     Some(_) |
                     None    => Ok(None),
                 }
@@ -119,54 +109,55 @@ impl Record {
         }
     }
 
-    pub fn get_bool(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<bool>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
+    // TODO: Consider passing schema & into new fn then we don't need it in these fns....
+    pub fn get_bool(&self, header: &str) -> Result<Option<bool>, MatcherError> {
+        if let Some(column) = self.schema.position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column)? {
                 return Ok(Some(convert::csv_bytes_to_bool(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_datetime(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<u64>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
+    pub fn get_datetime(&self, header: &str) -> Result<Option<u64>, MatcherError> {
+        if let Some(column) = self.schema.position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column)? {
                 return Ok(Some(convert::csv_bytes_to_datetime(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_decimal(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<Decimal>, MatcherError> {
-        if let Some(col) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*col, accessor)? {
+    pub fn get_decimal(&self, header: &str) -> Result<Option<Decimal>, MatcherError> {
+        if let Some(col) = self.schema.position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*col)? {
                 return Ok(Some(convert::csv_bytes_to_decimal(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_int(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<i64>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
+    pub fn get_int(&self, header: &str) -> Result<Option<i64>, MatcherError> {
+        if let Some(column) = self.schema.position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column)? {
                 return Ok(Some(convert::csv_bytes_to_int(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_string(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<String>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
+    pub fn get_string(&self, header: &str) -> Result<Option<String>, MatcherError> {
+        if let Some(column) = self.schema.position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column)? {
                 return Ok(Some(convert::csv_bytes_to_string(bytes)?))
             }
         }
         Ok(None)
     }
 
-    pub fn get_uuid(&self, header: &str, accessor: &mut DataAccessor) -> Result<Option<Uuid>, MatcherError> {
-        if let Some(column) = accessor.schema().position_in_record(header, self) {
-            if let Some(bytes) = self.get_bytes(*column, accessor)? {
+    pub fn get_uuid(&self, header: &str) -> Result<Option<Uuid>, MatcherError> {
+        if let Some(column) = self.schema.position_in_record(header, self) {
+            if let Some(bytes) = self.get_bytes(*column)? {
                 return Ok(Some(convert::csv_bytes_to_uuid(bytes)?))
             }
         }
@@ -176,47 +167,125 @@ impl Record {
     ///
     /// Get the value in the column as a displayable string - if no value is present an empty string is returned.
     ///
-    pub fn get_as_string(&self, header: &str, accessor: &mut DataAccessor) -> Result<String, MatcherError> {
-        match accessor.schema().data_type(header) {
+    pub fn get_as_string(&self, header: &str) -> Result<String, MatcherError> {
+        match self.schema.data_type(header) {
             Some(data_type) => match data_type {
                 DataType::Unknown => Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
-                DataType::Boolean => Ok(self.get_bool(header, accessor)?.map(convert::bool_to_string).unwrap_or_default()),
-                DataType::Datetime => Ok(self.get_datetime(header, accessor)?.map(convert::datetime_to_string).unwrap_or_default()),
-                DataType::Decimal => Ok(self.get_decimal(header, accessor)?.map(convert::decimal_to_string).unwrap_or_default()),
-                DataType::Integer => Ok(self.get_int(header, accessor)?.map(convert::int_to_string).unwrap_or_default()),
-                DataType::String => Ok(self.get_string(header, accessor)?.unwrap_or_default()),
-                DataType::Uuid => Ok(self.get_uuid(header, accessor)?.map(convert::uuid_to_string).unwrap_or_default()),
+                DataType::Boolean => Ok(self.get_bool(header)?.map(convert::bool_to_string).unwrap_or_default()),
+                DataType::Datetime => Ok(self.get_datetime(header)?.map(convert::datetime_to_string).unwrap_or_default()),
+                DataType::Decimal => Ok(self.get_decimal(header)?.map(convert::decimal_to_string).unwrap_or_default()),
+                DataType::Integer => Ok(self.get_int(header)?.map(convert::int_to_string).unwrap_or_default()),
+                DataType::String => Ok(self.get_string(header)?.unwrap_or_default()),
+                DataType::Uuid => Ok(self.get_uuid(header)?.map(convert::uuid_to_string).unwrap_or_default()),
             },
             None => Ok(String::default()),
         }
     }
 
-    pub fn append_bool(&self, value: bool, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::bool_to_string(value).into());
+    ///
+    /// Initialise the buffer if this is the first update. Populate it with all the data-fields.
+    ///
+    pub fn load_buffer(&mut self) {
+        self.buffer.clear();
+
+        // Pump each field into our buffer.
+        for raw in self.data.iter() {
+            let mut bm = BytesMut::new();
+            bm.put(raw);
+            self.buffer.push(bm.freeze());
+        }
     }
 
-    pub fn append_datetime(&self, value: u64, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::datetime_to_string(value).into());
+    ///
+    /// Update a field (real data - not a derived field) - as part of a changeset modification.
+    ///
+    /// This function updates a buffer which must be returned with flush() and then written to disk.
+    ///
+    pub fn update(&mut self, header: &str, value: &str) -> Result<(), MatcherError> {
+        let file = &self.schema.files()[self.file_idx()];
+
+        // Get the column in the buffer to update.
+        let pos = match self.schema.position_in_record(header, self) {
+            Some(pos) => pos,
+            None => return Err(MatcherError::MissingColumn { column: header.into(), file: file.filename().into() }),
+        };
+
+        // Replace the value in the buffer with the new value.
+        let mut bytes = BytesMut::new();
+        bytes.put_slice(value.as_bytes());
+        let old = std::mem::replace(&mut self.buffer[*pos as usize], bytes.freeze());
+        log::trace!("Set {header} to {new} (was {old:?}) in row {row} of {filename}",
+            header = header,
+            new = value,
+            old = old,
+            row = self.row(),
+            filename = file.modifying_filename());
+
+        Ok(())
     }
 
-    pub fn append_decimal(&self, value: Decimal, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::decimal_to_string(value).into());
+    ///
+    /// Add a derived boolean value to the buffer. Use flush to retrieve the buffer for writing.
+    ///
+    pub fn append_bool(&mut self, value: bool) {
+        let string = convert::bool_to_string(value);
+        self.derived.push_field(string.as_bytes());
+        self.buffer.push(string.into());
     }
 
-    pub fn append_int(&self, value: i64, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::int_to_string(value).into());
+    ///
+    /// Add a derived datetime value to the buffer. Use flush to retrieve the buffer for writing.
+    ///
+    pub fn append_datetime(&mut self, value: u64) {
+        let string = convert::datetime_to_string(value);
+        self.derived.push_field(string.as_bytes());
+        self.buffer.push(string.into());
     }
 
-    pub fn append_string(&self, value: &str, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(value.to_string().into());
+    ///
+    /// Add a derived decimal value to the buffer. Use flush to retrieve the buffer for writing.
+    ///
+    pub fn append_decimal(&mut self, value: Decimal) {
+        let string = convert::decimal_to_string(value);
+        self.derived.push_field(string.as_bytes());
+        self.buffer.push(string.into());
     }
 
-    pub fn append_uuid(&self, value: Uuid, accessor: &mut DataAccessor) {
-        accessor.derived_accessor().append(convert::uuid_to_string(value).into());
+    ///
+    /// Add a derived integer value to the buffer. Use flush to retrieve the buffer for writing.
+    ///
+    pub fn append_int(&mut self, value: i64) {
+        let string = convert::int_to_string(value);
+        self.derived.push_field(string.as_bytes());
+        self.buffer.push(string.into());
     }
 
-    pub fn flush(&self, accessor: &mut DataAccessor) -> Result<(), MatcherError> {
-        accessor.derived_accessor().flush(self.file_idx)
+    ///
+    /// Add a derived string value to the buffer. Use flush to retrieve the buffer for writing.
+    ///
+    pub fn append_string(&mut self, value: &str) {
+        let string = value.to_string();
+        self.derived.push_field(string.as_bytes());
+        self.buffer.push(string.into());
+    }
+
+    ///
+    /// Add a derived uuid value to the buffer. Use flush to retrieve the buffer for writing.
+    ///
+    pub fn append_uuid(&mut self, value: Uuid) {
+        let string = convert::uuid_to_string(value);
+        self.derived.push_field(string.as_bytes());
+        self.buffer.push(string.into());
+    }
+
+    ///
+    /// Return the buffer as a csv::ByteRecord and clear it.
+    ///
+    pub fn flush(&mut self) -> csv::ByteRecord {
+        let mut record = csv::ByteRecord::new();
+        self.buffer.iter().for_each(|f| record.push_field(f));
+        self.buffer.clear();
+        record
     }
 
     ///
@@ -224,21 +293,19 @@ impl Record {
     ///
     /// Data is returned in a displayable, string format.
     ///
-    pub fn as_strings(&self, schema: &GridSchema, accessor: &mut DataAccessor) -> Vec<String> {
-        schema.headers()
+    pub fn as_strings(&self) -> Vec<String> {
+        self.schema.headers()
             .iter()
-            .map(|header| self.get_as_string(header, accessor).unwrap_or_default())
+            .map(|header| self.get_as_string(header).unwrap_or_default())
             .collect()
     }
 
     ///
     /// If there is a value for this header, get the compacted byte format for it.
     ///
-    pub fn get_as_bytes(&self, header: &str, accessor: &mut DataAccessor)
-        -> Result<Option<Bytes>, MatcherError> {
-
-        match accessor.schema().position_in_record(header, self) {
-            Some(col) => self.get_bytes(*col, accessor),
+    pub fn get_as_bytes(&self, header: &str) -> Result<Option<Bytes>, MatcherError> {
+        match self.schema.position_in_record(header, self) {
+            Some(col) => self.get_bytes(*col),
             None =>  Ok(None),
         }
     }
@@ -246,11 +313,10 @@ impl Record {
     ///
     /// Merge the first non-None value from the source columns into a new column.
     ///
-    pub fn merge_col_from(&self, source: &[String], accessor: &mut DataAccessor)
-        -> Result<(), MatcherError> {
+    pub fn merge_col_from(&mut self, source: &[String]) -> Result<(), MatcherError> {
 
         for header in source {
-            let data_type = match accessor.schema().data_type(header) {
+            let data_type = match self.schema.data_type(header) {
                 Some(data_type) => data_type,
                 None => return Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
             };
@@ -258,49 +324,73 @@ impl Record {
             let value = match data_type {
                 DataType::Unknown => return Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
                 DataType::Boolean => {
-                    match self.get_bool(header, accessor)? {
+                    match self.get_bool(header)? {
                         Some(value) => convert::bool_to_string(value),
                         None => continue,
                     }
                 },
                 DataType::Datetime => {
-                    match self.get_datetime(header, accessor)? {
+                    match self.get_datetime(header)? {
                         Some(value) => convert::datetime_to_string(value),
                         None => continue,
                     }
                 },
                 DataType::Decimal => {
-                    match self.get_decimal(header, accessor)? {
+                    match self.get_decimal(header)? {
                         Some(value) => convert::decimal_to_string(value),
                         None => continue,
                     }
                 },
                 DataType::Integer => {
-                    match self.get_int(header, accessor)? {
+                    match self.get_int(header)? {
                         Some(value) => convert::int_to_string(value),
                         None => continue,
                     }
                 },
                 DataType::String => {
-                    match self.get_string(header, accessor)? {
+                    match self.get_string(header)? {
                         Some(value) => value,
                         None => continue,
                     }
                 },
                 DataType::Uuid => {
-                    match self.get_uuid(header, accessor)? {
+                    match self.get_uuid(header)? {
                         Some(value) => convert::uuid_to_string(value),
                         None => continue,
                     }
                 },
             };
 
-            accessor.derived_accessor().append(value.into());
+            self.buffer.push(value.into());
             return Ok(())
         }
 
         // If none of the source columns has any data, we still need to 'pad' the buffer with a blank field.
-        accessor.derived_accessor().append(Bytes::new());
+        self.buffer.push(Bytes::new());
         Ok(())
     }
 }
+
+
+pub trait ByteMe {
+    fn to_bytes(&self) -> Bytes;
+}
+
+impl ByteMe for Option<&[u8]> {
+    fn to_bytes(&self) -> Bytes {
+        let mut bm = BytesMut::new();
+        if let Some(bytes) = *self {
+            bm.put(bytes);
+        }
+        bm.freeze()
+    }
+}
+
+impl ByteMe for &[u8] {
+    fn to_bytes(&self) -> Bytes {
+        let mut bm = BytesMut::new();
+        bm.put(*self);
+        bm.freeze()
+    }
+}
+

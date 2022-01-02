@@ -5,7 +5,7 @@ use std::time::Instant;
 use rust_decimal::prelude::*;
 use humantime::format_duration;
 use num_format::{Locale, ToFormattedString};
-use chrono::{Datelike, NaiveDate, TimeZone, Utc};
+use chrono::{Datelike, NaiveDate, TimeZone, Utc, SecondsFormat};
 use rand::{Rng, SeedableRng, prelude::{SliceRandom, StdRng}};
 use crate::{column::*, data_type::DataType, group::Group, schema::Schema};
 
@@ -126,7 +126,7 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     );
 
     // Generate a 1-to-n pair of output files (invoice and receiptes).
-    inv_wtr.flush()?;
+    inv_wtr.flush()?; // TODO: Perf issue flushing?
     pay_wtr.flush()?;
     rec_wtr.flush()?;
     Ok(())
@@ -326,7 +326,7 @@ fn generate_datetime(rng: &mut StdRng) -> String {
     let s = rng.gen_range(0..60);
 
     let dt = Utc.ymd(y, m, d).and_hms(h, mi, s);
-    format!("{}", dt.timestamp_millis())
+    dt.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 ///

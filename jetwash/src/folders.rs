@@ -32,7 +32,7 @@ pub fn files_in_inbox(ctx: &Context, file_pattern: &str) -> Result<Vec<DirEntry>
     let mut files = vec!();
     for entry in inbox(ctx).read_dir()? {
         if let Ok(entry) = entry {
-            // TODO: only .ready files!
+            // TODO: only import .ready files - to avoid partial file imports.
             if wildcard.is_match(&entry.file_name().to_string_lossy()) && !is_failed(&entry) {
                 files.push(entry);
             }

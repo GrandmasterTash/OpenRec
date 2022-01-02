@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use core::data_type::DataType;
 use rlua::{Context, Table, Number, FromLuaMulti};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
-use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, data_accessor::DataAccessor, folders};
+use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, folders};
 
 lazy_static! {
     static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();
@@ -202,7 +202,6 @@ pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
 pub fn lua_record<'a>(
     record: &Record,
     script_cols: &[Column],
-    accessor: &mut DataAccessor,
     lua_ctx: &Context<'a>) -> Result<Table<'a>, MatcherError> {
 
     let lua_record = lua_ctx.create_table()?;
@@ -210,16 +209,16 @@ pub fn lua_record<'a>(
     for col in script_cols {
         match col.data_type() {
             DataType::Unknown  => {},
-            DataType::Boolean  => lua_record.set(col.header(), record.get_bool(col.header(), accessor)?)?,
-            DataType::Datetime => lua_record.set(col.header(), record.get_datetime(col.header(), accessor)?)?,
-            DataType::Decimal  => lua_record.set(col.header(), record.get_decimal(col.header(), accessor)?.map(LuaDecimal))?,
-            DataType::Integer  => lua_record.set(col.header(), record.get_int(col.header(), accessor)?)?,
-            DataType::String   => lua_record.set(col.header(), record.get_string(col.header(), accessor)?)?,
-            DataType::Uuid     => lua_record.set(col.header(), record.get_uuid(col.header(), accessor)?.map(|i|i.to_string()))?,
+            DataType::Boolean  => lua_record.set(col.header(), record.get_bool(col.header())?)?,
+            DataType::Datetime => lua_record.set(col.header(), record.get_datetime(col.header())?)?,
+            DataType::Decimal  => lua_record.set(col.header(), record.get_decimal(col.header())?.map(LuaDecimal))?,
+            DataType::Integer  => lua_record.set(col.header(), record.get_int(col.header())?)?,
+            DataType::String   => lua_record.set(col.header(), record.get_string(col.header())?)?,
+            DataType::Uuid     => lua_record.set(col.header(), record.get_uuid(col.header())?.map(|i|i.to_string()))?,
         }
     }
 
-    append_meta(record, &lua_record, accessor.schema())?;
+    append_meta(record, &lua_record)?;
 
     Ok(lua_record)
 }
@@ -227,13 +226,10 @@ pub fn lua_record<'a>(
 ///
 /// Create some contextural information regarding the file that loaded a record.
 ///
-// fn append_meta<'a>(record: &Record, schema: &GridSchema, lua_ctx: &Context<'a>)
-//     -> Result<Table<'a>, MatcherError> {
-fn append_meta<'a>(record: &Record, lua_record: &Table, schema: &GridSchema)
+fn append_meta<'a>(record: &Record, lua_record: &Table)
     -> Result<(), MatcherError> {
 
-    // let lua_meta = lua_ctx.create_table()?;
-
+    let schema = record.schema();
     let file = match schema.files().get(record.file_idx()) {
         Some(file) => file,
         None => return Err(MatcherError::MissingFileInSchema{ index: record.file_idx() }),
@@ -264,7 +260,6 @@ pub fn lua_filter<'a, 'b>(
     records: &[&'a Record],
     lua_script: &str,
     lua_ctx: &'b Context,
-    accessor: &mut DataAccessor,
     schema: &GridSchema) -> Result<Vec<&'a Record>, MatcherError> {
 
     let mut results = vec!();
@@ -272,7 +267,7 @@ pub fn lua_filter<'a, 'b>(
     let globals = lua_ctx.globals();
 
     for record in records {
-        let lua_record = lua_record(record, &script_cols, accessor, lua_ctx)?;
+        let lua_record = lua_record(record, &script_cols, lua_ctx)?;
         globals.set("record", lua_record)?;
 
         // let lua_meta = lua_meta(record, accessor.schema(), lua_ctx)?;

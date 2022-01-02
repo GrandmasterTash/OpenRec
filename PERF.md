@@ -131,8 +131,43 @@ DERIVED_PATH: "./tmp/matching/20211130_065025197_09-BIG-receipts.derived.csv"
 [2021-12-07T06:17:33Z INFO  matcher] Completed match job cf23ca80-2769-4700-9175-256097492007 in 1m 33s 270ms
 
 
-## Performance After Retaining Only Compacted Matching Key
-After retained field overhaul, results were: -
-Peak RAM: 
-Duration: 
+## Performance after no in-memory data - NO MATCHING
+Using 1mil invoices - OLD build
+Peak RAM: 496MB
+Duration: 8m 6s 407ms
 Console output here
+[2021-12-31T16:08:37Z INFO  matcher] Starting match job:
+[2021-12-31T16:08:37Z INFO  matcher]     Job ID: 05d83b03-89b0-4ad0-a65b-30029b53a6d1
+[2021-12-31T16:08:37Z INFO  matcher]    Charter: Three-way invoice match (v1)
+[2021-12-31T16:08:37Z INFO  matcher]   Base dir: ./tmp
+[2021-12-31T16:08:37Z INFO  matcher::model::grid] Sourcing data with pattern [.*invoices.*\.csv]
+[2021-12-31T16:08:37Z INFO  matcher::model::grid]   1000000 records read from file 20211231_154123226_invoices.csv in 354ms. Memory Usage 40MB.
+[2021-12-31T16:08:37Z INFO  matcher::model::grid] Sourcing data with pattern [.*payments.*\.csv]
+[2021-12-31T16:08:38Z INFO  matcher::model::grid]   3496060 records read from file 20211231_154123226_payments.csv in 1s 187ms. Memory Usage 172MiB.
+[2021-12-31T16:08:38Z INFO  matcher::model::grid] Sourcing data with pattern [.*receipts.*\.csv]
+[2021-12-31T16:08:39Z INFO  matcher::model::grid]   3496060 records read from file 20211231_154123226_receipts.csv in 1s 150ms. Memory Usage 305MiB.
+[2021-12-31T16:16:23Z INFO  matcher] Projecting Column PAYMENT_AMOUNT_BASE took 2m 21s 837ms (0.018ms/row)
+[2021-12-31T16:16:23Z INFO  matcher] Projecting Column RECEIPT_AMOUNT_BASE took 1m 28s 603ms (0.011ms/row)
+[2021-12-31T16:16:23Z INFO  matcher] Merging Column AMOUNT_BASE took 10s 99ms (0.001ms/row)
+[2021-12-31T16:16:23Z INFO  matcher] Merging Column SETTLEMENT_DATE took 40s 816ms (0.005ms/row)
+[2021-12-31T16:16:43Z INFO  matcher] Completed match job 05d83b03-89b0-4ad0-a65b-30029b53a6d1 in 8m 6s 407ms
+
+Using 1mil invoices - NEW build (remember - NO MATCHING)
+Peak RAM: 9.27MB
+Duration: 7m 14s 105ms
+Console output here
+[2021-12-31T16:18:42Z INFO  matcher] Starting match job:
+[2021-12-31T16:18:42Z INFO  matcher]     Job ID: 4dc1e221-0b00-462b-8069-3739470a29a0
+[2021-12-31T16:18:42Z INFO  matcher]    Charter: Three-way invoice match (v1)
+[2021-12-31T16:18:42Z INFO  matcher]   Base dir: ./tmp
+[2021-12-31T16:18:42Z INFO  matcher::model::grid] Sourcing data with pattern [.*invoices.*\.csv]
+[2021-12-31T16:18:42Z INFO  matcher::model::grid]   1000000 records read from file 20211231_154123226_invoices.csv in 341ms.
+[2021-12-31T16:18:42Z INFO  matcher::model::grid] Sourcing data with pattern [.*payments.*\.csv]
+[2021-12-31T16:18:43Z INFO  matcher::model::grid]   3496060 records read from file 20211231_154123226_payments.csv in 1s 153ms.
+[2021-12-31T16:18:43Z INFO  matcher::model::grid] Sourcing data with pattern [.*receipts.*\.csv]
+[2021-12-31T16:18:44Z INFO  matcher::model::grid]   3496060 records read from file 20211231_154123226_receipts.csv in 1s 116ms.
+[2021-12-31T16:25:36Z INFO  matcher] Projecting Column PAYMENT_AMOUNT_BASE took 1m 57s 243ms (0.015ms/row)
+[2021-12-31T16:25:36Z INFO  matcher] Projecting Column RECEIPT_AMOUNT_BASE took 1m 9s 96ms (0.009ms/row)
+[2021-12-31T16:25:36Z INFO  matcher] Merging Column AMOUNT_BASE took 7s 720ms (0.001ms/row)
+[2021-12-31T16:25:36Z INFO  matcher] Merging Column SETTLEMENT_DATE took 20s 596ms (0.003ms/row)
+[2021-12-31T16:25:56Z INFO  matcher] Completed match job 4dc1e221-0b00-462b-8069-3739470a29a0 in 7m 14s 105ms

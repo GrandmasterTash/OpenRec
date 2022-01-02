@@ -1,13 +1,12 @@
 use rlua::Context;
 use rust_decimal::Decimal;
 use core::{data_type::DataType, charter::{Constraint, ToleranceType}};
-use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua, data_accessor::DataAccessor};
+use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua};
 
 pub fn passes(
     constraint: &Constraint,
     records: &[&Record],
     schema: &GridSchema,
-    accessor: &mut DataAccessor,
     lua_ctx: &Context) -> Result<bool, MatcherError> {
 
     match constraint {
@@ -18,7 +17,7 @@ pub fn passes(
                 log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < 0 : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, Decimal::ZERO, result);
                 result
             };
-            net(column, lhs, rhs, sum_checker, records, schema, accessor, lua_ctx)
+            net(column, lhs, rhs, sum_checker, records, schema, lua_ctx)
         },
 
         // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
@@ -38,10 +37,10 @@ pub fn passes(
                     }),
             };
 
-            net(column, lhs, rhs, sum_checker, records, schema, accessor, lua_ctx)
+            net(column, lhs, rhs, sum_checker, records, schema, lua_ctx)
         },
 
-        Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, accessor, lua_ctx),
+        Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, lua_ctx),
     }
 }
 
@@ -59,27 +58,26 @@ fn net<F>(
     sum_checker: F,
     records: &[&Record],
     schema: &GridSchema,
-    accessor: &mut DataAccessor,
     lua_ctx: &Context) -> Result<bool, MatcherError>
 
     where F: Fn(Decimal, Decimal) -> bool, {
 
     // Validate NET column exists and is a DECIMAL (we can relax the type resiction if needed).
-    if !accessor.schema().headers().contains(column) {
+    if !schema.headers().contains(column) {
         return Err(MatcherError::ConstraintColumnMissing{ column: column.into() })
     }
 
-    if *accessor.schema().data_type(column).unwrap_or(&DataType::Unknown) != DataType::Decimal {
+    if *schema.data_type(column).unwrap_or(&DataType::Unknown) != DataType::Decimal {
         return Err(MatcherError::ConstraintColumnNotDecimal{ column: column.into() })
     }
 
     // Collect records in the group which match lhs and rhs filters.
-    let lhs_recs = lua::lua_filter(records, lhs, lua_ctx, accessor, schema)?;
-    let rhs_recs = lua::lua_filter(records, rhs, lua_ctx, accessor, schema)?;
+    let lhs_recs = lua::lua_filter(records, lhs, lua_ctx, schema)?;
+    let rhs_recs = lua::lua_filter(records, rhs, lua_ctx, schema)?;
 
     // Sum the NETting column for records on both sides.
-    let lhs_sum: Decimal = lhs_recs.iter().map(|r| r.get_decimal(column, accessor).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
-    let rhs_sum: Decimal = rhs_recs.iter().map(|r| r.get_decimal(column, accessor).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
+    let lhs_sum: Decimal = lhs_recs.iter().map(|r| r.get_decimal(column).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
+    let rhs_sum: Decimal = rhs_recs.iter().map(|r| r.get_decimal(column).unwrap_or(Some(Decimal::ZERO)).unwrap_or(Decimal::ZERO)).sum();
 
     // The constraint passes if the sides net to zero AND there is at least one record from each side.
     let net = sum_checker(lhs_sum, rhs_sum) && (!lhs_recs.is_empty() && !rhs_recs.is_empty());
@@ -98,7 +96,6 @@ fn custom_constraint(
     fields: &Option<Vec<String>>,
     records: &[&Record],
     schema: &GridSchema,
-    accessor: &mut DataAccessor,
     lua_ctx: &Context) -> Result<bool, MatcherError> {
 
     let script_cols = match fields {
@@ -118,7 +115,7 @@ fn custom_constraint(
     let lua_records = lua_ctx.create_table()?;
 
     for (idx, record) in records.iter().enumerate() {
-        let lua_record = lua::lua_record(record, &script_cols, accessor, lua_ctx)?;
+        let lua_record = lua::lua_record(record, &script_cols, lua_ctx)?;
         lua_records.set(idx + 1, lua_record)?;
     }
 

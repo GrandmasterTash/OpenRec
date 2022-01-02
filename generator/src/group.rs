@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use rand::{Rng, prelude::StdRng};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc, SecondsFormat};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use crate::{column::{ColumnMeta, SegmentMeta}, generator::{self, prelude::*}, schema::Schema};
 
@@ -138,8 +138,9 @@ fn column_idx(field: &str, schema: &Schema) -> usize {
 ///
 fn get_date(field: &str, record: &Record, schema: &Schema) -> DateTime<Utc> {
     let raw = &record[column_idx(field, schema)];
-    let timestamp = raw.parse::<i64>().unwrap();
-    DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(timestamp / 1000 /* ts is microsec */, 0), Utc)
+    // let timestamp = raw.parse::<i64>().unwrap();
+    // DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(timestamp / 1000 /* ts is microsec */, 0), Utc)
+    raw.parse::<DateTime<Utc>>().unwrap()
 }
 
 ///
@@ -160,7 +161,7 @@ fn get_string(field: &str, record: &Record, schema: &Schema) -> String {
 /// Set the field to the Date<Utc> value specified.
 ///
 fn set_date(field: &str, date: DateTime<Utc>, record: &mut Record, schema: &Schema) {
-    record[column_idx(field, schema)] = date.timestamp_millis().to_string();
+    record[column_idx(field, schema)] = date.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 ///

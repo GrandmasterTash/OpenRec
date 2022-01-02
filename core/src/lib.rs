@@ -4,7 +4,6 @@ pub mod charter;
 pub mod data_type;
 pub mod error;
 
-
 ///
 /// Provide a consistent formatting for durations and rates.
 ///

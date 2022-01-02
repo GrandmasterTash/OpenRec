@@ -76,7 +76,7 @@
                 }
             },
             "args": [
-                "/home/stef/dev/rust/celerity/examples/04-3-Way-Match.yaml",
+                "/home/stef/dev/rust/celerity/matcher/tmp/04-3-Way-Match.yaml",
                 "/home/stef/dev/rust/celerity/matcher/tmp"],
             "cwd": "${workspaceFolder}"
         },

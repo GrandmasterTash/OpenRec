@@ -1,19 +1,18 @@
 use itertools::Itertools;
 use core::data_type::DataType;
-use crate::{error::MatcherError, model::{schema::{Column, GridSchema}, record::Record}, lua, data_accessor::DataAccessor};
+use crate::{error::MatcherError, model::{schema::{Column, GridSchema}, record::Record}, lua};
 
 pub fn project_column(
     data_type: DataType,
     lua: &str,
     when: &Option<String>,
-    record: &Record,
-    accessor: &mut DataAccessor,
+    record: &mut Record,
     script_cols: &[Column],
     lua_ctx: &rlua::Context) -> Result<(), MatcherError> {
 
     let globals = lua_ctx.globals();
 
-    let lua_record = lua::lua_record(record, script_cols, accessor, lua_ctx)?;
+    let lua_record = lua::lua_record(record, script_cols, lua_ctx)?;
     globals.set("record", lua_record)?;
 
     // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip
@@ -22,16 +21,16 @@ pub fn project_column(
         // Now calculate the column value and append it to the underlying ByteRecord.
         match data_type {
             DataType::Unknown  => {},
-            DataType::Boolean  => record.append_bool(lua::eval(lua_ctx, &lua)?, accessor),
-            DataType::Datetime => record.append_datetime(lua::eval(lua_ctx, &lua)?, accessor),
-            DataType::Decimal  => record.append_decimal(lua::eval::<lua::LuaDecimal>(lua_ctx, &lua)?.0, accessor),
-            DataType::Integer  => record.append_int(lua::eval(lua_ctx, &lua)?, accessor),
-            DataType::String   => record.append_string(&lua::eval::<String>(lua_ctx, &lua)?, accessor),
-            DataType::Uuid     => record.append_uuid(lua::eval::<String>(lua_ctx, &lua).map(|s|s.parse().expect("Lua returned an invalid uuid"))?, accessor),
+            DataType::Boolean  => record.append_bool(lua::eval(lua_ctx, &lua)?),
+            DataType::Datetime => record.append_datetime(lua::eval(lua_ctx, &lua)?),
+            DataType::Decimal  => record.append_decimal(lua::eval::<lua::LuaDecimal>(lua_ctx, &lua)?.0),
+            DataType::Integer  => record.append_int(lua::eval(lua_ctx, &lua)?),
+            DataType::String   => record.append_string(&lua::eval::<String>(lua_ctx, &lua)?),
+            DataType::Uuid     => record.append_uuid(lua::eval::<String>(lua_ctx, &lua).map(|s|s.parse().expect("Lua returned an invalid uuid"))?),
         };
     } else {
         // Put a blank value in the projected column if we're not evaluating it.
-        record.append_string("", accessor);
+        record.append_string("");
     }
 
     Ok(())

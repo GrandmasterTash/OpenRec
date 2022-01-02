@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use super::datafile::DataFile;
+use super::{datafile::DataFile};
 use core::data_type::DataType;
 use std::{collections::HashMap, fs};
 use crate::{model::record::Record, error::MatcherError};

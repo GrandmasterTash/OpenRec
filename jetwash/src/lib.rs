@@ -16,8 +16,9 @@ use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
 use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType};
 
+// TODO: Exclude byte - if experiment is successful.
 // TODO: Append a uuid column to each record.
-// TODO: Changeset generation. Suggest this is a new component.
+// TODO: Changeset generation. Suggest this is a new component. handle update and full refresh data loads.
 
 lazy_static! {
     static ref DATES: Vec<Regex> = vec!(
@@ -142,7 +143,7 @@ pub fn run_charter(charter_path: &str, base_dir: &str) -> Result<(), JetwashErro
             // TODO: Push this line into fn as per above.
             // Create new file to start transforming the data into.
             let mut writer = csv::WriterBuilder::new()
-                .has_headers(true)
+                .has_headers(true) // TODO: Capacity
                 .quote_style(csv::QuoteStyle::Always)
                 .from_path(new_file.clone())
                 .map_err(|source| JetwashError::CannotOpenCsv{ path: new_file.to_canoncial_string(), source } )?;

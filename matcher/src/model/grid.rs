@@ -1,7 +1,8 @@
+use rayon::prelude::*;
 use ubyte::ToByteUnit;
-use std::{fs::File, time::Instant};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, data_accessor::DataAccessor, formatted_duration_rate};
-
+use core::charter::MatchingSourceFile;
+use std::{fs::{File, DirEntry}, time::Instant, rc::Rc, sync::Arc};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, CSV_BUFFER};
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -28,15 +29,22 @@ use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{dat
 /// Note: No memory is allocted for the empty cells shown above.
 ///
 pub struct Grid {
-    records: Vec<Box<Record>>,  // Represents each row from one of the sourced files.
+    // TODO: (EMS) Consider removing and using an index file.
+    // records: Vec<Box<Record>>,  // Represents each row from one of the sourced files.
+    count: usize,
     schema: GridSchema,         // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
 
 impl Grid {
-    pub fn is_empty(&self) -> bool {
-        self.records.is_empty()
+    pub fn len(&self) -> usize {
+        self.count
     }
-    
+
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+        // self.records.is_empty()
+    }
+
     pub fn schema(&self) -> &GridSchema {
         &self.schema
     }
@@ -45,23 +53,32 @@ impl Grid {
         &mut self.schema
     }
 
-    pub fn remove_deleted(&mut self) {
-        self.records.retain(|r| !r.deleted())
+    // pub fn remove_deleted(&mut self) {
+    //     // TODO: (EMS) Figure this bit out.
+    //     // self.records.retain(|r| !r.deleted())
+    // }
+
+    pub fn iter(&self, ctx: &Context) -> GridIterator {
+        GridIterator::new(ctx, self)
     }
 
-    pub fn records(&self) -> &Vec<Box<Record>> {
-        &self.records
-    }
+    // TODO: (EMS) Replace all ocurrences of this with iter above.
+    // pub fn records(&self) -> &Vec<Box<Record>> {
+    //     &self.records
+    // }
 
-    pub fn records_mut(&mut self) -> Vec<&mut Box<Record>> {
-        self.records.iter_mut().collect()
-    }
+    // TODO: (EMS) Can we use random access (https:///github.com/vasi/positioned-io) to use the first
+    // byte of each record as a include/exclude value? exclude-matched, exclude-ignored, etc.
+    // pub fn records_mut(&mut self) -> Vec<&mut Box<Record>> {
+    //     self.records.iter_mut().collect()
+    // }
 
     ///
     /// Return how much memory all the ByteRecords are using.
     ///
     pub fn memory_usage(&self) -> usize {
-        memory_usage(self.records())
+        123456
+        // memory_usage(self.records())
     }
 
     ///
@@ -69,11 +86,11 @@ impl Grid {
     ///
     pub fn load(ctx: &Context) -> Result<Self, MatcherError> {
 
-        let mut records = vec!();
         let mut grid_schema = GridSchema::default();
+        let mut total_count = 0;
 
         // Load and index all pending records.
-        for source_file in ctx.charter().source_files().iter() {
+        for source_file in ctx.charter().source_files() {
             log::info!("Sourcing data with pattern [{}]", source_file.pattern());
             // TODO: Validate the source path is canonicalised in the rec base.
 
@@ -82,55 +99,19 @@ impl Grid {
             let mut last_schema_idx = None;
 
             for file in folders::files_in_matching(ctx, source_file.pattern())? {
-                let started = Instant::now();
-                log::debug!("Reading file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
-
-                // For now, just count all the records in a file and log them.
-                let mut count = 0;
-
-                let mut rdr = csv::ReaderBuilder::new()
-                    .from_path(file.path())
-                    .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
-
-                let schema = FileSchema::new(source_file.field_prefix(), &mut rdr)
-                    .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;
-
-                // Use an existing schema from the grid, if there is one, otherwise add this one.
-                let schema_idx = grid_schema.add_file_schema(schema.clone());
-                last_schema_idx = validate_schema(&grid_schema, schema_idx, &last_schema_idx, &schema, source_file.pattern())?;
-
-                // Register the data file with the grid.
-                let file_idx = grid_schema.add_file(DataFile::new(&file, schema_idx)?);
-
-                // Create an in-memory index for each sourced record.
-                for result in rdr.byte_records() {
-                    let csv_record = result // Ensure we can read the record - but ignore it at this point.
-                        .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
-
-                    let record = Box::new(Record::new(file_idx as u16, &csv_record.position()
-                        .expect("No position for a record in a file?").clone()));
-
-                    records.push(record);
-                    count += 1;
-                }
-
-                let (duration, _rate) = formatted_duration_rate(count, started.elapsed());
-
-                log::info!("  {} records read from file {} in {}. Memory Usage {}.",
-                    count,
-                    file.file_name().to_string_lossy(),
-                    blue(&duration),
-                    blue(&format!("{:.0}", memory_usage(&records).bytes())));
+                let (count, last) = load_file(&file, source_file, &mut grid_schema, last_schema_idx)?;
+                last_schema_idx = last;
+                total_count += count;
             }
         }
 
-        Ok(Grid { records, schema: grid_schema })
+        Ok(Grid { count: total_count, schema: grid_schema })
     }
 
     ///
     /// Writes all the grid's data to a file at this point
     ///
-    pub fn debug_grid(&self, ctx: &Context, sequence: usize, accessor: &mut DataAccessor) {
+    pub fn debug_grid(&self, ctx: &Context, sequence: usize) {
         if ctx.charter().debug() {
             let output_path = folders::debug_path(ctx)
                 .join(format!("{timestamp}_{phase_num}_{phase_name:?}_{sequence}.debug.csv",
@@ -142,15 +123,21 @@ impl Grid {
 
             log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
-            let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
+            let mut wtr = csv::WriterBuilder::new()
+                .quote_style(csv::QuoteStyle::Always)
+                .buffer_capacity(*CSV_BUFFER)
+                .from_path(&output_path)
+                .expect("Unable to build a debug writer");
             wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
 
-            for record in &self.records {
-                wtr.write_record(record.as_strings(self.schema(), accessor)).expect("Unable to write record");
+            let mut count = 0;
+            for record in self.iter(ctx) {
+                wtr.write_record(record.as_strings()).expect("Unable to write record");
+                count += 1;
             }
 
             wtr.flush().expect("Unable to flush the debug file");
-            log::debug!("...{} rows written to {}", self.records.len(), output_path.to_canoncial_string());
+            log::debug!("...{} rows written to {}", count, output_path.to_canoncial_string());
         }
     }
 
@@ -169,7 +156,11 @@ impl Grid {
 
             log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
-            let mut wtr = csv::WriterBuilder::new().quote_style(csv::QuoteStyle::Always).from_path(&output_path).expect("Unable to build a debug writer");
+            let mut wtr = csv::WriterBuilder::new()
+                .quote_style(csv::QuoteStyle::Always)
+                .buffer_capacity(*CSV_BUFFER)
+                .from_path(&output_path)
+                .expect("Unable to build a debug writer");
             wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
             return Some(wtr)
         }
@@ -179,10 +170,10 @@ impl Grid {
     ///
     /// Writes all the data specified to a file at this point
     ///
-    pub fn debug_records(&self, wtr: &mut Option<csv::Writer<File>>, records: &[&Record], accessor: &mut DataAccessor) {
+    pub fn debug_records(&self, wtr: &mut Option<csv::Writer<File>>, records: &[&Record]) {
         if let Some(wtr) = wtr {
             for record in records {
-                wtr.write_record(record.as_strings(self.schema(), accessor)).expect("Unable to write record");
+                wtr.write_record(record.as_strings()).expect("Unable to write record");
             }
         }
     }
@@ -195,6 +186,51 @@ impl Grid {
             wtr.flush().expect("Unable to flush the debug file");
         }
     }
+}
+
+///
+/// Parse each csv row in the file to ensure it's parseable. Count the rows and ensure no two files loaded from the same pattern,
+/// have different column schemas.
+///
+fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mut GridSchema, last_schema_idx: Option<usize>)
+    -> Result<(usize /* record count */, Option<usize> /* last_schema_idx */), MatcherError> {
+
+    let started = Instant::now();
+    log::debug!("Reading file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
+
+    // For now, just count all the records in a file and log them.
+    let mut count = 0;
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .from_path(file.path())
+        .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
+
+    let schema = FileSchema::new(source_file.field_prefix(), &mut rdr)
+        .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;
+
+    // Use an existing schema from the grid, if there is one, otherwise add this one.
+    let schema_idx = grid_schema.add_file_schema(schema.clone());
+    let last_schema_idx = validate_schema(&grid_schema, schema_idx, &last_schema_idx, &schema, source_file.pattern())?;
+
+    // Register the data file with the grid.
+    let _file_idx = grid_schema.add_file(DataFile::new(&file, schema_idx)?);
+
+    // Validate each record can be parsed okay.
+    for result in rdr.byte_records() {
+        let _csv_record = result // Ensure we can read the record - but ignore it at this point.
+            .map_err(|source| MatcherError::CannotParseCsvRow { source, path: file.path().to_canoncial_string() })?;
+
+        count += 1;
+    }
+
+    let (duration, _rate) = formatted_duration_rate(count, started.elapsed());
+
+    log::info!("  {} records read from file {} in {}.",
+        count,
+        file.file_name().to_string_lossy(),
+        blue(&duration));
+
+    Ok((count, last_schema_idx))
 }
 
 // TODO: This seems like it should be part of add_file_schema in GridSchema.....
@@ -216,4 +252,106 @@ fn validate_schema(grid_schema: &GridSchema, schema_idx: usize, last_schema_idx:
 ///
 pub fn memory_usage(records: &[Box<Record>]) -> usize {
     records.iter().map(|r| r.memory_usage()).sum()
+}
+
+
+
+// TODO: Push all this iterator stuff into own module.
+type CsvReaders = Vec<csv::Reader<File>>;
+
+///
+/// Iterator allows iterating the record (indexes) in the grid.
+///
+pub struct GridIterator {
+    pos: usize, // reader index.
+    schema: Arc<GridSchema>,
+    data_readers: CsvReaders,
+    derived_readers: Option<CsvReaders>,
+}
+
+impl GridIterator {
+    pub fn new(ctx: &Context, grid: &Grid) -> Self {
+        let data_readers = grid.schema().files()
+            .iter()
+            .map(|file| {
+                // Create a reader for each file - skipping the schema row.
+                let mut rdr = csv::ReaderBuilder::new().from_path(file.path()).unwrap(); // TODO: Don't unwrap any of these.
+                let mut ignored = csv::ByteRecord::new();
+                rdr.read_byte_record(&mut ignored).unwrap();
+                rdr
+            })
+            .collect();
+
+        let derived_readers = match ctx.phase() {
+            crate::Phase::MatchAndGroup        |
+            crate::Phase::ComleteAndArchive =>
+                Some(grid.schema().files()
+                    .iter()
+                    .map(|file| {
+                        // Create a reader for each derived file - skipping the schema row.
+                        let mut rdr = csv::ReaderBuilder::new().from_path(file.derived_path()).unwrap(); // TODO: Don't unwrap any of these.
+                        let mut ignored = csv::ByteRecord::new();
+                        rdr.read_byte_record(&mut ignored).unwrap();
+                        rdr
+                    })
+                    .collect()),
+            _ => None,
+        };
+
+        Self {
+            pos: 0,
+            schema: Arc::new(grid.schema().clone()),
+            data_readers,
+            derived_readers,
+        }
+    }
+}
+
+impl Iterator for GridIterator {
+    type Item = Record;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // If we've reached the end of the last file, return None.
+            if self.pos == self.data_readers.len() {
+                return None
+            }
+
+            // Read a row from the csv file.
+            match read_next(self.pos, &mut self.data_readers) {
+                Ok(data) => {
+                    if let Some(data) = data  {
+                        // Read a row from the derived csv file, if applicable.
+                        let derived = match &mut self.derived_readers {
+                            Some(derived_readers) => {
+                                match read_next(self.pos, derived_readers) {
+                                    Ok(derived) => derived.unwrap_or_default(),
+                                    Err(_) => csv::ByteRecord::new(), // TODO: Log error.
+                                }
+                            },
+                            None => csv::ByteRecord::new(),
+                        };
+
+                        return Some(Record::new(self.pos, self.schema.clone(), data, derived))
+                    }
+
+                    // If there was no data in the file, move onto the next one.
+                    self.pos += 1;
+                },
+                Err(_) => return None, // TODO: Log error.
+            }
+        }
+    }
+}
+
+
+fn read_next(pos: usize, readers: &mut CsvReaders) -> Result<Option<csv::ByteRecord>, csv::Error> {
+    let mut buffer = csv::ByteRecord::new();
+    match readers[pos].read_byte_record(&mut buffer) {
+        Ok(result) => match result {
+            true  => Ok(Some(buffer)),
+            false => Ok(None),
+        },
+        Err(err) => Err(err),
+    }
 }
