@@ -49,10 +49,6 @@ impl Record {
         self.schema.clone()
     }
 
-    pub fn memory_usage(&self) -> usize {
-        std::mem::size_of::<Record>() // TODO: Include data in buffers.
-    }
-
     ///
     /// Get the derived value, or load the real value from the backing csv reader.
     ///
@@ -77,7 +73,6 @@ impl Record {
         }
     }
 
-    // TODO: Consider passing schema & into new fn then we don't need it in these fns....
     pub fn get_bool(&self, header: &str) -> Result<Option<bool>, MatcherError> {
         if let Some(column) = self.schema.position_in_record(header, self) {
             if let Some(bytes) = self.get_bytes(*column)? {

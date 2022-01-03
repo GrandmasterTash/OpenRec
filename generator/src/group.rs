@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use rust_decimal_macros::dec;
 use rand::{Rng, prelude::StdRng};
 use chrono::{DateTime, Utc, SecondsFormat};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -60,7 +61,7 @@ fn generate_payments(
     inv_schema: &Schema,
     pay_schema: &Schema,
     foreign_key: &str,
-    fx_rate: Decimal,
+    _fx_rate: Decimal,
     settlement_date: DateTime<Utc>,
     rng: &mut StdRng) -> Vec<Record> {
 
@@ -69,14 +70,14 @@ fn generate_payments(
         .collect::<Vec<Record>>();
 
     // Get the total invoice amount - we'll allocate it amongst the payments.
-    let tot_amount = get_decimal(TOTAL_AMOUNT, &invoice, inv_schema);
+    let tot_amount = dec!(2.0) * get_decimal(TOTAL_AMOUNT, &invoice, inv_schema);
     allocate_decimal(AMOUNT, tot_amount, &mut payments, pay_schema, rng);
 
     payments.iter_mut().for_each(|payment| {
         set_date(PAYMENT_DATE, settlement_date, payment, pay_schema);
 
-        // Set the FXRate to the same value for all payments.
-        set_decimal(FX_RATE, fx_rate, payment, pay_schema);
+        // Set the FXRate to the same value for all payments. We'll double the amount and use .5 FXRate.
+        set_decimal(FX_RATE, dec!(0.5), payment, pay_schema);
     });
 
     payments
@@ -90,7 +91,7 @@ fn generate_receipts(
     rec_schema: &Schema,
     pay_schema: &Schema,
     foreign_key: &str,
-    fx_rate: Decimal,
+    _fx_rate: Decimal,
     settlement_date: DateTime<Utc>,
     rng: &mut StdRng) -> Vec<Record> {
 
@@ -113,7 +114,7 @@ fn generate_receipts(
         set_date(RECEIPT_DATE, settlement_date, &mut receipt, rec_schema);
 
         // Set the FXRate to the same value for all receipts.
-        set_decimal(FX_RATE, fx_rate, &mut receipt, rec_schema);
+        set_decimal(FX_RATE, dec!(0.5), &mut receipt, rec_schema);
 
         receipts.push(receipt);
     }

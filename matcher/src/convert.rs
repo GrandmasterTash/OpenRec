@@ -72,6 +72,3 @@ pub fn int_to_string(value: i64) -> String {
 pub fn uuid_to_string(value: Uuid) -> String {
     value.to_hyphenated().to_string()
 }
-
-
-// TODO: Unit tests to convert....

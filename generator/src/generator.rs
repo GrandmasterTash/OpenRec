@@ -25,6 +25,7 @@ pub mod prelude {
     pub const CURRENCY: &str = "Currency";
     pub const FX_RATE: &str = "FXRate";
     pub const INVOICE_REF: &str = "InvoiceRef";
+    pub const OPENREC_STATUS: &str = "OpenRecStatus";
     pub const PAYMENT_DATE: &str = "PaymentDate";
     pub const PAYMENT_REF: &str = "PaymentRef";
     pub const RECEIPT_DATE: &str = "ReceiptDate";
@@ -138,6 +139,7 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
 ///
 fn fixed_inv_columns() -> Vec<Column> {
     vec!(
+        Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, INVOICE_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
@@ -154,6 +156,7 @@ fn fixed_inv_columns() -> Vec<Column> {
 ///
 fn fixed_pay_columns() -> Vec<Column> {
     vec!(
+        Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, PAYMENT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
@@ -169,6 +172,7 @@ fn fixed_pay_columns() -> Vec<Column> {
 ///
 fn fixed_rec_columns() -> Vec<Column> {
     vec!(
+        Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, RECEIPT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
@@ -248,8 +252,9 @@ pub fn generate_row(schema: &Schema, foreign_key: &str, record_type: &str, rng: 
         .iter()
         .map(|col| {
             match col.header() {
-                RECORD_TYPE => record_type.to_string(),
-                REFERENCE   => foreign_key.to_string(),
+                RECORD_TYPE    => record_type.to_string(),
+                REFERENCE      => foreign_key.to_string(),
+                OPENREC_STATUS => "0".into(),
                 _ => match col.data_type() {
                     DataType::UNKNOWN  => panic!("Unknown data type encountered for column {}", col.header()),
                     DataType::BOOLEAN  => generate_boolean(rng),

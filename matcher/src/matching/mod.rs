@@ -1,106 +1,25 @@
+mod group_iter;
+pub mod matched;
+pub mod unmatched;
+
 use rlua::Context;
 use ubyte::ToByteUnit;
 use itertools::Itertools;
 use core::charter::Constraint;
-use super::constraints::passes;
 use bytes::{BufMut, Bytes, BytesMut};
-use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf, sync::Arc};
-use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, matched::MatchedHandler, blue, folders::{self, ToCanoncialString}, convert, MEMORY_BOUNDS, CsvReader, CsvReaders, lua};
+use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf};
+use self::{prelude::*, group_iter::GroupIterator, matched::MatchedHandler};
+use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, convert, MEMORY_BOUNDS, lua, instructions::constraints::passes};
 
 // The column position in our index records for the merge_key used to sort index records.
-const COL_FILE_IDX: usize = 0;
-const COL_DATA_BYTE: usize = 1;
-const COL_DATA_LINE: usize = 2;
-const COL_DERIVED_BYTE: usize = 3;
-const COL_DERIVED_LINE: usize = 4;
-const COL_MERGE_KEY: usize = 5;
-
-// TODO: Rename this module to 'matching' (mod.rs), group_iter, matched, unmatched
-
-// ///
-// /// Bring groups of records together using the columns specified.
-// ///
-// /// If a group of records matches all the constraint rules specified, the group is written to a matched
-// /// file and any records which fail to be matched are written to un-matched files.
-// ///
-// pub fn match_groups(
-//     ctx: &crate::Context,
-//     inst_idx: usize,
-//     group_by: &[String],
-//     constraints: &[Constraint],
-//     grid: &mut Grid,
-//     schema: &GridSchema,
-//     lua: &rlua::Lua,
-//     matched: &mut MatchedHandler) -> Result<(), MatcherError> {
-
-//     if grid.is_empty() {
-//         return Ok(())
-//     }
-
-//     log::info!("Grouping by {}", group_by.iter().join(", "));
-
-//     let mut group_count = 0;
-//     let mut match_count = 0;
-//     let lua_time = Cell::new(Duration::from_millis(0));
-
-//     // Create/open a debug file - we'll debug them in their grouping order.
-//     let mut wtr = grid.start_debug_records(ctx, inst_idx);
-
-//     // Create a Lua context to evaluate Constraint rules in.
-//     lua.context(|lua_ctx| {
-//         lua::init_context(&lua_ctx)?;
-//         lua::create_aggregate_fns(&lua_ctx)?;
-
-//         // Form groups from the records.
-//         for (_key, group) in &grid.iter(ctx)
-
-//             // Build a 'group key' from the record using the grouping columns.
-//             .map(|record| (match_key(&record, group_by), record) )
-
-//             // Sort records by the group key to form contiguous runs of records belonging to the same group.
-//             .sorted_by(|(key1, _record1), (key2, _record2)| Ord::cmp(&key1, &key2))
-
-//             // Group records by the group key.
-//             .group_by(|(key, _record)| key.clone()) {
-
-//             // Collect the records in the group.
-//             let records = group.map(|(_key, record)| record).collect::<Vec<Record>>();
-
-//             // TODO: (EMS) This all needs re-working!!!
-//             // Write this group out to the debug file.
-//             // grid.debug_records(&mut wtr, records.iter().map(|r| r).collect());
-
-//             // Test any constraints on the group to see if it's a match.
-//             // if is_match(&records, constraints, schema, &lua_ctx, &lua_time)? {
-//             //     // TODO: (EMS) use random access to mark records as matched.
-//             //     // records.iter().for_each(|r| r.set_deleted());
-//             //     matched.append_group(&records)?;
-//             //     match_count += 1;
-//             // }
-
-//             group_count += 1;
-//         }
-
-//         Ok(())
-//     })
-//     .map_err(|source| MatcherError::MatchGroupError { source })?;
-
-//     // Remove matched records from the grid now.
-//     // TODO: (EMS) This will need a rethink.
-//     // grid.remove_deleted();
-
-//     // Complete the debug file.
-//     grid.finish_debug_records(wtr);
-
-//     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
-//     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
-//         blue(&format!("{}", match_count)),
-//         blue(&format!("{}", group_count)),
-//         blue(&duration),
-//         rate);
-
-//     Ok(())
-// }
+mod prelude {
+    pub const COL_FILE_IDX: usize = 0;
+    pub const COL_DATA_BYTE: usize = 1;
+    pub const COL_DATA_LINE: usize = 2;
+    pub const COL_DERIVED_BYTE: usize = 3;
+    pub const COL_DERIVED_LINE: usize = 4;
+    pub const COL_MERGE_KEY: usize = 5;
+}
 
 ///
 /// Derive a value ('match key') to group this record with others.
@@ -199,7 +118,8 @@ pub fn match_groups(
     // Delete all index files, index.unsorted.csv, index.sorted.*
     clean_up_indexes(ctx, file_count)?;
 
-    // TODO: grid.len() should be updated to reflect removed records.
+    // TODO: grid.len() should be updated to reflect removed records. MAybe in match handler?
+    // TODO Debug grid....
 
     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
@@ -484,150 +404,6 @@ fn clean_up_indexes(ctx: &crate::Context, file_count: usize) -> Result<(), Match
     Ok(())
 }
 
-///
-/// Iterate the file index.sorted.csv and use the merge-key to read entire groups of records.
-///
-pub struct GroupIterator {
-    schema: Arc<GridSchema>,
-    index_rdr: CsvReader,
-    data_rdrs: CsvReaders,
-    derived_rdrs: CsvReaders,
-    current: Option<csv::ByteRecord>,
-}
-
-impl GroupIterator {
-    fn new(ctx: &crate::Context, schema: &GridSchema) -> Self {
-        Self {
-            schema: Arc::new(schema.clone()),
-            index_rdr: csv::ReaderBuilder::new()
-                .has_headers(false)
-                .from_path(folders::matching(ctx).join("index.sorted.csv"))
-                .unwrap(),
-            data_rdrs: schema.files()
-                .iter()
-                .map(|file| {
-                    // Create a reader for each file - skipping the schema row.
-                    let mut rdr = csv::ReaderBuilder::new().from_path(file.path()).unwrap(); // TODO: Don't unwrap any of these.
-                    let mut ignored = csv::ByteRecord::new();
-                    rdr.read_byte_record(&mut ignored).unwrap();
-                    rdr
-                })
-                .collect(),
-            derived_rdrs: schema.files()
-                .iter()
-                .map(|file| {
-                    // Create a reader for each derived file - skipping the schema row.
-                    let mut rdr = csv::ReaderBuilder::new().from_path(file.derived_path()).unwrap(); // TODO: Don't unwrap any of these.
-                    let mut ignored = csv::ByteRecord::new();
-                    rdr.read_byte_record(&mut ignored).unwrap();
-                    rdr
-                })
-                .collect(),
-            current: None
-        }
-    }
-
-    fn new_group(&self, csv_record: &csv::ByteRecord) -> bool {
-        match &self.current {
-            None => false, // This isn't a NEW group this is the FIRST group.
-            Some(current) => {
-                current.get(COL_MERGE_KEY).unwrap() != csv_record.get(COL_MERGE_KEY).unwrap()
-            },
-        }
-    }
-
-    ///
-    /// Use the file-base index to load the record data and derived data.
-    ///
-    fn load_record(&mut self, csv_record: &csv::ByteRecord) -> Result<Record, MatcherError> {
-
-        let mut data_pos = csv::Position::new();
-        data_pos.set_byte(csv_to_u64(csv_record.get(COL_DATA_BYTE)));
-        data_pos.set_line(csv_to_u64(csv_record.get(COL_DATA_LINE)));
-
-        let mut derived_pos = csv::Position::new();
-        derived_pos.set_byte(csv_to_u64(csv_record.get(COL_DERIVED_BYTE)));
-        derived_pos.set_line(csv_to_u64(csv_record.get(COL_DERIVED_LINE)));
-
-        let file_idx = csv_to_u64(csv_record.get(COL_FILE_IDX)) as usize;
-
-        // Read the real (csv)record using it's indexed position.
-        let mut data_record = csv::ByteRecord::new();
-        self.data_rdrs[file_idx].seek(data_pos)?;
-        self.data_rdrs[file_idx].read_byte_record(&mut data_record)?;
-
-        // Read the derived (csv)record using it's indexed position.
-        let mut derived_record = csv::ByteRecord::new();
-        self.derived_rdrs[file_idx].seek(derived_pos)?;
-        self.derived_rdrs[file_idx].read_byte_record(&mut derived_record)?;
-
-        // Construct a Record.
-        Ok(Record::new(file_idx, self.schema.clone(), data_record, derived_record))
-    }
-
-    fn group_result(&self, group: Vec<Record>) -> Option<Result<Vec<Record>, MatcherError>> {
-        match group.is_empty() {
-            true => None,
-            false => Some(Ok(group)),
-        }
-    }
-}
-
-pub fn csv_to_u64(bytes: Option<&[u8]>) -> u64 {
-    String::from_utf8_lossy(&bytes.expect("Index usize field missing"))
-        .parse()
-        .expect("Unable to convert index field to usize")
-}
-
-impl Iterator for GroupIterator {
-    type Item = Result<Vec<Record>, MatcherError>;
-
-    ///
-    /// Use the record indexes to look-up the full csv and derived csv data to construct each record in the group.
-    ///
-    fn next(&mut self) -> Option<Self::Item> {
-
-        let mut group = Vec::new();
-
-        // If we're starting a new group, load the record.
-        if let Some(csv_record) = self.current.clone(/* load_record needs mut borrow of self */) {
-            match self.load_record(&csv_record) {
-                Ok(record) => group.push(record),
-                Err(err) => return Some(Err(err)),
-            }
-        }
-
-        // Read a record index.
-        loop {
-            let mut csv_record = csv::ByteRecord::new();
-            match self.index_rdr.read_byte_record(&mut csv_record) {
-                Ok(read) => match read {
-                    true  => {
-                        // If this new index belongs to a new group, track it and return the current group now.
-                        if self.new_group(&csv_record) {
-                            self.current = Some(csv_record);
-                            return self.group_result(group)
-                        }
-
-                        // Otherwise keep appending records to the group.
-                        match self.load_record(&csv_record) {
-                            Ok(record) => group.push(record),
-                            Err(err) => return Some(Err(err)),
-                        }
-
-                        // Track the current group.
-                        self.current = Some(csv_record);
-                    },
-                    false => {
-                        self.current = None;
-                        return self.group_result(group)
-                    },
-                },
-                Err(err) => return Some(Err(err.into())),
-            }
-        }
-    }
-}
 
 ///
 /// Reads csv records with a slightly slicker api.

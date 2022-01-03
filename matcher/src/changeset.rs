@@ -195,10 +195,6 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
             source
         })?;
 
-        // TODO: (EMS) Verify this is no-longer required.
-        // Delete any ignored records from memory.
-        // grid.remove_deleted();
-
         // Finalise the modifying files, renaming and archiving things as required.
         any_applied = finalise_files(ctx, &metrics)?;
 

@@ -7,6 +7,3 @@ For example: -
 20200501_124500000_Invoices.csv
 20200502_094500000_Invoices.csv
 
-
-
-TODO: External Merge K-Way Sort

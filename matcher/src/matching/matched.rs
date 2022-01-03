@@ -1,8 +1,9 @@
 use itertools::Itertools;
 use positioned_io::WriteAt;
 use serde_json::{json, Value};
+use super::unmatched::UnmatchedHandler;
 use std::{fs::{File, OpenOptions}, io::{BufWriter, Write}};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context, changeset::{ChangeSet, Change}, unmatched::UnmatchedHandler};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context, changeset::{ChangeSet, Change}};
 
 ///
 /// Manages the matched job file and appends matched groups to it.

@@ -3,9 +3,8 @@ mod error;
 mod model;
 mod convert;
 mod folders;
-mod matched;
+mod matching;
 mod changeset;
-mod unmatched;
 mod instructions;
 
 use uuid::Uuid;
@@ -17,11 +16,12 @@ use changeset::ChangeSet;
 use lazy_static::lazy_static;
 use model::schema::GridSchema;
 use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate};
-use rayon::iter::{ParallelIterator, IntoParallelRefMutIterator, IndexedParallelIterator};
-use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, fs::File};
-use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler};
+use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
+use std::{time::Instant, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, fs::File};
+use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler};
 
 // TODO: Consider using more panics in this project rather than errors. It's designed to be re-runable and this would simplify a lot of fns
+// TODO: OR consider better use of anyhow https://docs.rs/anyhow/latest/anyhow/index.html with context and here! details.
 // TODO: Need to be able to group on dates and ignore the time aspect. Also need tolerance for dates (unit = days)
 // TODO: Flesh-out examples.
 // TODO: Archive changesets to archive/matcher not to /matched folder.
@@ -30,11 +30,11 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 // TODO: Clippy!
 // TODO: An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 // TODO: Rename this lib to celerity.
-// TODO: Thread-per source file for col-projects and col-merges.
-// TODO: https://en.wikipedia.org/wiki/External_sorting external-merge-sort.
+// TODO: Unified unmatched files - where schemas match - to avoid too many readers. Use a metadata column for original filename.
+// TODO: csv utils where all readers and writers can be created - for consistency.
 
 lazy_static! {
-    // TODO: Read from env - enforce sensible lower limit.
+    // TODO: Read from charter - enforce sensible lower limit.
     pub static ref MEMORY_BOUNDS: usize = 50.megabytes().as_u64() as usize;  // External merge sort memory bounds.
     pub static ref CSV_BUFFER: usize = 1.megabytes().as_u64() as usize;      // For CSV writer buffers.
 }
@@ -147,6 +147,7 @@ impl Context {
     }
 }
 
+
 ///
 /// Create a new match job and run the charter.
 ///
@@ -154,6 +155,8 @@ impl Context {
 /// so only one can exclusively run against a given charter/folder of data at any one time.
 ///
 pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
+
+    println!("{}", error::here!());
 
     let ctx = init_job(charter, base_dir)?;
 
@@ -188,10 +191,11 @@ pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
 fn init_job(charter: &str, base_dir: &str) -> Result<Context, MatcherError> {
     let ctx = Context::new(Charter::load(charter)?, Path::new(charter).canonicalize()?.to_path_buf(),  base_dir.into());
 
-    log::info!("Starting match job:");
-    log::info!("    Job ID: {}", ctx.job_id());
-    log::info!("   Charter: {} (v{})", ctx.charter().name(), ctx.charter().version());
-    log::info!("  Base dir: {}", ctx.base_dir());
+    log::info!("Starting match job:\nJob ID: {job_id}\nCharter: {charter} (v{version})\nBase Dir: {base_dir}",
+        job_id = ctx.job_id(),
+        charter = ctx.charter().name(),
+        version = ctx.charter().version(),
+        base_dir = ctx.base_dir());
 
     Ok(ctx)
 }
@@ -313,8 +317,10 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
     -> Result<(), MatcherError> {
 
     // We need one thread per file.
-    // TODO: files...num_cpus allow option to use single thread for lowest mem usage.
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(grid.schema().files().len()).build().unwrap();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(std::cmp::min(grid.schema().files().len(), num_cpus::get()))
+        .build()
+        .unwrap();
 
     // Create a data reader per sourced file. Skip the schema rows.
     let readers: Vec<CsvReader> = grid.schema()
@@ -335,24 +341,25 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
     let schema = std::sync::Arc::new(grid.schema().clone());
     let charter = std::sync::Arc::new(ctx.charter().clone());
 
-    pool.install(||
-    zipped.par_iter_mut()
+    pool.install(|| zipped.par_iter_mut()
         .enumerate()
         .map(|(file_idx, (reader, writer))| { // TODO: Consider a tuple of reader+path for error reporting and metrics logging.
-
+            // Put this block in a fn?
+            let charter = charter.clone();
+            let schema = schema.clone();
             // TODO: Track the record and instruction being processed. Used in logs should an error occur.
-            //let mut eval_ctx = (0 /* file */, 0 /* row */, 0 /* instruction */);
+            let mut eval_ctx = (file_idx /* file */, 0 /* row */, 0 /* instruction */);
 
             let lua = rlua::Lua::new();
 
             lua.context(|lua_ctx| {
                 lua::init_context(&lua_ctx)?;
-                // let mut csv_record = csv::ByteRecord::new();
-                // reader.read_byte_record(&csv_record)?;
                 for csv_record in reader.byte_records() {
                     let mut record = Record::new(file_idx, schema.clone(), csv_record?, csv::ByteRecord::new());
 
                     for (i_idx, inst) in charter.instructions().iter().enumerate() {
+                        eval_ctx = (file_idx, record.row(), i_idx);
+
                         match inst {
                             Instruction::Project { column: _, as_a, from, when } => {
                                 let script_cols = projection_cols.get(&i_idx).ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
@@ -373,11 +380,19 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
                     writer.write_byte_record(&record.flush()).map_err(|err| MatcherError::CSVError(err))?;
                 }
 
-                Ok(())
+                Ok(()) // TODO: Accumulate metrics for each file.
+
+            }).map_err(|err: MatcherError| MatcherError::DeriveDataError {
+                instruction: format!("{:?}", charter.instructions()[eval_ctx.2]),
+                row: eval_ctx.1,
+                file: grid.schema().files()[eval_ctx.0].filename().into(),
+                err: err.to_string()
             })
         })
-        .collect::<Result<(), MatcherError>>().expect("derived data failed") // Map error and add eval_context.
+        .collect::<Result<(), MatcherError>>().expect("derived data failed")
+        // TODO: Report accumulated metrics here.
     );
+
     Ok(())
 }
 
@@ -464,16 +479,16 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
 //     Ok(())
 // }
 
-///
-/// Set the initial or increment the existing duration for the specified charter instruction.
-///
-fn record_duration(instruction: usize, metrics: &mut HashMap<usize, Duration>, elapsed: Duration) {
-    if !metrics.contains_key(&instruction) {
-        metrics.insert(instruction, Duration::ZERO);
-    }
+// ///
+// /// Set the initial or increment the existing duration for the specified charter instruction.
+// ///
+// fn record_duration(instruction: usize, metrics: &mut HashMap<usize, Duration>, elapsed: Duration) {
+//     if !metrics.contains_key(&instruction) {
+//         metrics.insert(instruction, Duration::ZERO);
+//     }
 
-    metrics.insert(instruction, elapsed + *metrics.get(&instruction).expect("Instruction metric missing"));
-}
+//     metrics.insert(instruction, elapsed + *metrics.get(&instruction).expect("Instruction metric missing"));
+// }
 
 ///
 /// Run all other instructions that don't create derived data. Create a new accessor which
@@ -492,7 +507,7 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
             Instruction::Project { .. } => {},
             Instruction::Merge { .. } => {},
             Instruction::Group { by, match_when } => {
-                instructions::match_groups::match_groups(
+                matching::match_groups(
                     ctx,
                     by,
                     match_when,
@@ -502,9 +517,6 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
         };
 
         // BUG: Grid must be re-loaded each time. Otherwise len is wrong.
-
-        log::debug!("Grid Memory Size: {}",
-            blue(&format!("{:.0}", grid.memory_usage().bytes())));
     }
 
     Ok((matched, unmatched))

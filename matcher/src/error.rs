@@ -7,9 +7,6 @@ pub enum MatcherError {
     #[error("Charter {path} not found")]
     CharterFileNotFound { path: String, source: std::io::Error },
 
-    #[error("Charter {path} contains invalid configuration")]
-    InvalidCharter { path: String, source: serde_yaml::Error },
-
     #[error("Path {path} is not a file and has no filename")]
     PathNotAFile { path: String },
 
@@ -127,8 +124,8 @@ pub enum MatcherError {
     #[error("An error occured processing changeset {changeset} on record {row} from file {file}")]
     ChangeSetError { changeset: String, row: usize, file: String, source: rlua::Error },
 
-    #[error("An error occured processing instruction {instruction} on record {row} from file {file}")]
-    DeriveDataError { instruction: String, row: usize, file: String, source: rlua::Error },
+    #[error("An error occured processing instruction {instruction} on record {row} from file {file} : {err}")]
+    DeriveDataError { instruction: String, row: usize, file: String, err: String },
 
     #[error("A problem occured during the match")]
     MatchGroupError { source: rlua::Error },
@@ -172,6 +169,17 @@ pub enum MatcherError {
     #[error(transparent)]
     IOError(#[from] std::io::Error),
 }
+
+///
+/// File and line number details for errors.
+///
+macro_rules! here {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
+pub(crate) use here;    // https://stackoverflow.com/questions/26731243/how-do-i-use-a-macro-across-module-files
 
 ///
 /// This allows us to return MatcherErrors inside Lua contexts and have them wrapped

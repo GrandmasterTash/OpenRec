@@ -1,13 +1,8 @@
 use ubyte::ToByteUnit;
+use super::grid_iter::GridIterator;
 use core::charter::MatchingSourceFile;
-use std::{fs::{File, DirEntry}, time::Instant, sync::Arc};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, CSV_BUFFER};
-
-// TODO: move to lib prelude.
-// const UNMATCHED: i32 = 0x30; // = 0 ascii.
-// const MATCHED: i32 = 0x31; // = 1 ascii.
-const UNMATCHED: &str = "0"; // = 0 ascii.
-const MATCHED: &str = "1"; // = 1 ascii.
+use std::{fs::DirEntry, time::Instant};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, CSV_BUFFER};
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -34,8 +29,6 @@ const MATCHED: &str = "1"; // = 1 ascii.
 /// Note: No memory is allocted for the empty cells shown above.
 ///
 pub struct Grid {
-    // TODO: (EMS) Consider removing and using an index file.
-    // records: Vec<Box<Record>>,  // Represents each row from one of the sourced files.
     count: usize,
     schema: GridSchema,         // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
@@ -47,7 +40,6 @@ impl Grid {
 
     pub fn is_empty(&self) -> bool {
         self.count == 0
-        // self.records.is_empty()
     }
 
     pub fn schema(&self) -> &GridSchema {
@@ -58,32 +50,13 @@ impl Grid {
         &mut self.schema
     }
 
+    // TODO: Allow matched handle to call and decrement the count.
     // pub fn remove_deleted(&mut self) {
-    //     // TODO: (EMS) Figure this bit out.
     //     // self.records.retain(|r| !r.deleted())
     // }
 
     pub fn iter(&self, ctx: &Context) -> GridIterator {
         GridIterator::new(ctx, self)
-    }
-
-    // TODO: (EMS) Replace all ocurrences of this with iter above.
-    // pub fn records(&self) -> &Vec<Box<Record>> {
-    //     &self.records
-    // }
-
-    // TODO: (EMS) Can we use random access (https:///github.com/vasi/positioned-io) to use the first
-    // byte of each record as a include/exclude value? exclude-matched, exclude-ignored, etc.
-    // pub fn records_mut(&mut self) -> Vec<&mut Box<Record>> {
-    //     self.records.iter_mut().collect()
-    // }
-
-    ///
-    /// Return how much memory all the ByteRecords are using.
-    ///
-    pub fn memory_usage(&self) -> usize {
-        123456
-        // memory_usage(self.records())
     }
 
     ///
@@ -109,6 +82,8 @@ impl Grid {
                 total_count += count;
             }
         }
+
+        log::info!("Scanned {} record - ready to match.", total_count);
 
         Ok(Grid { count: total_count, schema: grid_schema })
     }
@@ -146,51 +121,51 @@ impl Grid {
         }
     }
 
-    ///
-    /// Writes all the grid's data to a file at this point
-    ///
-    pub fn start_debug_records(&self, ctx: &Context, sequence: usize) -> Option<csv::Writer<File>> {
-        if ctx.charter().debug() {
-            let output_path = folders::debug_path(ctx)
-                .join(format!("{timestamp}_{phase_num}_{phase_name:?}_{sequence}.debug.csv",
-                phase_num = ctx.phase().ordinal(),
-                phase_name = ctx.phase(),
-                sequence = sequence,
-                timestamp = ctx.ts()
-            ));
+    // ///
+    // /// Writes all the grid's data to a file at this point
+    // ///
+    // pub fn start_debug_records(&self, ctx: &Context, sequence: usize) -> Option<csv::Writer<File>> {
+    //     if ctx.charter().debug() {
+    //         let output_path = folders::debug_path(ctx)
+    //             .join(format!("{timestamp}_{phase_num}_{phase_name:?}_{sequence}.debug.csv",
+    //             phase_num = ctx.phase().ordinal(),
+    //             phase_name = ctx.phase(),
+    //             sequence = sequence,
+    //             timestamp = ctx.ts()
+    //         ));
 
-            log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
+    //         log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
-            let mut wtr = csv::WriterBuilder::new()
-                .quote_style(csv::QuoteStyle::Always)
-                .buffer_capacity(*CSV_BUFFER)
-                .from_path(&output_path)
-                .expect("Unable to build a debug writer");
-            wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
-            return Some(wtr)
-        }
-        None
-    }
+    //         let mut wtr = csv::WriterBuilder::new()
+    //             .quote_style(csv::QuoteStyle::Always)
+    //             .buffer_capacity(*CSV_BUFFER)
+    //             .from_path(&output_path)
+    //             .expect("Unable to build a debug writer");
+    //         wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
+    //         return Some(wtr)
+    //     }
+    //     None
+    // }
 
-    ///
-    /// Writes all the data specified to a file at this point
-    ///
-    pub fn debug_records(&self, wtr: &mut Option<csv::Writer<File>>, records: &[&Record]) {
-        if let Some(wtr) = wtr {
-            for record in records {
-                wtr.write_record(record.as_strings()).expect("Unable to write record");
-            }
-        }
-    }
+    // ///
+    // /// Writes all the data specified to a file at this point
+    // ///
+    // pub fn debug_records(&self, wtr: &mut Option<csv::Writer<File>>, records: &[&Record]) {
+    //     if let Some(wtr) = wtr {
+    //         for record in records {
+    //             wtr.write_record(record.as_strings()).expect("Unable to write record");
+    //         }
+    //     }
+    // }
 
-    ///
-    /// Ensure all debug data is written.
-    ///
-    pub fn finish_debug_records(&self, wtr: Option<csv::Writer<File>>) {
-        if let Some(mut wtr) = wtr {
-            wtr.flush().expect("Unable to flush the debug file");
-        }
-    }
+    // ///
+    // /// Ensure all debug data is written.
+    // ///
+    // pub fn finish_debug_records(&self, wtr: Option<csv::Writer<File>>) {
+    //     if let Some(mut wtr) = wtr {
+    //         wtr.flush().expect("Unable to flush the debug file");
+    //     }
+    // }
 }
 
 ///
@@ -250,119 +225,4 @@ fn validate_schema(grid_schema: &GridSchema, schema_idx: usize, last_schema_idx:
     }
 
     Ok(Some(schema_idx))
-}
-
-///
-/// Return how much memory all the ByteRecords are using.
-///
-pub fn memory_usage(records: &[Box<Record>]) -> usize {
-    records.iter().map(|r| r.memory_usage()).sum()
-}
-
-
-
-// TODO: Push all this iterator stuff into own module.
-type CsvReaders = Vec<csv::Reader<File>>;
-
-///
-/// Iterator allows iterating the record (indexes) in the grid.
-///
-pub struct GridIterator {
-    pos: usize, // reader index.
-    schema: Arc<GridSchema>,
-    data_readers: CsvReaders,
-    derived_readers: Option<CsvReaders>,
-}
-
-impl GridIterator {
-    pub fn new(ctx: &Context, grid: &Grid) -> Self {
-        let data_readers = grid.schema().files()
-            .iter()
-            .map(|file| {
-                // Create a reader for each file - skipping the schema row.
-                let mut rdr = csv::ReaderBuilder::new().from_path(file.path()).unwrap(); // TODO: Don't unwrap any of these.
-                let mut ignored = csv::ByteRecord::new();
-                rdr.read_byte_record(&mut ignored).unwrap();
-                rdr
-            })
-            .collect();
-
-        let derived_readers = match ctx.phase() {
-            crate::Phase::MatchAndGroup        |
-            crate::Phase::ComleteAndArchive =>
-                Some(grid.schema().files()
-                    .iter()
-                    .map(|file| {
-                        // Create a reader for each derived file - skipping the schema row.
-                        let mut rdr = csv::ReaderBuilder::new().from_path(file.derived_path()).unwrap(); // TODO: Don't unwrap any of these.
-                        let mut ignored = csv::ByteRecord::new();
-                        rdr.read_byte_record(&mut ignored).unwrap();
-                        rdr
-                    })
-                    .collect()),
-            _ => None,
-        };
-
-        Self {
-            pos: 0,
-            schema: Arc::new(grid.schema().clone()),
-            data_readers,
-            derived_readers,
-        }
-    }
-}
-
-impl Iterator for GridIterator {
-    type Item = Record;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // If we've reached the end of the last file, return None.
-            if self.pos == self.data_readers.len() {
-                return None
-            }
-
-            // Read a row from the csv file.
-            match read_next(self.pos, &mut self.data_readers, true) {
-                Ok(data) => {
-                    if let Some(data) = data  {
-                        // Read a row from the derived csv file, if applicable.
-                        let derived = match &mut self.derived_readers {
-                            Some(derived_readers) => {
-                                match read_next(self.pos, derived_readers, false) {
-                                    Ok(derived) => derived.unwrap_or_default(),
-                                    Err(_) => csv::ByteRecord::new(), // TODO: Log error.
-                                }
-                            },
-                            None => csv::ByteRecord::new(),
-                        };
-
-                        return Some(Record::new(self.pos, self.schema.clone(), data, derived))
-                    }
-
-                    // If there was no data in the file, move onto the next file.
-                    self.pos += 1;
-                },
-                Err(_) => return None, // TODO: Log error.
-            }
-        }
-    }
-}
-
-
-fn read_next(pos: usize, readers: &mut CsvReaders, filter_status: bool) -> Result<Option<csv::ByteRecord>, csv::Error> {
-    let mut buffer = csv::ByteRecord::new();
-    loop {
-        match readers[pos].read_byte_record(&mut buffer) {
-            Ok(result) => match result {
-                true  => {
-                    if !filter_status || String::from_utf8_lossy(buffer.get(0).unwrap()) == UNMATCHED {
-                        return Ok(Some(buffer))
-                    }
-                },
-                false => return Ok(None),
-            },
-            Err(err) => return Err(err),
-        }
-    }
 }
