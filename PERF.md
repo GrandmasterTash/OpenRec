@@ -171,3 +171,29 @@ Console output here
 [2021-12-31T16:25:36Z INFO  matcher] Merging Column AMOUNT_BASE took 7s 720ms (0.001ms/row)
 [2021-12-31T16:25:36Z INFO  matcher] Merging Column SETTLEMENT_DATE took 20s 596ms (0.003ms/row)
 [2021-12-31T16:25:56Z INFO  matcher] Completed match job 4dc1e221-0b00-462b-8069-3739470a29a0 in 7m 14s 105ms
+
+
+Using 250k invoices - External Merge Sort and Match
+Peak RAM: 96MB
+Duration: 1m 22s 186ms
+Console output here
+[2022-01-03T13:35:10Z INFO  matcher] Starting match job:
+    Job ID: 5117d9e8-09cd-49c4-861c-77f6ec8a8f0a
+    Charter: Three-way invoice match (v1)
+    Base Dir: ./tmp
+[2022-01-03T13:35:10Z INFO  matcher::model::grid] Sourcing data with pattern [.*BIG-invoices.*\.csv]
+[2022-01-03T13:35:10Z INFO  matcher::model::grid]   250000 records read from file 20220103_105923333_BIG-invoices.csv in 97ms
+[2022-01-03T13:35:10Z INFO  matcher::model::grid] Sourcing data with pattern [.*BIG-payments.*\.csv]
+[2022-01-03T13:35:10Z INFO  matcher::model::grid]   873499 records read from file 20220103_105923333_BIG-payments.csv in 262ms
+[2022-01-03T13:35:10Z INFO  matcher::model::grid] Sourcing data with pattern [.*BIG-receipts.*\.csv]
+[2022-01-03T13:35:10Z INFO  matcher::model::grid]   873499 records read from file 20220103_105923333_BIG-receipts.csv in 252ms
+[2022-01-03T13:35:10Z INFO  matcher::model::grid] Scanned 1996998 record - ready to match
+[2022-01-03T13:35:10Z INFO  matcher] Deriving projected and merged data
+[2022-01-03T13:35:29Z INFO  matcher] Projecting Column PAYMENT_AMOUNT_BASE took 16s 843ms (0.008ms/row)
+[2022-01-03T13:35:29Z INFO  matcher] Projecting Column RECEIPT_AMOUNT_BASE took 16s 458ms (0.008ms/row)
+[2022-01-03T13:35:29Z INFO  matcher] Merging Column AMOUNT_BASE took 1s 596ms (0.001ms/row)
+[2022-01-03T13:35:29Z INFO  matcher] Merging Column SETTLEMENT_DATE took 2s 731ms (0.001ms/row)
+[2022-01-03T13:35:29Z INFO  matcher::matching] Grouping by SETTLEMENT_DATE
+[2022-01-03T13:35:39Z INFO  matcher::matching] Evaluating constraints on groups
+[2022-01-03T13:36:32Z INFO  matcher::matching] Matched 249675 out of 249675 groups. Constraints took 37s 196ms (0.149ms/group)
+[2022-01-03T13:36:32Z INFO  matcher] Completed match job 5117d9e8-09cd-49c4-861c-77f6ec8a8f0a in 1m 22s 186ms

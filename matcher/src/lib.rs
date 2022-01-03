@@ -20,18 +20,18 @@ use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelI
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, fs::File, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler};
 
+// TODO: csv utils where all readers and writers can be created - for consistency.
 // TODO: Consider using more panics in this project rather than errors. It's designed to be re-runable and this would simplify a lot of fns
 // TODO: OR consider better use of anyhow https://docs.rs/anyhow/latest/anyhow/index.html with context and here! details.
-// TODO: Need to be able to group on dates and ignore the time aspect. Also need tolerance for dates (unit = days)
+// TODO: Need tolerance for dates (unit = days)
 // TODO: Flesh-out examples.
 // TODO: Archive changesets to archive/matcher not to /matched folder.
 // TODO: Check code coverage. Need error tests.
-// TODO: Remove panics! and unwraps / expects where possible.
+// TODO: Remove unwraps where possible.
 // TODO: Clippy!
 // TODO: An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 // TODO: Rename this lib to celerity.
 // TODO: Unified unmatched files - where schemas match - to avoid too many readers. Use a metadata column for original filename.
-// TODO: csv utils where all readers and writers can be created - for consistency.
 
 lazy_static! {
     // TODO: Read from charter - enforce sensible lower limit.
