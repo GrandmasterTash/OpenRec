@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 use model::schema::GridSchema;
 use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate};
 use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
-use std::{time::Instant, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, fs::File};
+use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, fs::File, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler};
 
 // TODO: Consider using more panics in this project rather than errors. It's designed to be re-runable and this would simplify a lot of fns
@@ -156,7 +156,7 @@ impl Context {
 ///
 pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
 
-    println!("{}", error::here!());
+    // println!("{}", error::here!()); // TODO: use this in errors.
 
     let ctx = init_job(charter, base_dir)?;
 
@@ -173,7 +173,7 @@ pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
     let (projection_cols, writers) = create_derived_schema(&ctx, &mut grid)?;
 
     ctx.set_phase(Phase::DeriveData);
-    derive_data_par(&ctx, &grid, projection_cols, writers)?;
+    derive_data(&ctx, &grid, projection_cols, writers)?;
 
     ctx.set_phase(Phase::MatchAndGroup);
     let (matched, unmatched) = match_and_group(&ctx, &mut grid)?;
@@ -242,9 +242,10 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
     let mut projection_cols = HashMap::new();
 
     // Because both grid needs to be borrowed mutablly, we'll copy an immutable schema to pass around.
-    let schema = grid.schema().clone();
+    // let schema = grid.schema().clone();
 
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
+        let schema = grid.schema().clone();
         match inst {
             Instruction::Project { column, as_a, from, when } => {
                 projection_cols.insert(idx, script_cols(from, when.as_ref().map(String::as_ref), &schema));
@@ -313,8 +314,12 @@ fn write_derived_headers(schema: &GridSchema, writers: &mut CsvWriters) -> Resul
 ///
 /// This implementation uses rayon to create a thread per file.
 ///
-fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<Column>>, writers: CsvWriters)
+fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<Column>>, writers: CsvWriters)
     -> Result<(), MatcherError> {
+
+    log::info!("Deriving projected and merged data");
+
+    type Metrics = HashMap<usize, Duration>; // Accumulated duration per instruction.
 
     // We need one thread per file.
     let pool = rayon::ThreadPoolBuilder::new()
@@ -338,157 +343,117 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
     let mut zipped: Vec<(CsvReader, CsvWriter)> = readers.into_iter().zip(writers).collect();
 
     // Wrap the schema and charter in arcs to share amongst threads.
-    let schema = std::sync::Arc::new(grid.schema().clone());
-    let charter = std::sync::Arc::new(ctx.charter().clone());
+    let schema = Arc::new(grid.schema().clone());
+    let charter = Arc::new(ctx.charter());
 
-    pool.install(|| zipped.par_iter_mut()
-        .enumerate()
-        .map(|(file_idx, (reader, writer))| { // TODO: Consider a tuple of reader+path for error reporting and metrics logging.
-            // Put this block in a fn?
-            let charter = charter.clone();
-            let schema = schema.clone();
-            // TODO: Track the record and instruction being processed. Used in logs should an error occur.
-            let mut eval_ctx = (file_idx /* file */, 0 /* row */, 0 /* instruction */);
-
-            let lua = rlua::Lua::new();
-
-            lua.context(|lua_ctx| {
-                lua::init_context(&lua_ctx)?;
-                for csv_record in reader.byte_records() {
-                    let mut record = Record::new(file_idx, schema.clone(), csv_record?, csv::ByteRecord::new());
-
-                    for (i_idx, inst) in charter.instructions().iter().enumerate() {
-                        eval_ctx = (file_idx, record.row(), i_idx);
-
-                        match inst {
-                            Instruction::Project { column: _, as_a, from, when } => {
-                                let script_cols = projection_cols.get(&i_idx).ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
-                                project_column(*as_a, from, &when, &mut record, script_cols, &lua_ctx)?;
-                                // TODO: record_duration(i_idx, &mut metrics, started.elapsed());
-                            },
-
-                            Instruction::Merge { into: _, columns } => {
-                                record.merge_col_from(columns)?;
-                                // TODO: record_duration(i_idx, &mut metrics, started.elapsed());
-                            },
-
-                            _ => {}, // Ignore other instructions in this phase.
-                        };
-                    }
-
-                    // Flush the current record's buffer to the appropriate derived file.
-                    writer.write_byte_record(&record.flush()).map_err(|err| MatcherError::CSVError(err))?;
-                }
-
-                Ok(()) // TODO: Accumulate metrics for each file.
-
-            }).map_err(|err: MatcherError| MatcherError::DeriveDataError {
-                instruction: format!("{:?}", charter.instructions()[eval_ctx.2]),
-                row: eval_ctx.1,
-                file: grid.schema().files()[eval_ctx.0].filename().into(),
-                err: err.to_string()
+    pool.install(|| {
+        // Derive each file in a parallel iterator.
+        let results = zipped
+            .par_iter_mut()
+            .enumerate()
+            .map(|(file_idx, (reader, writer))| {
+                derive_file(file_idx, reader, writer, schema.clone(), charter.clone(), projection_cols.clone())
             })
-        })
-        .collect::<Result<(), MatcherError>>().expect("derived data failed")
-        // TODO: Report accumulated metrics here.
-    );
+            .collect::<Vec<Result<Metrics, MatcherError>>>();
+
+        // Accumulate all of the time spent per instruction across all derived files.
+        let mut total_metrics = Metrics::new();
+        results.into_iter()
+            .filter_map(|r| r.ok())
+            .for_each(|metric| merge_metrics(metric, &mut total_metrics));
+
+        // Report the duration spent performing each projection and merge instruction.
+        for idx in total_metrics.keys().sorted_by(Ord::cmp) {
+            let (duration, rate) = formatted_duration_rate(grid.len(), *total_metrics.get(idx).expect("Duration metric missing"));
+
+            match &charter.instructions()[*idx] {
+                Instruction::Project { column, .. } => log::info!("Projecting Column {} took {} ({}/row)", column, blue(&duration), rate),
+                Instruction::Merge { into, .. } => log::info!("Merging Column {} took {} ({}/row)", into, blue(&duration), rate),
+                _ => {},
+            }
+        }
+    });
+
+    // Debug the derived data now.
+    grid.debug_grid(ctx, 1);
 
     Ok(())
 }
 
-// ///
-// /// Calculate all projected and derived columns and write them to a .derived file per sourced
-// /// file. Every corresponding row in the source files will have a row in the derived files which contains
-// /// projected and merged column data.
-// ///
-// fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<Column>>, mut writers: CsvWriters) -> Result<(), MatcherError> {
+fn merge_metrics(merge: HashMap<usize, Duration>, into: &mut HashMap<usize, Duration>) {
+    for (km, vm) in merge {
+        *into.entry(km).or_insert(Duration::ZERO) += vm;
+    }
+}
 
-//     // Track the record and instruction being processed. Used in logs should an error occur.
-//     let mut eval_ctx = (0 /* file */, 0 /* row */, 0 /* instruction */);
+///
+/// Derive all the data in a single file.
+///
+fn derive_file(
+    file_idx: usize,
+    reader: &mut CsvReader,
+    writer: &mut CsvWriter,
+    schema: Arc<GridSchema>,
+    charter: Arc<&Charter>,
+    projection_cols: HashMap<usize, Vec<Column>>) -> Result<HashMap<usize, Duration>, MatcherError> {
 
-//     // Track accumulated time in each project and merge instruction.
-//     let mut metrics: HashMap<usize, Duration> = HashMap::new();
+    // Track accumulated time in each project and merge instruction.
+    let mut metrics: HashMap<usize, Duration> = HashMap::new();
 
-//     // TODO: Write a log info saying we're deriving data...
+    // Track the record and instruction being processed. Used in logs should an error occur.
+    let mut eval_ctx = (file_idx /* file */, 0 /* row */, 0 /* instruction */);
 
-//     ctx.lua().context(|lua_ctx| {
-//         lua::init_context(&lua_ctx)?;
+    let lua = rlua::Lua::new();
 
-//         // TODO: Derive files in parallel.
+    lua.context(|lua_ctx| {
+        lua::init_context(&lua_ctx)?;
+        for csv_record in reader.byte_records() {
+            let mut record = Record::new(file_idx, schema.clone(), csv_record?, csv::ByteRecord::new());
 
-//         // Calculate all projected and merged column values for each record.
-//         for mut record in grid.iter(ctx) {
-//             // TODO: PERF: Create lua record ONCE - here.
-//             for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
-//                 let started = Instant::now();
-//                 eval_ctx = (record.file_idx(), record.row(), i_idx);
+            for (i_idx, inst) in charter.instructions().iter().enumerate() {
+                let started = Instant::now();
+                eval_ctx = (file_idx, record.row(), i_idx);
 
-//                 match inst {
-//                     Instruction::Project { column: _, as_a, from, when } => {
-//                         let script_cols = projection_cols.get(&i_idx)
-//                             .ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
+                match inst {
+                    Instruction::Project { column: _, as_a, from, when } => {
+                        let script_cols = projection_cols.get(&i_idx).ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
+                        project_column(*as_a, from, &when, &mut record, script_cols, &lua_ctx)?;
+                        record_duration(i_idx, &mut metrics, started.elapsed());
+                    },
 
-//                         project_column(
-//                             *as_a,
-//                             from,
-//                             &when,
-//                             &mut record,
-//                             script_cols,
-//                             &lua_ctx)?;
+                    Instruction::Merge { into: _, columns } => {
+                        record.merge_col_from(columns)?;
+                        record_duration(i_idx, &mut metrics, started.elapsed());
+                    },
 
-//                         record_duration(i_idx, &mut metrics, started.elapsed());
-//                     },
+                    _ => {}, // Ignore other instructions in this phase.
+                };
+            }
 
-//                     Instruction::Merge { into: _, columns } => {
-//                         record.merge_col_from(columns)?;
-//                         record_duration(i_idx, &mut metrics, started.elapsed());
-//                     },
+            // Flush the current record's buffer to the appropriate derived file.
+            writer.write_byte_record(&record.flush()).map_err(|err| MatcherError::CSVError(err))?;
+        }
 
-//                     _ => {}, // Ignore other instructions in this phase.
-//                 };
-//             }
+        Ok(metrics)
 
-//             // Flush the current record buffer to the appropriate derived file.
-//             let csv = record.flush();
-//             let writer = &mut writers[record.file_idx()];
-//             writer.write_byte_record(&csv).map_err(|err| MatcherError::CSVError(err))?;
-//         }
-//         Ok(())
-//     })
-//     .map_err(|source| MatcherError::DeriveDataError {
-//         instruction: format!("{:?}", ctx.charter().instructions()[eval_ctx.2]),
-//         row: eval_ctx.1,
-//         file: grid.schema().files()[eval_ctx.0].filename().into(),
-//         source
-//     })?;
+    }).map_err(|err: MatcherError| MatcherError::DeriveDataError {
+        instruction: format!("{:?}", charter.instructions()[eval_ctx.2]),
+        row: eval_ctx.1,
+        file: schema.files()[eval_ctx.0].filename().into(),
+        err: err.to_string()
+    })
+}
 
-//     // Report the duration spent performing each projection and merge instruction.
-//     for idx in metrics.keys().sorted_by(Ord::cmp) {
-//         let (duration, rate) = formatted_duration_rate(grid.len(), *metrics.get(idx).expect("Duration metric missing"));
+///
+/// Set the initial or increment the existing duration for the specified charter instruction.
+///
+fn record_duration(instruction: usize, metrics: &mut HashMap<usize, Duration>, elapsed: Duration) {
+    if !metrics.contains_key(&instruction) {
+        metrics.insert(instruction, Duration::ZERO);
+    }
 
-//         match &ctx.charter().instructions()[*idx] {
-//             Instruction::Project { column, .. } => log::info!("Projecting Column {} took {} ({}/row)", column, blue(&duration), rate),
-//             Instruction::Merge { into, .. } => log::info!("Merging Column {} took {} ({}/row)", into, blue(&duration), rate),
-//             _ => {},
-//         }
-//     }
-
-//     // Debug the derived data now.
-//     grid.debug_grid(ctx, 1);
-
-//     Ok(())
-// }
-
-// ///
-// /// Set the initial or increment the existing duration for the specified charter instruction.
-// ///
-// fn record_duration(instruction: usize, metrics: &mut HashMap<usize, Duration>, elapsed: Duration) {
-//     if !metrics.contains_key(&instruction) {
-//         metrics.insert(instruction, Duration::ZERO);
-//     }
-
-//     metrics.insert(instruction, elapsed + *metrics.get(&instruction).expect("Instruction metric missing"));
-// }
+    metrics.insert(instruction, elapsed + *metrics.get(&instruction).expect("Instruction metric missing"));
+}
 
 ///
 /// Run all other instructions that don't create derived data. Create a new accessor which

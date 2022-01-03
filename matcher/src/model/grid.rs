@@ -83,7 +83,7 @@ impl Grid {
             }
         }
 
-        log::info!("Scanned {} record - ready to match.", total_count);
+        log::info!("Scanned {} record - ready to match", blue(&format!("{}", total_count)));
 
         Ok(Grid { count: total_count, schema: grid_schema })
     }
@@ -205,7 +205,7 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
 
     let (duration, _rate) = formatted_duration_rate(count, started.elapsed());
 
-    log::info!("  {} records read from file {} in {}.",
+    log::info!("  {} records read from file {} in {}",
         count,
         file.file_name().to_string_lossy(),
         blue(&duration));

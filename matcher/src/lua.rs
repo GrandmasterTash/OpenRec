@@ -1,3 +1,4 @@
+use chrono::{Utc, TimeZone};
 use regex::Regex;
 use lazy_static::lazy_static;
 use core::data_type::DataType;
@@ -21,6 +22,15 @@ pub fn init_context(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
     })?;
 
     globals.set("decimal", decimal)?;
+
+    // Create a date_only() function to remove the time portion of a datetime value.
+    let date_only = lua_ctx.create_function(|_, value: String| {
+        let ts = value.parse::<i64>().expect(&format!("date_only called with a non-numeric: {}", value));
+        let dt = Utc.timestamp(ts / 1000, 0).date();
+        Ok(dt.and_hms_milli(0,0,0,0).timestamp_millis())
+    })?;
+
+    globals.set("date_only", date_only)?;
 
     Ok(())
 }

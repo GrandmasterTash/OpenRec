@@ -159,6 +159,7 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
     -> Result<(PathBuf, usize), MatcherError> {
 
     let unsorted_path = folders::matching(ctx).join("index.unsorted.csv");
+
     let mut unsorted_writer = csv::WriterBuilder::new()
         .has_headers(false)
         // .buffer_capacity(*CSV_BUFFER)
@@ -191,7 +192,7 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
     let avg_len = estimated_index_size(&unsorted_path, grid);
 
     let (duration, _rate) = formatted_duration_rate(grid.len(), start.elapsed());
-    log::info!("Created {path}, {size}, avergage index length {avg_len}, took {duration}.",
+    log::debug!("Created {path}, {size}, avergage index length {avg_len}, took {duration}",
         path = unsorted_path.file_name().expect("no filename").to_string_lossy(),
         size = f_len.bytes(),
         avg_len = avg_len.bytes(),
@@ -361,6 +362,8 @@ fn eval_contraints(
     let mut group_count = 0;
     let mut match_count = 0;
 
+    log::info!("Evaluating constraints on groups");
+
     // TODO: Enforce a group size limit.
     // Create a Lua context to evaluate Constraint rules in.
     ctx.lua().context(|lua_ctx| {
@@ -378,7 +381,7 @@ fn eval_contraints(
                 matched.append_group(&records)?;
                 match_count += 1;
 
-            } else if group_count <= 1 /* TODO: Have a ENV to set this limit - default to 0 */{
+            } else if group_count <= 0 /* TODO: Have a ENV to set this limit - default to 0 */{
                 log::info!("Unmatched group:-\n{:?}{}",
                     grid.schema().headers(),
                     records.iter().map(|r| format!("\n{:?}", r.as_strings())).collect::<String>());

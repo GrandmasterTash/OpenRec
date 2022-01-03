@@ -324,12 +324,14 @@ impl Record {
                 },
             };
 
-            self.buffer.push(value.into());
+            self.buffer.push(value.clone().into());
+            self.derived.push_field(value.as_bytes());
             return Ok(())
         }
 
         // If none of the source columns has any data, we still need to 'pad' the buffer with a blank field.
         self.buffer.push(Bytes::new());
+        self.derived.push_field(String::new().as_bytes());
         Ok(())
     }
 }
