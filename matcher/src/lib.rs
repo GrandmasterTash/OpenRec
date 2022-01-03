@@ -8,7 +8,6 @@ mod changeset;
 mod unmatched;
 mod instructions;
 
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator, IntoParallelRefMutIterator, IndexedParallelIterator};
 use uuid::Uuid;
 use anyhow::Result;
 use ubyte::ToByteUnit;
@@ -18,11 +17,14 @@ use changeset::ChangeSet;
 use lazy_static::lazy_static;
 use model::schema::GridSchema;
 use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate};
+use rayon::iter::{ParallelIterator, IntoParallelRefMutIterator, IndexedParallelIterator};
 use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, fs::File};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matched::MatchedHandler, unmatched::UnmatchedHandler};
 
+// TODO: Consider using more panics in this project rather than errors. It's designed to be re-runable and this would simplify a lot of fns
 // TODO: Need to be able to group on dates and ignore the time aspect. Also need tolerance for dates (unit = days)
 // TODO: Flesh-out examples.
+// TODO: Archive changesets to archive/matcher not to /matched folder.
 // TODO: Check code coverage. Need error tests.
 // TODO: Remove panics! and unwraps / expects where possible.
 // TODO: Clippy!
@@ -33,7 +35,7 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 
 lazy_static! {
     // TODO: Read from env - enforce sensible lower limit.
-    pub static ref MEMORY_BOUNDS: usize = 150.megabytes().as_u64() as usize; // External merge sort memory bounds.
+    pub static ref MEMORY_BOUNDS: usize = 50.megabytes().as_u64() as usize;  // External merge sort memory bounds.
     pub static ref CSV_BUFFER: usize = 1.megabytes().as_u64() as usize;      // For CSV writer buffers.
 }
 
@@ -300,12 +302,19 @@ fn write_derived_headers(schema: &GridSchema, writers: &mut CsvWriters) -> Resul
     Ok(())
 }
 
-
+///
+/// Calculate all projected and derived columns and write them to a .derived file per sourced
+/// file. Every corresponding row in the source files will have a row in the derived files which contains
+/// projected and merged column data.
+///
+/// This implementation uses rayon to create a thread per file.
+///
 fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<Column>>, writers: CsvWriters)
     -> Result<(), MatcherError> {
 
-    // We need one thread per file. TODO: files...num_cpus allow option to use single thread for lowest mem usage.
-    rayon::ThreadPoolBuilder::new().num_threads(grid.schema().files().len()).build_global().unwrap();
+    // We need one thread per file.
+    // TODO: files...num_cpus allow option to use single thread for lowest mem usage.
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(grid.schema().files().len()).build().unwrap();
 
     // Create a data reader per sourced file. Skip the schema rows.
     let readers: Vec<CsvReader> = grid.schema()
@@ -326,11 +335,12 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
     let schema = std::sync::Arc::new(grid.schema().clone());
     let charter = std::sync::Arc::new(ctx.charter().clone());
 
+    pool.install(||
     zipped.par_iter_mut()
         .enumerate()
         .map(|(file_idx, (reader, writer))| { // TODO: Consider a tuple of reader+path for error reporting and metrics logging.
 
-            // Track the record and instruction being processed. Used in logs should an error occur.
+            // TODO: Track the record and instruction being processed. Used in logs should an error occur.
             //let mut eval_ctx = (0 /* file */, 0 /* row */, 0 /* instruction */);
 
             let lua = rlua::Lua::new();
@@ -347,12 +357,12 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
                             Instruction::Project { column: _, as_a, from, when } => {
                                 let script_cols = projection_cols.get(&i_idx).ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
                                 project_column(*as_a, from, &when, &mut record, script_cols, &lua_ctx)?;
-                                // record_duration(i_idx, &mut metrics, started.elapsed());
+                                // TODO: record_duration(i_idx, &mut metrics, started.elapsed());
                             },
 
                             Instruction::Merge { into: _, columns } => {
                                 record.merge_col_from(columns)?;
-                                // record_duration(i_idx, &mut metrics, started.elapsed());
+                                // TODO: record_duration(i_idx, &mut metrics, started.elapsed());
                             },
 
                             _ => {}, // Ignore other instructions in this phase.
@@ -366,93 +376,93 @@ fn derive_data_par(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, V
                 Ok(())
             })
         })
-        .collect::<Result<(), MatcherError>>()?; // Map error and add eval_context.
-
+        .collect::<Result<(), MatcherError>>().expect("derived data failed") // Map error and add eval_context.
+    );
     Ok(())
 }
 
-///
-/// Calculate all projected and derived columns and write them to a .derived file per sourced
-/// file. Every corresponding row in the source files will have a row in the derived files which contains
-/// projected and merged column data.
-///
-fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<Column>>, mut writers: CsvWriters) -> Result<(), MatcherError> {
+// ///
+// /// Calculate all projected and derived columns and write them to a .derived file per sourced
+// /// file. Every corresponding row in the source files will have a row in the derived files which contains
+// /// projected and merged column data.
+// ///
+// fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<Column>>, mut writers: CsvWriters) -> Result<(), MatcherError> {
 
-    // Track the record and instruction being processed. Used in logs should an error occur.
-    let mut eval_ctx = (0 /* file */, 0 /* row */, 0 /* instruction */);
+//     // Track the record and instruction being processed. Used in logs should an error occur.
+//     let mut eval_ctx = (0 /* file */, 0 /* row */, 0 /* instruction */);
 
-    // Track accumulated time in each project and merge instruction.
-    let mut metrics: HashMap<usize, Duration> = HashMap::new();
+//     // Track accumulated time in each project and merge instruction.
+//     let mut metrics: HashMap<usize, Duration> = HashMap::new();
 
-    // TODO: Write a log info saying we're deriving data...
+//     // TODO: Write a log info saying we're deriving data...
 
-    ctx.lua().context(|lua_ctx| {
-        lua::init_context(&lua_ctx)?;
+//     ctx.lua().context(|lua_ctx| {
+//         lua::init_context(&lua_ctx)?;
 
-        // TODO: Derive files in parallel.
+//         // TODO: Derive files in parallel.
 
-        // Calculate all projected and merged column values for each record.
-        for mut record in grid.iter(ctx) {
-            // TODO: PERF: Create lua record ONCE - here.
-            for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
-                let started = Instant::now();
-                eval_ctx = (record.file_idx(), record.row(), i_idx);
+//         // Calculate all projected and merged column values for each record.
+//         for mut record in grid.iter(ctx) {
+//             // TODO: PERF: Create lua record ONCE - here.
+//             for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
+//                 let started = Instant::now();
+//                 eval_ctx = (record.file_idx(), record.row(), i_idx);
 
-                match inst {
-                    Instruction::Project { column: _, as_a, from, when } => {
-                        let script_cols = projection_cols.get(&i_idx)
-                            .ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
+//                 match inst {
+//                     Instruction::Project { column: _, as_a, from, when } => {
+//                         let script_cols = projection_cols.get(&i_idx)
+//                             .ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
 
-                        project_column(
-                            *as_a,
-                            from,
-                            &when,
-                            &mut record,
-                            script_cols,
-                            &lua_ctx)?;
+//                         project_column(
+//                             *as_a,
+//                             from,
+//                             &when,
+//                             &mut record,
+//                             script_cols,
+//                             &lua_ctx)?;
 
-                        record_duration(i_idx, &mut metrics, started.elapsed());
-                    },
+//                         record_duration(i_idx, &mut metrics, started.elapsed());
+//                     },
 
-                    Instruction::Merge { into: _, columns } => {
-                        record.merge_col_from(columns)?;
-                        record_duration(i_idx, &mut metrics, started.elapsed());
-                    },
+//                     Instruction::Merge { into: _, columns } => {
+//                         record.merge_col_from(columns)?;
+//                         record_duration(i_idx, &mut metrics, started.elapsed());
+//                     },
 
-                    _ => {}, // Ignore other instructions in this phase.
-                };
-            }
+//                     _ => {}, // Ignore other instructions in this phase.
+//                 };
+//             }
 
-            // Flush the current record buffer to the appropriate derived file.
-            let csv = record.flush();
-            let writer = &mut writers[record.file_idx()];
-            writer.write_byte_record(&csv).map_err(|err| MatcherError::CSVError(err))?;
-        }
-        Ok(())
-    })
-    .map_err(|source| MatcherError::DeriveDataError {
-        instruction: format!("{:?}", ctx.charter().instructions()[eval_ctx.2]),
-        row: eval_ctx.1,
-        file: grid.schema().files()[eval_ctx.0].filename().into(),
-        source
-    })?;
+//             // Flush the current record buffer to the appropriate derived file.
+//             let csv = record.flush();
+//             let writer = &mut writers[record.file_idx()];
+//             writer.write_byte_record(&csv).map_err(|err| MatcherError::CSVError(err))?;
+//         }
+//         Ok(())
+//     })
+//     .map_err(|source| MatcherError::DeriveDataError {
+//         instruction: format!("{:?}", ctx.charter().instructions()[eval_ctx.2]),
+//         row: eval_ctx.1,
+//         file: grid.schema().files()[eval_ctx.0].filename().into(),
+//         source
+//     })?;
 
-    // Report the duration spent performing each projection and merge instruction.
-    for idx in metrics.keys().sorted_by(Ord::cmp) {
-        let (duration, rate) = formatted_duration_rate(grid.len(), *metrics.get(idx).expect("Duration metric missing"));
+//     // Report the duration spent performing each projection and merge instruction.
+//     for idx in metrics.keys().sorted_by(Ord::cmp) {
+//         let (duration, rate) = formatted_duration_rate(grid.len(), *metrics.get(idx).expect("Duration metric missing"));
 
-        match &ctx.charter().instructions()[*idx] {
-            Instruction::Project { column, .. } => log::info!("Projecting Column {} took {} ({}/row)", column, blue(&duration), rate),
-            Instruction::Merge { into, .. } => log::info!("Merging Column {} took {} ({}/row)", into, blue(&duration), rate),
-            _ => {},
-        }
-    }
+//         match &ctx.charter().instructions()[*idx] {
+//             Instruction::Project { column, .. } => log::info!("Projecting Column {} took {} ({}/row)", column, blue(&duration), rate),
+//             Instruction::Merge { into, .. } => log::info!("Merging Column {} took {} ({}/row)", into, blue(&duration), rate),
+//             _ => {},
+//         }
+//     }
 
-    // Debug the derived data now.
-    grid.debug_grid(ctx, 1);
+//     // Debug the derived data now.
+//     grid.debug_grid(ctx, 1);
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 ///
 /// Set the initial or increment the existing duration for the specified charter instruction.
@@ -477,32 +487,21 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
     // Create unmatched files for each sourced file.
     let unmatched = UnmatchedHandler::new(ctx, grid)?;
 
-    let schema = grid.schema().clone();
-
-    for (i_idx, inst) in ctx.charter().instructions().iter().enumerate() {
+    for inst in ctx.charter().instructions().iter() {
         match inst {
             Instruction::Project { .. } => {},
             Instruction::Merge { .. } => {},
             Instruction::Group { by, match_when } => {
-                // instructions::match_groups::match_groups(
-                //     ctx,
-                //     i_idx,
-                //     by,
-                //     match_when,
-                //     grid,
-                //     &schema,
-                //     ctx.lua(),
-                //     &mut matched)?;
-
-                instructions::match_groups::match_groups_new(
+                instructions::match_groups::match_groups(
                     ctx,
-                    i_idx,
                     by,
                     match_when,
                     grid,
                     &mut matched)?;
             },
         };
+
+        // BUG: Grid must be re-loaded each time. Otherwise len is wrong.
 
         log::debug!("Grid Memory Size: {}",
             blue(&format!("{:.0}", grid.memory_usage().bytes())));

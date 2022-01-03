@@ -150,7 +150,6 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
                 record.load_buffer();
 
                 for (c_idx, changeset) in &mut changesets.iter_mut().enumerate() {
-                    println!("WIBBLE");
                     let started = Instant::now();
                     eval_ctx.change_idx = c_idx;
 

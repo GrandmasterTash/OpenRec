@@ -10,12 +10,12 @@ fn test_changesets_are_recorded() {
     // Write 4 transactions, each T1 should match a T2 - but initially the second pair won't match -
     // due to an incorrect amount for T2.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1"
-"0002","2021-12-19T08:29:00.000Z","100.00","T2"
-"0003","2021-12-18T08:29:00.000Z","100.00","T1"
-"0004","2021-12-18T08:29:00.000Z","1000.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1"
+"0","0002","2021-12-19T08:29:00.000Z","100.00","T2"
+"0","0003","2021-12-18T08:29:00.000Z","100.00","T1"
+"0","0004","2021-12-18T08:29:00.000Z","1000.00","T2"
 "#);
 
     // Write a charter file.
@@ -40,10 +40,10 @@ matching:
 
     // Check we have two unmatched records.
     common::assert_file_contents(&base_dir.join("unmatched/20211219_082900000_transactions.unmatched.csv"),
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0003","2021-12-18T08:29:00.000Z","100.00","T1"
-"0004","2021-12-18T08:29:00.000Z","1000.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0003","2021-12-18T08:29:00.000Z","100.00","T1"
+"0","0004","2021-12-18T08:29:00.000Z","1000.00","T2"
 "#);
 
     // Check the other matched records were recorded.
@@ -128,18 +128,18 @@ fn test_changesets_affect_unmatched_and_new_data() {
 
     // Write 2 transactions which wont match until they are updated.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.01","T1"
-"0002","2021-12-19T08:29:00.000Z","100.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.01","T1"
+"0","0002","2021-12-19T08:29:00.000Z","100.00","T2"
 "#);
 
     // Write 2 un-matched transactions which wont match until they are updated.
     common::write_file(&base_dir.join("unmatched/"), "20211218_082900000_transactions.unmatched.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0003","2021-12-18T08:29:00.000Z","100.00","T1"
-"0004","2021-12-18T08:29:00.000Z","1000.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0003","2021-12-18T08:29:00.000Z","100.00","T1"
+"0","0004","2021-12-18T08:29:00.000Z","1000.00","T2"
 "#);
 
     // Write a changeset which should update a record in each file so everything matched.
@@ -229,10 +229,10 @@ fn test_changsets_are_applied_in_order() {
 
     // Create 2 transactions which will only match if the last changeset has been applied.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1"
-"0002","2021-12-19T08:29:00.000Z","444.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1"
+"0","0002","2021-12-19T08:29:00.000Z","444.00","T2"
 "#);
 
     // Write a charter file.
@@ -347,11 +347,11 @@ fn test_changesets_can_ignore_records() {
 
     // Create 2 transactions which will only match if the 3rd isn't present.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1"
-"0002","2021-12-19T08:29:00.000Z","100.00","T2"
-"0003","2021-12-19T08:29:00.000Z","50.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1"
+"0","0002","2021-12-19T08:29:00.000Z","100.00","T2"
+"0","0003","2021-12-19T08:29:00.000Z","50.00","T2"
 "#);
 
     // Write a charter file.

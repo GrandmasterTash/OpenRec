@@ -4,96 +4,103 @@ use itertools::Itertools;
 use core::charter::Constraint;
 use super::constraints::passes;
 use bytes::{BufMut, Bytes, BytesMut};
-use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf};
-use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, matched::MatchedHandler, blue, lua, folders::{self, ToCanoncialString}, convert, CSV_BUFFER, MEMORY_BOUNDS};
+use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf, sync::Arc};
+use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, matched::MatchedHandler, blue, folders::{self, ToCanoncialString}, convert, MEMORY_BOUNDS, CsvReader, CsvReaders, lua};
 
 // The column position in our index records for the merge_key used to sort index records.
-const COL_MERGE_KEY: usize = 3;
+const COL_FILE_IDX: usize = 0;
+const COL_DATA_BYTE: usize = 1;
+const COL_DATA_LINE: usize = 2;
+const COL_DERIVED_BYTE: usize = 3;
+const COL_DERIVED_LINE: usize = 4;
+const COL_MERGE_KEY: usize = 5;
 
-///
-/// Bring groups of records together using the columns specified.
-///
-/// If a group of records matches all the constraint rules specified, the group is written to a matched
-/// file and any records which fail to be matched are written to un-matched files.
-///
-pub fn match_groups(
-    ctx: &crate::Context,
-    inst_idx: usize,
-    group_by: &[String],
-    constraints: &[Constraint],
-    grid: &mut Grid,
-    schema: &GridSchema,
-    lua: &rlua::Lua,
-    matched: &mut MatchedHandler) -> Result<(), MatcherError> {
+// TODO: Rename this module to 'matching' (mod.rs), group_iter, matched, unmatched
 
-    if grid.is_empty() {
-        return Ok(())
-    }
+// ///
+// /// Bring groups of records together using the columns specified.
+// ///
+// /// If a group of records matches all the constraint rules specified, the group is written to a matched
+// /// file and any records which fail to be matched are written to un-matched files.
+// ///
+// pub fn match_groups(
+//     ctx: &crate::Context,
+//     inst_idx: usize,
+//     group_by: &[String],
+//     constraints: &[Constraint],
+//     grid: &mut Grid,
+//     schema: &GridSchema,
+//     lua: &rlua::Lua,
+//     matched: &mut MatchedHandler) -> Result<(), MatcherError> {
 
-    log::info!("Grouping by {}", group_by.iter().join(", "));
+//     if grid.is_empty() {
+//         return Ok(())
+//     }
 
-    let mut group_count = 0;
-    let mut match_count = 0;
-    let lua_time = Cell::new(Duration::from_millis(0));
+//     log::info!("Grouping by {}", group_by.iter().join(", "));
 
-    // Create/open a debug file - we'll debug them in their grouping order.
-    let mut wtr = grid.start_debug_records(ctx, inst_idx);
+//     let mut group_count = 0;
+//     let mut match_count = 0;
+//     let lua_time = Cell::new(Duration::from_millis(0));
 
-    // Create a Lua context to evaluate Constraint rules in.
-    lua.context(|lua_ctx| {
-        lua::init_context(&lua_ctx)?;
-        lua::create_aggregate_fns(&lua_ctx)?;
+//     // Create/open a debug file - we'll debug them in their grouping order.
+//     let mut wtr = grid.start_debug_records(ctx, inst_idx);
 
-        // Form groups from the records.
-        for (_key, group) in &grid.iter(ctx)
+//     // Create a Lua context to evaluate Constraint rules in.
+//     lua.context(|lua_ctx| {
+//         lua::init_context(&lua_ctx)?;
+//         lua::create_aggregate_fns(&lua_ctx)?;
 
-            // Build a 'group key' from the record using the grouping columns.
-            .map(|record| (match_key(&record, group_by), record) )
+//         // Form groups from the records.
+//         for (_key, group) in &grid.iter(ctx)
 
-            // Sort records by the group key to form contiguous runs of records belonging to the same group.
-            .sorted_by(|(key1, _record1), (key2, _record2)| Ord::cmp(&key1, &key2))
+//             // Build a 'group key' from the record using the grouping columns.
+//             .map(|record| (match_key(&record, group_by), record) )
 
-            // Group records by the group key.
-            .group_by(|(key, _record)| key.clone()) {
+//             // Sort records by the group key to form contiguous runs of records belonging to the same group.
+//             .sorted_by(|(key1, _record1), (key2, _record2)| Ord::cmp(&key1, &key2))
 
-            // Collect the records in the group.
-            let records = group.map(|(_key, record)| record).collect::<Vec<Record>>();
+//             // Group records by the group key.
+//             .group_by(|(key, _record)| key.clone()) {
 
-            // TODO: (EMS) This all needs re-working!!!
-            // Write this group out to the debug file.
-            // grid.debug_records(&mut wtr, records.iter().map(|r| r).collect());
+//             // Collect the records in the group.
+//             let records = group.map(|(_key, record)| record).collect::<Vec<Record>>();
 
-            // Test any constraints on the group to see if it's a match.
-            // if is_match(&records, constraints, schema, &lua_ctx, &lua_time)? {
-            //     // TODO: (EMS) use random access to mark records as matched.
-            //     // records.iter().for_each(|r| r.set_deleted());
-            //     matched.append_group(&records)?;
-            //     match_count += 1;
-            // }
+//             // TODO: (EMS) This all needs re-working!!!
+//             // Write this group out to the debug file.
+//             // grid.debug_records(&mut wtr, records.iter().map(|r| r).collect());
 
-            group_count += 1;
-        }
+//             // Test any constraints on the group to see if it's a match.
+//             // if is_match(&records, constraints, schema, &lua_ctx, &lua_time)? {
+//             //     // TODO: (EMS) use random access to mark records as matched.
+//             //     // records.iter().for_each(|r| r.set_deleted());
+//             //     matched.append_group(&records)?;
+//             //     match_count += 1;
+//             // }
 
-        Ok(())
-    })
-    .map_err(|source| MatcherError::MatchGroupError { source })?;
+//             group_count += 1;
+//         }
 
-    // Remove matched records from the grid now.
-    // TODO: (EMS) This will need a rethink.
-    // grid.remove_deleted();
+//         Ok(())
+//     })
+//     .map_err(|source| MatcherError::MatchGroupError { source })?;
 
-    // Complete the debug file.
-    grid.finish_debug_records(wtr);
+//     // Remove matched records from the grid now.
+//     // TODO: (EMS) This will need a rethink.
+//     // grid.remove_deleted();
 
-    let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
-    log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
-        blue(&format!("{}", match_count)),
-        blue(&format!("{}", group_count)),
-        blue(&duration),
-        rate);
+//     // Complete the debug file.
+//     grid.finish_debug_records(wtr);
 
-    Ok(())
-}
+//     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
+//     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
+//         blue(&format!("{}", match_count)),
+//         blue(&format!("{}", group_count)),
+//         blue(&duration),
+//         rate);
+
+//     Ok(())
+// }
 
 ///
 /// Derive a value ('match key') to group this record with others.
@@ -151,43 +158,55 @@ fn is_match(
 ///
 /// Note: Not all the record data is written to the sorted index files, the format looks something along these lines: -
 ///
-///   "<file_idx>","<data-byte-position>","<derived-byte-position>","<merge_key>"\n
+///   "<file_idx>","<data-byte-pos>","<data-line-pos>","<derived-byte-pos>","<derived-line-pos>","<merge_key>"\n
 ///
-/// This row is an index pointer to the real csv data and the derived csv data rows for the record.
+/// This row is an index pointer to the real csv data and the derived csv data rows for the record. Note: both byte
+/// and line positions are required by the csv library to seek a row.
 ///
-pub fn match_groups_new(
+pub fn match_groups(
     ctx: &crate::Context,
-    _inst_idx: usize,
     group_by: &[String],
-    _constraints: &[Constraint],
+    constraints: &[Constraint],
     grid: &Grid,
-    _matched: &mut MatchedHandler) -> Result<(), MatcherError> {
+    matched: &mut MatchedHandler) -> Result<(), MatcherError> {
 
     // TODO: Remove all unwraps in these fn's.
-    // TODO: Skip if grid is empty.
-    // TODO: Shortcut if all data loads into initial buffer.
 
-    // 1. Build index.unsorted.csv. and calculate the approximate length of each index row.
+    if grid.is_empty() {
+        return Ok(())
+    }
+
+    log::info!("Grouping by {}", group_by.iter().join(", "));
+
+    let lua_time = Cell::new(Duration::from_millis(0));
+
+    // TODO: Shortcut if all data loads into initial buffer.
+    // Build index.unsorted.csv. and calculate the approximate length of each index row.
     let (unsorted_path, avg_len) = create_unsorted(ctx, group_by, grid)?;
 
-    // 2. Use a buffer to sort chunks of data and write each sorted chunk to it's own file.
+    // Use a buffer to sort chunks of data and write each sorted chunk to it's own file.
     let file_count = split_and_sort(ctx, &unsorted_path, avg_len)?;
 
-    // 3. Initialise input and output readers/writers.
+    // Initialise input and output readers/writers - prior to merge sorting.
     let (inputs, output) = initialise_buffers(ctx, file_count);
 
-    // 4. Merge-sort all the chunks into a single index.sorted.csv file.
+    // Merge-sort all the chunks into a single index.sorted.csv file.
     merge_sort(inputs, output);
 
-    // TODO: Enforce a group size limit.
-    // TODO: Group and constraint evaluation...
+    // Match groups which pass the constriant rules.
+    let (group_count, match_count) = eval_contraints(ctx, grid, constraints, matched, &lua_time)?;
 
-    // Iterate groups one at a time, loading Records into memory.
-    // Evaluate constraints to determine if matched.
-    // Random-access - update each matched record's status byte.
+    // Delete all index files, index.unsorted.csv, index.sorted.*
+    clean_up_indexes(ctx, file_count)?;
 
-    // TODO: Delete all index files, index.unsorted.csv, index.sorted.*
-    // TODO: Let the Matched and Unmatched handlers deal with the remaining data/statuses.
+    // TODO: grid.len() should be updated to reflect removed records.
+
+    let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
+    log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
+        blue(&format!("{}", match_count)),
+        blue(&format!("{}", group_count)),
+        blue(&duration),
+        rate);
 
     Ok(())
 }
@@ -200,8 +219,9 @@ fn estimated_index_size(unsorted_path: &PathBuf, grid: &Grid) -> usize {
     let f_len = f.metadata().unwrap().len();
     let mut avg_len = (f_len as f64 / grid.len() as f64) as usize;   // Average data length.
     avg_len += std::mem::size_of::<csv::ByteRecord>();               // Struct 8B.
+    // TODO: Count fields in bounds....
     avg_len += std::mem::size_of::<usize>();                         // Pointer to struct 8B.
-    avg_len += std::mem::size_of::<usize>() * 4;                     // 4 fields, 4 pointers (in the bounds sub-struct)
+    avg_len += std::mem::size_of::<usize>() * 6;                     // 4 fields, 4 pointers (in the bounds sub-struct)
     avg_len
 }
 
@@ -230,10 +250,13 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
 
     let start = Instant::now();
 
+    // Build an index row for each sourced data record. Record the match-key for each indexes record.
     for record in grid.iter(ctx) {
         buffer.push_field(convert::int_to_string(record.file_idx() as i64).as_bytes());
         buffer.push_field(convert::int_to_string(record.data_position().byte() as i64).as_bytes());
+        buffer.push_field(convert::int_to_string(record.data_position().line() as i64).as_bytes());
         buffer.push_field(convert::int_to_string(record.derived_position().byte() as i64).as_bytes());
+        buffer.push_field(convert::int_to_string(record.derived_position().line() as i64).as_bytes());
         buffer.push_field(&match_key(&record, group_by));
         unsorted_writer.write_byte_record(&buffer)?;
         buffer.clear();
@@ -241,7 +264,8 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
 
     unsorted_writer.flush()?;
 
-    // Calculate the average index length.
+    // TODO: If avg_len is only used in split_and_sort - do this in THAT fn instead.
+    // Calculate the average index row length.
     let f = File::open(&unsorted_path).unwrap();
     let f_len = f.metadata().unwrap().len();
     let avg_len = estimated_index_size(&unsorted_path, grid);
@@ -263,11 +287,11 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
 fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize) -> Result<usize, MatcherError> {
 
     let batch_size = batch_size(avg_len);
-    let mut file_count = 0; // Number of files the sorted data is split over.
+    let mut file_count = 0; // Number of split files containing the chunked, sorted data.
 
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
-        .from_path(&unsorted_path)
+        .from_path(&unsorted_path) // TODO: This path can be deduced here, we don't need a param for it.
         .map_err(|source| MatcherError::CannotOpenCsv { source, path: unsorted_path.to_canoncial_string() })?;
 
     let mut buffer: Vec<csv::ByteRecord> = Vec::with_capacity(batch_size);
@@ -280,12 +304,12 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
             // Sort by merge key.
             buffer.sort_unstable_by(|r1, r2| r1.get(COL_MERGE_KEY).unwrap().cmp(r2.get(COL_MERGE_KEY).unwrap()) );
 
-            // Increment the file count.
+            // Increment the count of split sorted files.
             file_count += 1;
 
-            // Write file.
+            // Write the sorted data to a new split file.
             let mut writer = sorted_writer(ctx, file_count)?;
-            buffer.iter().for_each(|sorted| writer.write_byte_record(&sorted).unwrap());
+            buffer.iter().for_each(|record| writer.write_byte_record(&record).unwrap());
 
             // Clear the buffer.
             buffer.clear();
@@ -297,12 +321,12 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
         // Sort by merge key.
         buffer.sort_unstable_by(|r1, r2| r1.get(COL_MERGE_KEY).unwrap().cmp(r2.get(COL_MERGE_KEY).unwrap()) );
 
-        // Increment the file count.
+        // Increment the count of split sorted files.
         file_count += 1;
 
-         // Write file.
+        // Write the sorted data to a new split file.
         let mut writer = sorted_writer(ctx, file_count)?;
-        buffer.iter().for_each(|sorted| writer.write_byte_record(&sorted).unwrap());
+        buffer.iter().for_each(|record| writer.write_byte_record(&record).unwrap());
     }
 
     // println!("Memory Bounds {bounds}\nBatch size was {batch}\ncsv::ByteRecord {csv}\ntotal data {data}",
@@ -332,7 +356,7 @@ fn initialise_buffers(ctx: &crate::Context, file_count: usize) -> (Vec<csv::Read
     let output = csv::WriterBuilder::new()
         .has_headers(false)
         .quote_style(csv::QuoteStyle::Always)
-        .from_path(PathBuf::from(folders::matching(ctx).join("index.sorted.csv")))
+        .from_path(folders::matching(ctx).join("index.sorted.csv"))
         .unwrap();
 
     let inputs = (1..=file_count)
@@ -340,7 +364,7 @@ fn initialise_buffers(ctx: &crate::Context, file_count: usize) -> (Vec<csv::Read
             // println!("READER:{}", PathBuf::from(folders::matching(ctx).join(format!("index.sorted.{}", idx))).to_canoncial_string());
             csv::ReaderBuilder::new()
                 .has_headers(false)
-                .from_path(PathBuf::from(folders::matching(ctx).join(format!("index.sorted.{}", idx))))
+                .from_path(folders::matching(ctx).join(format!("index.sorted.{}", idx)))
                 .unwrap()
         })
         .collect();
@@ -353,14 +377,10 @@ fn initialise_buffers(ctx: &crate::Context, file_count: usize) -> (Vec<csv::Read
 ///
 fn merge_sort(mut inputs: Vec<csv::Reader<File>>, mut output: csv::Writer<File>) {
 
-    println!("Creating {} registers", inputs.len());
-
     let mut registers = Vec::with_capacity(inputs.len());
     for idx in 0..inputs.len() {
         registers.push(inputs[idx].next());
     };
-
-    println!("Initial register state {:?}", registers);
 
     // Loop until all our registers are empty.
     while registers.iter().any(|r| r.is_some()) {
@@ -408,6 +428,208 @@ fn kway_sort(registers: &[Option<csv::ByteRecord>]) -> usize {
 }
 
 ///
+/// Iterate all of the sorted indexes as groups and evaluate the Lua constraint rules against each group.
+/// If the group is a match, pass it to the match handler.
+///
+fn eval_contraints(
+    ctx: &crate::Context,
+    grid: &Grid,
+    constraints: &[Constraint],
+    matched: &mut MatchedHandler,
+    lua_time: &Cell<Duration>) -> Result<(usize, usize), MatcherError> {
+
+    let mut group_count = 0;
+    let mut match_count = 0;
+
+    // TODO: Enforce a group size limit.
+    // Create a Lua context to evaluate Constraint rules in.
+    ctx.lua().context(|lua_ctx| {
+        lua::init_context(&lua_ctx)?;
+        lua::create_aggregate_fns(&lua_ctx)?;
+
+        // Iterate groups one at a time, loading all the group's records into memory.
+        for group in GroupIterator::new(ctx, grid.schema()) {
+            let group = group?;
+            group_count += 1;
+
+            let records: Vec<&Record> = group.iter().map(|r|r).collect();
+
+            if is_match(&records, constraints, grid.schema(), &lua_ctx, &lua_time)? {
+                matched.append_group(&records)?;
+                match_count += 1;
+
+            } else if group_count <= 1 /* TODO: Have a ENV to set this limit - default to 0 */{
+                log::info!("Unmatched group:-\n{:?}{}",
+                    grid.schema().headers(),
+                    records.iter().map(|r| format!("\n{:?}", r.as_strings())).collect::<String>());
+            }
+        }
+
+        Ok(())
+    })
+    .map_err(|source| MatcherError::MatchGroupError { source })?;
+
+    Ok((group_count, match_count))
+}
+
+///
+/// Remove sorted and unsorted index files.
+///
+fn clean_up_indexes(ctx: &crate::Context, file_count: usize) -> Result<(), MatcherError> {
+    std::fs::remove_file(folders::matching(ctx).join("index.unsorted.csv"))?;
+    std::fs::remove_file(folders::matching(ctx).join("index.sorted.csv"))?;
+    for idx in 1..=file_count {
+        std::fs::remove_file(folders::matching(ctx).join(format!("index.sorted.{}", idx)))?;
+    }
+    Ok(())
+}
+
+///
+/// Iterate the file index.sorted.csv and use the merge-key to read entire groups of records.
+///
+pub struct GroupIterator {
+    schema: Arc<GridSchema>,
+    index_rdr: CsvReader,
+    data_rdrs: CsvReaders,
+    derived_rdrs: CsvReaders,
+    current: Option<csv::ByteRecord>,
+}
+
+impl GroupIterator {
+    fn new(ctx: &crate::Context, schema: &GridSchema) -> Self {
+        Self {
+            schema: Arc::new(schema.clone()),
+            index_rdr: csv::ReaderBuilder::new()
+                .has_headers(false)
+                .from_path(folders::matching(ctx).join("index.sorted.csv"))
+                .unwrap(),
+            data_rdrs: schema.files()
+                .iter()
+                .map(|file| {
+                    // Create a reader for each file - skipping the schema row.
+                    let mut rdr = csv::ReaderBuilder::new().from_path(file.path()).unwrap(); // TODO: Don't unwrap any of these.
+                    let mut ignored = csv::ByteRecord::new();
+                    rdr.read_byte_record(&mut ignored).unwrap();
+                    rdr
+                })
+                .collect(),
+            derived_rdrs: schema.files()
+                .iter()
+                .map(|file| {
+                    // Create a reader for each derived file - skipping the schema row.
+                    let mut rdr = csv::ReaderBuilder::new().from_path(file.derived_path()).unwrap(); // TODO: Don't unwrap any of these.
+                    let mut ignored = csv::ByteRecord::new();
+                    rdr.read_byte_record(&mut ignored).unwrap();
+                    rdr
+                })
+                .collect(),
+            current: None
+        }
+    }
+
+    fn new_group(&self, csv_record: &csv::ByteRecord) -> bool {
+        match &self.current {
+            None => false, // This isn't a NEW group this is the FIRST group.
+            Some(current) => {
+                current.get(COL_MERGE_KEY).unwrap() != csv_record.get(COL_MERGE_KEY).unwrap()
+            },
+        }
+    }
+
+    ///
+    /// Use the file-base index to load the record data and derived data.
+    ///
+    fn load_record(&mut self, csv_record: &csv::ByteRecord) -> Result<Record, MatcherError> {
+
+        let mut data_pos = csv::Position::new();
+        data_pos.set_byte(csv_to_u64(csv_record.get(COL_DATA_BYTE)));
+        data_pos.set_line(csv_to_u64(csv_record.get(COL_DATA_LINE)));
+
+        let mut derived_pos = csv::Position::new();
+        derived_pos.set_byte(csv_to_u64(csv_record.get(COL_DERIVED_BYTE)));
+        derived_pos.set_line(csv_to_u64(csv_record.get(COL_DERIVED_LINE)));
+
+        let file_idx = csv_to_u64(csv_record.get(COL_FILE_IDX)) as usize;
+
+        // Read the real (csv)record using it's indexed position.
+        let mut data_record = csv::ByteRecord::new();
+        self.data_rdrs[file_idx].seek(data_pos)?;
+        self.data_rdrs[file_idx].read_byte_record(&mut data_record)?;
+
+        // Read the derived (csv)record using it's indexed position.
+        let mut derived_record = csv::ByteRecord::new();
+        self.derived_rdrs[file_idx].seek(derived_pos)?;
+        self.derived_rdrs[file_idx].read_byte_record(&mut derived_record)?;
+
+        // Construct a Record.
+        Ok(Record::new(file_idx, self.schema.clone(), data_record, derived_record))
+    }
+
+    fn group_result(&self, group: Vec<Record>) -> Option<Result<Vec<Record>, MatcherError>> {
+        match group.is_empty() {
+            true => None,
+            false => Some(Ok(group)),
+        }
+    }
+}
+
+pub fn csv_to_u64(bytes: Option<&[u8]>) -> u64 {
+    String::from_utf8_lossy(&bytes.expect("Index usize field missing"))
+        .parse()
+        .expect("Unable to convert index field to usize")
+}
+
+impl Iterator for GroupIterator {
+    type Item = Result<Vec<Record>, MatcherError>;
+
+    ///
+    /// Use the record indexes to look-up the full csv and derived csv data to construct each record in the group.
+    ///
+    fn next(&mut self) -> Option<Self::Item> {
+
+        let mut group = Vec::new();
+
+        // If we're starting a new group, load the record.
+        if let Some(csv_record) = self.current.clone(/* load_record needs mut borrow of self */) {
+            match self.load_record(&csv_record) {
+                Ok(record) => group.push(record),
+                Err(err) => return Some(Err(err)),
+            }
+        }
+
+        // Read a record index.
+        loop {
+            let mut csv_record = csv::ByteRecord::new();
+            match self.index_rdr.read_byte_record(&mut csv_record) {
+                Ok(read) => match read {
+                    true  => {
+                        // If this new index belongs to a new group, track it and return the current group now.
+                        if self.new_group(&csv_record) {
+                            self.current = Some(csv_record);
+                            return self.group_result(group)
+                        }
+
+                        // Otherwise keep appending records to the group.
+                        match self.load_record(&csv_record) {
+                            Ok(record) => group.push(record),
+                            Err(err) => return Some(Err(err)),
+                        }
+
+                        // Track the current group.
+                        self.current = Some(csv_record);
+                    },
+                    false => {
+                        self.current = None;
+                        return self.group_result(group)
+                    },
+                },
+                Err(err) => return Some(Err(err.into())),
+            }
+        }
+    }
+}
+
+///
 /// Reads csv records with a slightly slicker api.
 ///
 trait RecordProvider {
@@ -430,14 +652,5 @@ impl RecordProvider for csv::Reader<File> {
                 None
             },
         }
-    }
-}
-
-
-#[cfg(test)]
-pub mod test {
-    #[test]
-    fn test_ems() {
-
     }
 }

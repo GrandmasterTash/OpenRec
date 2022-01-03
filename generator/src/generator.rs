@@ -9,7 +9,8 @@ use chrono::{Datelike, NaiveDate, TimeZone, Utc, SecondsFormat};
 use rand::{Rng, SeedableRng, prelude::{SliceRandom, StdRng}};
 use crate::{column::*, data_type::DataType, group::Group, schema::Schema};
 
-// TODO: Generate a random FXRate snapshot and use random currencies for some rows.
+// BUG: Missing OpenRecStatus column
+// BUG: Amounts don't seem to add. Just use x2 payments and x1 receipt not random....
 
 pub mod prelude {
     // Snaphot of ISO currency codes.

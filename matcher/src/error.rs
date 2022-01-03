@@ -55,6 +55,9 @@ pub enum MatcherError {
     #[error("CSV file had no initial schema row")]
     NoSchemaRow { source: csv::Error },
 
+    #[error("CSV files used in matched MUST have OpenRecStatus as the first column")]
+    StatusColumnMissing,
+
     #[error("Cannot read CSV headers")]
     CannotReadHeaders { source: csv::Error },
 

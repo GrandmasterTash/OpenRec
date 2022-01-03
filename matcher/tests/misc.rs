@@ -47,13 +47,13 @@ fn test_empty_data_file() {
 
     // Create an empty invoice and empty payment file.
     common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-invoices.csv",
-r#""Reference","TotalAmount","Currency","Date"
-"ST","DE","ST","DT"
+r#""OpenRecStatus","Reference","TotalAmount","Currency","Date"
+"IN","ST","DE","ST","DT"
 "#);
 
     common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-payments.csv",
-r#""Reference","Currency","Amount","Date","FXRate"
-"ST","ST","DE","DT","DE"
+r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
+"IN","ST","ST","DE","DT","DE"
 "#);
 
     // Run the match.
@@ -93,10 +93,10 @@ fn test_no_charter_instructions() {
 
     // Write 2 transactions to match with each other.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1"
-"0002","2021-12-19T08:29:00.000Z","100.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1"
+"0","0002","2021-12-19T08:29:00.000Z","100.00","T2"
 "#);
 
     // Write a charter file without any instructions.
@@ -149,18 +149,18 @@ fn test_data_exists_but_no_matches() {
 
     // Write 2 invoices.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_invoices.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.00","INV1"
-"0003","2021-12-18T08:29:00.000Z","100.00","INV1"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","INV1"
+"0","0003","2021-12-18T08:29:00.000Z","100.00","INV1"
 "#);
 
     // Write 2 payments - neither will match their invoice.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_payments.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","55.00","PAY1"
-"0003","2021-12-18T08:29:00.000Z","66.00","PAY1"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","55.00","PAY1"
+"0","0003","2021-12-18T08:29:00.000Z","66.00","PAY1"
 "#);
 
     // Write a charter file.

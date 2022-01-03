@@ -7,10 +7,10 @@ fn test_all_meta_present_in_lua() {
 
     // Match two records, with a constraint rule that requires certain metadata fields are present.
     let _data_file = common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1"
-"0002","2021-12-19T08:29:00.000Z","100.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1"
+"0","0002","2021-12-19T08:29:00.000Z","100.00","T2"
 "#);
 
     // Write a charter file.

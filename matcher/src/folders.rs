@@ -248,6 +248,8 @@ pub fn changesets_in_matching(ctx: &Context) -> Result<Vec<DirEntry>, MatcherErr
 /// Any .inprogress files should be deleted.
 ///
 pub fn rollback_any_incomplete(ctx: &Context) -> Result<(), MatcherError> {
+    // TODO: Any index.* files.
+    
     for folder in vec!(matched(ctx), unmatched(ctx)) {
         for entry in folder.read_dir()? {
             if let Ok(entry) = entry {

@@ -71,15 +71,7 @@ impl UnmatchedHandler {
         Ok(Self { files })
     }
 
-    // TODO: rayon this up
     pub fn write_records(&mut self, ctx: &Context, grid: &Grid) -> Result<(), MatcherError> {
-        // Open readers for each sourced file of data.
-        let mut readers: Vec<csv::Reader<File>> = grid.schema().files()
-            .iter()
-            .map(|f| csv::ReaderBuilder::new().from_path(f.path()).unwrap())
-            .collect();
-
-        // TODO: (EMS) Until we do EMS, this will contain ALL records as nothing can be marked as matched.
         for record in grid.iter(ctx) {
             // Get the unmatched-file for this record.
             let filename = grid.schema().files().get(record.file_idx())

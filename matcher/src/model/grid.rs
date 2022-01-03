@@ -1,8 +1,13 @@
-use rayon::prelude::*;
 use ubyte::ToByteUnit;
 use core::charter::MatchingSourceFile;
-use std::{fs::{File, DirEntry}, time::Instant, rc::Rc, sync::Arc};
+use std::{fs::{File, DirEntry}, time::Instant, sync::Arc};
 use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, record::Record, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, CSV_BUFFER};
+
+// TODO: move to lib prelude.
+// const UNMATCHED: i32 = 0x30; // = 0 ascii.
+// const MATCHED: i32 = 0x31; // = 1 ascii.
+const UNMATCHED: &str = "0"; // = 0 ascii.
+const MATCHED: &str = "1"; // = 1 ascii.
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -318,13 +323,13 @@ impl Iterator for GridIterator {
             }
 
             // Read a row from the csv file.
-            match read_next(self.pos, &mut self.data_readers) {
+            match read_next(self.pos, &mut self.data_readers, true) {
                 Ok(data) => {
                     if let Some(data) = data  {
                         // Read a row from the derived csv file, if applicable.
                         let derived = match &mut self.derived_readers {
                             Some(derived_readers) => {
-                                match read_next(self.pos, derived_readers) {
+                                match read_next(self.pos, derived_readers, false) {
                                     Ok(derived) => derived.unwrap_or_default(),
                                     Err(_) => csv::ByteRecord::new(), // TODO: Log error.
                                 }
@@ -335,7 +340,7 @@ impl Iterator for GridIterator {
                         return Some(Record::new(self.pos, self.schema.clone(), data, derived))
                     }
 
-                    // If there was no data in the file, move onto the next one.
+                    // If there was no data in the file, move onto the next file.
                     self.pos += 1;
                 },
                 Err(_) => return None, // TODO: Log error.
@@ -345,13 +350,19 @@ impl Iterator for GridIterator {
 }
 
 
-fn read_next(pos: usize, readers: &mut CsvReaders) -> Result<Option<csv::ByteRecord>, csv::Error> {
+fn read_next(pos: usize, readers: &mut CsvReaders, filter_status: bool) -> Result<Option<csv::ByteRecord>, csv::Error> {
     let mut buffer = csv::ByteRecord::new();
-    match readers[pos].read_byte_record(&mut buffer) {
-        Ok(result) => match result {
-            true  => Ok(Some(buffer)),
-            false => Ok(None),
-        },
-        Err(err) => Err(err),
+    loop {
+        match readers[pos].read_byte_record(&mut buffer) {
+            Ok(result) => match result {
+                true  => {
+                    if !filter_status || String::from_utf8_lossy(buffer.get(0).unwrap()) == UNMATCHED {
+                        return Ok(Some(buffer))
+                    }
+                },
+                false => return Ok(None),
+            },
+            Err(err) => return Err(err),
+        }
     }
 }

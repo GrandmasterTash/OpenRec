@@ -1,4 +1,4 @@
-"Invoice No","InvoiceRef","Invoice Date","InvoiceAmount"
-"ST","ST","DT","DE"
-"0001","INV0001","2021-11-25T04:36:08.000Z","1050.99"
-"0002","INV0002","2021-11-26T04:36:08.000Z","500.00"
+"OpenRecStatus","Invoice No","InvoiceRef","Invoice Date","InvoiceAmount"
+"IN","ST","ST","DT","DE"
+"0","0001","INV0001","2021-11-25T04:36:08.000Z","1050.99"
+"0","0002","INV0002","2021-11-26T04:36:08.000Z","500.00"

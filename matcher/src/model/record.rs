@@ -1,19 +1,10 @@
 use uuid::Uuid;
-use std::{rc::Rc, sync::Arc};
+use std::sync::Arc;
 use rust_decimal::Decimal;
 use super::schema::GridSchema;
 use core::data_type::DataType;
 use bytes::{Bytes, BytesMut, BufMut};
 use crate::{convert, error::MatcherError};
-
-
-// Attempt to remove DataAccessor with a lightweight record wrapper / buffer.
-
-// const STATUS_UNMATCHED: i64 = 0;
-// const STATUS_MATCHED: i64 = 1;
-// const STATUS_IGNORED: i64 = 2;
-
-// const STATUS_COLUMN: usize = 0; // First column must always be the status.
 
 pub struct Record {
     file_idx: usize,  // Index of the DataFile in the grid(schema).
@@ -57,29 +48,6 @@ impl Record {
     pub fn schema(&self) -> Arc<GridSchema> {
         self.schema.clone()
     }
-
-    // TODO: Not required anymore.
-    // pub fn deleted(&self) -> bool {
-    //     let bytes = self.data.get(STATUS_COLUMN).to_bytes();
-    //     let status = convert::csv_bytes_to_int(bytes).expect("status not numeric");
-    //     status != STATUS_UNMATCHED
-    // }
-
-    // TODO: Don't think this will be required with EMS...
-    // pub fn set_matched(&self, file: &mut File) {
-    //     // TODO: (EMS) Update data in buffer. WHY?
-    //     // let mut bytes = BytesMut::new();
-    //     // bytes.put_slice(format!("{}", STATUS_MATCHED).as_bytes());
-    //     // let old = std::mem::replace(&mut buffer[*pos as usize], bytes.freeze());
-    //     // let old = std::mem::replace(&mut self.buffer[STATUS_COLUMN], bytes.freeze());
-
-    //     // TODO: (EMS) Random-access to file to change status.
-    //     let buf = vec!(0x31); // "1" -> Matched.
-    //     file.write_all_at(self.data.position().expect("no csv position").byte() +/* Skip double-quotes */ 1, &buf).unwrap(); // TODO: Don't unwrap.
-    // }
-
-    // pub fn pos(&self) -> Position {
-    // }
 
     pub fn memory_usage(&self) -> usize {
         std::mem::size_of::<Record>() // TODO: Include data in buffers.

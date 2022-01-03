@@ -8,11 +8,11 @@ fn test_custom_constraint_with_count() {
 
     // Create 3 transactions, with a 1:2 cardinality.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type"
-"IN","DT","DE","ST"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1"
-"0002","2021-12-19T08:29:00.000Z","75.00","T2"
-"0003","2021-12-19T08:29:00.000Z","25.00","T2"
+r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1"
+"0","0002","2021-12-19T08:29:00.000Z","75.00","T2"
+"0","0003","2021-12-19T08:29:00.000Z","25.00","T2"
 "#);
 
     // Create a charter with a custom constraint.
@@ -52,11 +52,11 @@ fn test_custom_constraint_with_sum_and_sum_int() {
 
     // Create 3 transactions, with a 1:2 cardinality.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type","IntAmount"
-"IN","DT","DE","ST","IN"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1","550"
-"0002","2021-12-19T08:29:00.000Z","75.00","T2","300"
-"0003","2021-12-19T08:29:00.000Z","25.00","T2","250"
+r#""OpenRecStatus","TransId","Date","Amount","Type","IntAmount"
+"IN","IN","DT","DE","ST","IN"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1","550"
+"0","0002","2021-12-19T08:29:00.000Z","75.00","T2","300"
+"0","0003","2021-12-19T08:29:00.000Z","25.00","T2","250"
 "#);
 
     // Create a charter with a custom constraint.
@@ -99,11 +99,11 @@ fn test_custom_constraint_with_max_and_max_int() {
 
     // Create 3 transactions, with a 1:2 cardinality.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type","IntAmount"
-"IN","DT","DE","ST","IN"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1","550"
-"0002","2021-12-19T08:29:00.000Z","75.00","T2","300"
-"0003","2021-12-19T08:29:00.000Z","25.00","T2","250"
+r#""OpenRecStatus","TransId","Date","Amount","Type","IntAmount"
+"IN","IN","DT","DE","ST","IN"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1","550"
+"0","0002","2021-12-19T08:29:00.000Z","75.00","T2","300"
+"0","0003","2021-12-19T08:29:00.000Z","25.00","T2","250"
 "#);
 
     // Create a charter with a custom constraint.
@@ -146,11 +146,11 @@ fn test_custom_constraint_with_min_and_min_int() {
 
     // Create 3 transactions, with a 1:2 cardinality.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""TransId","Date","Amount","Type","IntAmount"
-"IN","DT","DE","ST","IN"
-"0001","2021-12-19T08:29:00.000Z","100.00","T1","550"
-"0002","2021-12-19T08:29:00.000Z","75.00","T2","300"
-"0003","2021-12-19T08:29:00.000Z","25.00","T2","250"
+r#""OpenRecStatus","TransId","Date","Amount","Type","IntAmount"
+"IN","IN","DT","DE","ST","IN"
+"0","0001","2021-12-19T08:29:00.000Z","100.00","T1","550"
+"0","0002","2021-12-19T08:29:00.000Z","75.00","T2","300"
+"0","0003","2021-12-19T08:29:00.000Z","25.00","T2","250"
 "#);
 
     // Create a charter with a custom constraint.

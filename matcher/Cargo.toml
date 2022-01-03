@@ -53,5 +53,5 @@ rayon = "1.5.1"
 
 [dev-dependencies]
 fs_extra = "1.2.0"
-md5 = "0.7.0"
+#md5 = "0.7.0"
 assert-json-diff = "2.0.1"

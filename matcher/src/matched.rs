@@ -1,6 +1,7 @@
 use itertools::Itertools;
+use positioned_io::WriteAt;
 use serde_json::{json, Value};
-use std::{fs::File, io::{BufWriter, Write}};
+use std::{fs::{File, OpenOptions}, io::{BufWriter, Write}};
 use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context, changeset::{ChangeSet, Change}, unmatched::UnmatchedHandler};
 
 ///
@@ -9,15 +10,17 @@ use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{gri
 pub struct MatchedHandler {
     groups: usize,
     path: String,
-    writer: BufWriter<File>,
+    writer: BufWriter<File>, // For the matched.json file.
+    data_writers: Vec<File>, // To update the status byte for matched records.
 }
-
 
 impl MatchedHandler {
     ///
     /// Open a matched output file to write Json groups to. We'll add job details to the top of the file.
     ///
     pub fn new(ctx: &Context, grid: &Grid) -> Result<Self, MatcherError> {
+
+        // Initialise the matched.json file.
         let path = folders::new_matched_file(ctx);
         let file = File::create(&path)?;
         let mut writer = BufWriter::new(file);
@@ -46,7 +49,15 @@ impl MatchedHandler {
 
         write!(&mut writer, ",\n{{\n  \"groups\": [\n    ")?;
 
-        Ok(Self { groups: 0, writer, path: path.to_canoncial_string() })
+        Ok(Self {
+            groups: 0,
+            writer,
+            path: path.to_canoncial_string(),
+            data_writers: grid.schema().files()
+                .iter()
+                .map(|df| OpenOptions::new().write(true).open(df.path()).unwrap())
+                .collect()
+        })
     }
 
     ///
@@ -59,7 +70,10 @@ impl MatchedHandler {
     /// the header rows (so the first line of data will start at 3).
     ///
     pub fn append_group(&mut self, records: &[&Record]) -> Result<(), MatcherError> {
-        // Push this file writing into an fn.
+        // Mark all records as matched in thier source files.
+        self.set_matched_status(records)?;
+
+        // Update the matched.json file.
         if self.groups !=  0 {
             write!(&mut self.writer, ",\n    ")
                 .map_err(|source| MatcherError::CannotWriteThing { thing: "matched padding".into(), filename: self.path.clone(), source })?;
@@ -99,6 +113,20 @@ impl MatchedHandler {
 
         // Remove the .inprogress suffix
         folders::complete_file(&self.path)?;
+
+        Ok(())
+    }
+
+    ///
+    /// Writer a '1' to the first column of each matched record.
+    ///
+    pub fn set_matched_status(&mut self, records: &[&Record]) -> Result<(), MatcherError> {
+        let buf = vec!(0x31); // = 1 = Matched
+
+        for record in records {
+            let file = &mut self.data_writers[record.file_idx()];
+            file.write_all_at(record.data_position().byte() +/* Skip double-quotes */ 1, &buf).unwrap();
+        }
 
         Ok(())
     }

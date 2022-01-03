@@ -4,6 +4,8 @@ use core::data_type::DataType;
 use std::{collections::HashMap, fs};
 use crate::{model::record::Record, error::MatcherError};
 
+const STATUS: &str = "OpenRecStatus";
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Column {
     header: String,            // For example, INV.Amount
@@ -258,6 +260,10 @@ impl FileSchema {
             .map_err(|source| MatcherError::CannotReadHeaders { source })?;
 
         let mut columns = Vec::new();
+
+        if hdrs.get(0).expect("No header columns") != STATUS {
+            return Err(MatcherError::StatusColumnMissing)
+        }
 
         for (idx, hdr) in hdrs.iter().enumerate() {
             let data_type = match type_record.get(idx) {

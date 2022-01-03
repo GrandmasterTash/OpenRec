@@ -279,16 +279,16 @@ fn test_07_unmatched_data_from_examples() {
     assert_eq!(unmatched[1].file_name().unwrap().to_string_lossy(), "20211129_043300000_07-payments-a.unmatched.csv");
 
     // Compare the unmatched invoices.
-    let expected = r#""Invoice No","InvoiceRef","Invoice Date","InvoiceAmount"
-"ST","ST","DT","DE"
-"0001","INV0001","2021-11-25T04:36:08.000Z","1050.99"
+    let expected = r#""OpenRecStatus","Invoice No","InvoiceRef","Invoice Date","InvoiceAmount"
+"IN","ST","ST","DT","DE"
+"0","0001","INV0001","2021-11-25T04:36:08.000Z","1050.99"
 "#;
     common::assert_file_contents(&unmatched[0], expected);
 
     // Compare the unmatched payments.
-    let expected = r#""PaymentId","PaymentRef","PaymentAmount","Payment Date"
-"ST","ST","DE","DT"
-"P1","INV0001","50.99","2021-11-27T04:36:08.000Z"
+    let expected = r#""OpenRecStatus","PaymentId","PaymentRef","PaymentAmount","Payment Date"
+"IN","ST","ST","DE","DT"
+"0","P1","INV0001","50.99","2021-11-27T04:36:08.000Z"
 "#;
     common::assert_file_contents(&unmatched[1], expected);
 

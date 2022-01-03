@@ -1,7 +1,6 @@
-use md5::Digest;
 use serde_json::Value;
 use assert_json_diff::assert_json_eq;
-use std::{path::{PathBuf, Path}, fs::File, io::{Read, BufReader}};
+use std::{path::{PathBuf, Path}, fs::File, io::BufReader};
 use fs_extra::{dir::{CopyOptions, get_dir_content, remove}, copy_items};
 
 const FIXED_TS: &str = "20211201_053700000";
@@ -132,13 +131,10 @@ pub fn assert_matched_ok(data_files: &Vec<PathBuf>, base_dir: &PathBuf) -> PathB
     let matched = Path::new(base_dir).join("matched").join(format!("{}_matched.json", FIXED_TS));
     assert!(matched.exists(), "matched file {} doesn't exist", matched.to_string_lossy());
 
-    // Check the data files have been archived, and for each one, ensure it's not been modified.
+    // Check the data files have been archived
     for source in data_files {
         let archive = Path::new(base_dir).join("archive").join(source.file_name().unwrap());
         assert!(archive.exists(), "archived file {} doesn't exist", archive.to_string_lossy());
-
-        // Compare an md5 hash of the source data and the archive data to ensure they are exact.
-        assert_eq!(md5(source), md5(&archive), "Data file {} has changed", archive.to_string_lossy());
     }
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).expect("Unable to count unmatched files").files.len(), 0, "Unmatched files exist, expected none");
@@ -163,9 +159,6 @@ pub fn assert_unmatched_ok(data_files: &Vec<PathBuf>, base_dir: &PathBuf, expect
     for source in data_files {
         let archive = Path::new(base_dir).join("archive").join(source.file_name().unwrap());
         assert!(archive.exists(), "archived file {} doesn't exist", archive.to_string_lossy());
-
-        // Compare an md5 hash of the source data and the archive data to ensure they are exact.
-        assert_eq!(md5(source), md5(&archive), "Data file {} has changed", archive.to_string_lossy());
     }
 
     let unmatched_dir = get_dir_content(base_dir.join("unmatched")).expect("Unable to get the unmatched files");
@@ -181,16 +174,6 @@ pub fn read_json_file(path: PathBuf) -> Value {
     let file = File::open(path.clone()).expect(&format!("Could not open {}", path.to_string_lossy()));
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).expect(&format!("Could not read {}", path.to_string_lossy()))
-}
-
-///
-/// Calculate the MD5 of the file specified.
-///
-pub fn md5(path: &PathBuf) -> Digest {
-    let mut f = File::open(path.clone()).expect(&format!("Cannot open {}", path.to_string_lossy()));
-    let mut buffer = Vec::new();
-    f.read_to_end(&mut buffer).expect(&format!("Cannot read {}", path.to_string_lossy()));
-    md5::compute(buffer)
 }
 
 ///
