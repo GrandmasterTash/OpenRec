@@ -1,7 +1,8 @@
 # celerity
 A blazingly fast reconciliation server written in Rust with an emphasis on low system resource usage regardless of data volume.
 
-TODO: Abort changeset.
+TODO: Abort-type changeset.
+TODO: Examples at top-level should be Jetwash+celerity - consider moving integration tests up from celerity to top-level and incorporate both jetwash and celeiity.
 TODO: Update and full refresh data loads.
 TODO: folder structure docs....
 TODO: archive/celerity

@@ -15,6 +15,9 @@ debug: true
 matching:
   # TODO: Explain how the pattern works and how it allows unmatched files as well.
   source_files:
+     # Notice '.*' appears twice in both patterns? The first occurrence is because all files presented to matching have a timestamp prefix in their filename. So the above patterns match all dates. The second occurrence is because, when a match job results in un-matched data, the original file is given a new format. For example:
+    # 20220103_18400000_invoices.csv -> 20220103_18400000_invoices.unmatched.csv
+     # So the second occurrence of '.*' allows files with or without the '.unmatched' portion of the filename to be processed.
     - pattern: .*01-invoices.*\.csv
       field_prefix: INV
     - pattern: .*01-payments.*\.csv
