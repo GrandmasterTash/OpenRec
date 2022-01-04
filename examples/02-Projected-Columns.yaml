@@ -58,6 +58,7 @@ matching:
         # returned from string.find that we do not need (in this case the start and end position of the match).
         # Lua uses it's own regular expression syntax, similar to standard POSIX (https://www.lua.org/pil/20.2.html).
         # In the pattern below, the brackets (.*) capture the value we want to use.
+        # TODO: Could also use string.match for a simpler approach.
         from: |
           local _start, _end, inv_ref = string.find(record["PAY.Reference"], "^PAY.*XX(.*)XX$")
           return inv_ref

@@ -11,6 +11,7 @@ The motivation for this project was simply personal, I wished to solve the probl
 - **Lightweight** - Because OpenRec is written in Rust, it has no start-up time and a very low file size footprint. The matching engine (Celerity) uses an external merge sort algorithm which utilities disk files rather than system RAM to sort and group data. Because of this, you can easily run **any** number of transactions on a system with barely any memory requirements (GBs of transactions can typically use less than 100MB of RAM!).
 - **Easy to configure** - OpenRec configuration files (called charters) use a very natural configuration structure which is easy to pick-up and the parser gives great feed-back if mistakes are made.
 - **Extendible** - OpenRec configuration utilizes the Lua scripting language to derive calculated fields and evaluate matching rules. Lua is a well documented and OpenRec provides some very handy helper functions which can also be leveraged (more detail in the examples).
+- **Database Free** - TODO
 
 You should read through the OpenRec concepts section which follows before jumping in to the <b>[Getting Started]</b> section.
 
@@ -48,7 +49,8 @@ Each charter will operate in it's own folder structure. These folders should be 
   |   ├── waiting
   |   ├── unmatched
   |   ├── matching
-  |   └── matched
+  |   ├── matched
+  |   └── outbox
   ├── control_b
   |   ├── inbox
   .   .
@@ -98,7 +100,7 @@ Here is an example Celerity CSV file, 20220103_18400000_invoices.csv: -
 
 ## Charters
 
-Charters are yaml configuration files used to define rules for Jetwash and Celerity. An example is shown here, don't worry about the details, that is explained in the examples folders (which you are encouraged to work through): -
+Charters are yaml configuration files used to define rules for Jetwash and Celerity. To give you a feel for what it looks like an example is shown here, don't worry about the details, they will be covered shortly and also explained in more detail in the examples folder.
 
 ```yaml
 name: Example Control
@@ -122,7 +124,6 @@ jetwash:
       - dmy: maturity_date
       - dmy: expiry_date
       - dmy: opening_date
-
 
 matching:
   source_files:
@@ -159,21 +160,23 @@ matching:
 
 We'll discuss some of the concepts shown in the above example now.
 
-TODO: Put virtual grid section in own .MD file.
+### Jetwash
 
-### Virtual Grid
+### Virtual Grid Model
 
 Focusing on the *matching* section of the above file, you'll see it starts with *source_files*. You can define regular expressions here to match any filenames you want to import into the system. There is no limit on the number of patterns, so you may define 3 for example, for a 3-way reconciliation.
 
-Each pattern may match against zero or more files present in the waiting (and unmatched) folders. You can think of these files as being loaded into a single virtual memory grid (think Excel worksheet) which Celerity uses to sort and group.
+Each pattern may match against zero or more files present in the *waiting* (and *unmatched*) folders. You can think of these files as being loaded into a single virtual memory grid (think 'Excel worksheet') which Celerity uses to sort and group.
 
-Each file is given a *field_prefix* value. This value is appended to each field name to ensure it doesn't conflict with other fields from other files sharing the same name. In the example above, all fields from the DealExport.csv files will be prefixed with 'THEIRS' (so 'THEIRS.Principal' is a column for example) and all fields from the InternalTrades.csv files will be prefixed with 'OURS' (so 'OURS.maturity_date' is a column for example).
+Note: the grid is referred to as virtual because no data is physically loaded into memory (well, technically not all data is loaded at the same time), however, it remains a useful visualisation tool to think of it in this way.
 
-As an example, lets take an simple invoice file and a payment file (not related to the above charter - just some new files to illustrate) and put them both in a virtual grid.
+In the charter, each file is given a *field_prefix* value. This value is appended to each field name loaded from that pattern to ensure it doesn't conflict with other fields from other files which might have the same name. In the example above, all fields from the DealExport.csv files will be prefixed with 'THEIRS' (so 'THEIRS.Principal' is a column for example) and all fields from the InternalTrades.csv files will be prefixed with 'OURS' (so 'OURS.maturity_date' is a column for example).
 
-#### Invoice File
+Let's explore this in more detail, by taking an simple invoice file and payment file (these are not related to the above example charter - and are some new files to illustrate) and put them both in a virtual grid.
 
-The individual invoice file looks like this: -
+##### Invoice File
+
+Our sample invoice file looks like this: -
 
 ```csv
 "Ref","InvoiceDate","Amount"
@@ -182,9 +185,9 @@ The individual invoice file looks like this: -
 "INV0002","2021-11-26T00:00:00.000Z","500.00"
 ```
 
-#### Payment File
+##### Payment File
 
-The individual payment file looks like this: -
+Our sample payment file looks like this: -
 
 ```csv
 "PaymentId","Ref","Amount","PaymentDate"
@@ -193,6 +196,8 @@ The individual payment file looks like this: -
 "P2","INV0002","500.00","2021-11-27T00:00:00.000Z"
 "P3","INV0001","1000.00","2021-11-28T00:00:00.000Z"
 ```
+
+Note: There are a couple of internally added fields which I have omitted as they aren't relevant here.
 
 If we had a charter which sourced files like this: -
 
@@ -223,7 +228,7 @@ matching:
               rhs: record["META.prefix"] == "INV"
 ```
 
-Then loading these files into the virtual grid, would result in a dataset which looked like this: -
+Then loading these files into the virtual grid, before the instructions section was processed, would result in a dataset which looked like this: -
 
 ```
 INV.Ref  INV.InvoiceDate           INV.Amount  PAY.PaymentId  PAY.Ref  PAY.Amount  PAY.PaymentDate
@@ -235,6 +240,8 @@ INV0002  2021-11-26T00:00:00.000Z      500.00  -              -                 
 ```
 
 From this stage, the charter has instructions which tell Celerity how to bring columns together so that rows can be grouped and matched.
+
+#### Merging Columns
 
 ```yaml
 - merge:
@@ -272,6 +279,8 @@ INV0001  1000.00  -        -                                  -  P3             
 
 Now we have two columns we can use to group data and test the groups are valid matches.
 
+#### Grouping Data
+
 ```yaml
 - group:
     by: ['REF']
@@ -294,27 +303,198 @@ INV0002   500.00  INV0002  2021-11-26T00:00:00.000Z      500.00  -              
 INV0002   500.00  -        -                                  -  P2             INV0002      500.00  2021-11-27T00:00:00.000Z
 ```
 
-Then it runs one or more constraint rules to see if the group is a valid match, in this case there is only one rule, a nets_to_zero rule (other rules are covered in the examples section).
+#### Constraint Rules
+
+Then it runs one or more constraint rules to see if the group is a valid match - all constraints must evaluate to true for the group to match, in this case there is only one rule, a nets_to_zero rule (other rules are covered in the examples section).
 
 Netting-to-zero is shorthand for the following calculation (using the above example): -
 ```
-  sum(abs(invoice amount)) - sum(abs(payment amount)) => must equal zero
+  sum(abs(invoice amount)) - sum(abs(payment amount)) must equal zero
+  at least one invoice must exist in the group
+  at least one payment must exist in the group
 ```
-In the example above, you can see that both groups will be matched and released from the system.
+In the example above, you can see that we are using some META data that is appended to the record to identify if it's an invoice or a payment. More metadata fields are available and are covered in one of the examples in the examples folder.
 
-As mentioned, there are other constraint rules available, netting with tolerance and you can even write your own custom Lua constraints for scenarios where transactions may have multiple fields involved (ours/theirs flags, etc.). These are covered in more detail in the examples folder.
+In the above example, both groups will be matched and released from the system as both groups pass their constraints, i.e. they net-to-zero.
+
+As mentioned, there are other constraint rules available, the ability to net with tolerance and you can even write your own custom Lua constraints for scenarios where transactions may have multiple fields involved (ours/theirs flags, etc.). These are covered in more detail in the examples folder.
 
 
-### Projections
+#### Projecting Columns
 
-### Mergers
+As well as merging columns to create new virtual columns, you can also use column projections to calculate new columns of data.
 
-### Grouping
+Let take some new example data files where simply merging existing columns together wont be enough to group and match the records.
 
-### Constraints
+##### Invoice File
 
-## ChangeSets
+Our sample invoice file looks like this: -
+
+```csv
+"Ref","TotalAmount","Cur","Date"
+"ST","DE","ST","DT"
+"INV001","750.0000","GBP","2021-11-25T04:36:08.000Z"
+"INV002","380.73556","GBP","2021-12-18T08:09:28.000Z"
+"INV003","882.7104","GBP","2022-03-20T22:22:48.000Z"
+```
+
+##### Payment File
+
+Our sample payment file looks like this: -
+
+```csv
+"Ref","Cur","Amount","Date","FXRate"
+"ST","ST","DE","DT","DE"
+"PAY001XXINV001XX","USD","1000.0000","2021-11-25T04:36:08.000Z","0.75"
+"PAY002XXINV002XX","EUR","400.9900","2021-10-21T11:16:08.000Z","0.844"
+"PAY003XXINV002XX","EUR","50.0000","2021-10-22T15:02:48.000Z","0.846"
+"PAY004XXINV003XX","USD","1234.56","2022-03-20T22:22:48.000Z","0.715"
+```
+
+There are two new problems to solve to match this data which weren't present in the previous example.
+
+Firstly, the invoice reference is embedded inside the payment's Ref value. If we are going to use this to group the data it will need extracting into it's own column.
+
+Secondly, the payment currencies are not in the same currency as the currency on the invoice itself, so the amounts won't NET as they are. Fortunately, we've used Jetwash to populate the exchange rates to convert from the payment currency to the invoice currency (Jetwash can do look-ups against static data files when cleansing and importing data).
+
+If we were to load these two files into a virtual grid, then initially they would look like this (I have removed the time portion of the dates for brevity only): -
+
+```
+INV.Ref  INV.TotalAmount  INV.Cur INV.Date    PAY.Ref           PAY.Cur PAY.Amount  PAY.Date    PAY.FXRate
+INV001         750.00000  GBP     2021-11-25  -                 -                -  -                    -
+INV002         380.73556  GBP     2021-12-18  -                 -                -  -                    -
+INV003         882.71040  GBP     2022-03-20  -                 -                -  -                    -
+-                      -  -       -           PAY001XXINV001XX  USD      1000.0000  2021-11-25       0.750
+-                      -  -       -           PAY002XXINV002XX  EUR       400.9900  2021-10-21       0.844
+-                      -  -       -           PAY003XXINV002XX  EUR        50.0000  2021-10-22       0.846
+-                      -  -       -           PAY004XXINV003XX  USD      1234.5600  2022-03-20       0.715
+```
+
+The first instruction in our charter will create a new column which contains the payment amount converted to the invoice currency.
+
+```yaml
+- project:
+    column: PAY_AMOUNT_BASE
+    as_a: Decimal
+    from: record["PAY.Amount"] * record["PAY.FXRate"]
+    when: record["META.prefix"] == "PAY"
+```
+
+The calculation is performed in the *from* field using Lua script. The script has access to any field on the current record. In this case it is multiplying the *PAY.Amount* field by the *PAY.FXRate* field.
+
+Note, although Lua doesn't natively support precise decimal numbers, the Rust-to-Lua bridge in Celerity ensures the backing value is a precise financial number and wont suffer from floating point precision issues.
+
+The *when* clause in the above projection ensures the script is only evaluated on payment records - given invoice records don't have a field *PAY.Amount* or *PAY.FXRate* this avoids a nil reference error.
+
+The above projection results in a grid which now looks like this:-
+
+```
+PAY_AMOUNT_BASE  INV.Ref  INV.TotalAmount  INV.Cur INV.Date    PAY.Ref           PAY.Cur PAY.Amount  PAY.Date    PAY.FXRate
+              -  INV001         750.00000  GBP     2021-11-25  -                 -                -  -                    -
+              -  INV002         380.73556  GBP     2021-12-18  -                 -                -  -                    -
+              -  INV003         882.71040  GBP     2022-03-20  -                 -                -  -                    -
+      750.00000  -                      -  -       -           PAY001XXINV001XX  USD      1000.0000  2021-11-25       0.750
+      338.43556  -                      -  -       -           PAY002XXINV002XX  EUR       400.9900  2021-10-21       0.844
+       42.30000  -                      -  -       -           PAY003XXINV002XX  EUR        50.0000  2021-10-22       0.846
+      882.71040  -                      -  -       -           PAY004XXINV003XX  USD      1234.5600  2022-03-20       0.715
+```
+
+You can see how we can now use a new match instruction in the charter to merge *PAY_AMOUNT_BASE* with the *INV.TotalAmount* to create a single *AMOUNT* column we can use for a NETting constraint rule. This can be seen in more detail in the examples folder.
+
+The second problem we wanted to solve was grouping by the invoice reference. If we use the following column projection: -
+
+```yaml
+- project:
+    column: PAYMENT_INV_REF
+    as_a: String
+    from: string.match(record["PAY.Ref"], "^PAY.*XX(.*)XX$")
+    when: record["META.prefix"] == "PAY"
+```
+
+Let's unpack what we've just seen before we panic and find another product to do our matching for us! The *column* and *as_a* fields tell Celerity we are creating a new String column called *PAYMENT_INV_REF*.
+
+The next bit is the scary bit, but it's pretty straightforward. We're calling the *match* method on the Lua *string* object which takes two parameters and is used to grab smaller strings from longer strings.
+
+The first parameter is the value from the record's *PAY.Ref* field which has values like 'PAY001XXINV001XX' for example. The second parameter '^PAY.\*XX(.\*)XX$' is a Lua regular expression to pull out the 'INV001' bit from the first parameter, i.e. is the value that we want. Let's break down each part of the second parameter here: -
+
+| Segment | Description                                                                                                                     |
+|---------|---------------------------------------------------------------------------------------------------------------------------------|
+| ^PAY    | This means the start of the string must begin with PAY                                                                          |
+| .*      | This means match anything in the next bit of the string. In our example this is a number which we're not interested in, eg. 001 |
+| XX      | This means the next bit will always be XX                                                                                       |
+| (.*)    | This means match anything. The brackets mean capture this bit, it's what we want to return. eg. INV001                          |
+| XX      | This means the next bit will always be second XX                                                                                |
+| $       | This means the end of the string, so it'll always end XX                                                                        |
+
+Note: You can use Lua *print* statements in the charter configuration to experiment and see what these things do. Although you should always remove print statements before running a charter in production. Also [regex101](https://regex101.com/) is a fantastic site for trying out regular expressions on test values.
+
+You can find much more detail on Lua regular expressions online - they aren't as scary as they first look. For more details see [Lua Regular Expressions](http://lua-users.org/wiki/PatternsTutorial).
+
+Using the above projection results in this grid (I have removed the previous projection for brevity): -
+
+```
+PAYMENT_INV_REF  INV.Ref  INV.TotalAmount  INV.Cur INV.Date    PAY.Ref           PAY.Cur PAY.Amount  PAY.Date    PAY.FXRate
+-                INV001         750.00000  GBP     2021-11-25  -                 -                -  -                    -
+-                INV002         380.73556  GBP     2021-12-18  -                 -                -  -                    -
+-                INV003         882.71040  GBP     2022-03-20  -                 -                -  -                    -
+INV001           -                      -  -       -           PAY001XXINV001XX  USD      1000.0000  2021-11-25       0.750
+INV002           -                      -  -       -           PAY002XXINV002XX  EUR       400.9900  2021-10-21       0.844
+INV002           -                      -  -       -           PAY003XXINV002XX  EUR        50.0000  2021-10-22       0.846
+INV003           -                      -  -       -           PAY004XXINV003XX  USD      1234.5600  2022-03-20       0.715
+```
+
+Again, you should see how we can now merge *PAYMENT_INV_REF* with *INV.Ref* to create a new *REF* column which can be used to group the data by invoice.
+
+##### ChangeSets
+
+ChangeSets are a data modification mechanism that allow ad-hoc corrections to be made to data which is unmatched (and wont be matched by new incoming data). For example, suppose we generated an internal trade record and, due to an error in a counterparty's system, no corresponding transaction will ever be sent to reconcile with our unmatched record. In this scenario, we can submit an *IgnoreRecords* request for the internal trade. This will effectively release the record from the system, removing it from the unmatched data set.
+
+ChangeSets filenames should take the form YYYYMMDD_HHMMSSsss_changeset.json (to ensure chronological processing) and be placed in the inbox folder. Here is an example of an instruction to ignore a record.
+
+```json
+[
+  {
+    "id": "f3377a6c-6324-11ec-bc4d-00155ddc3e05",
+    "change": {
+        "type": "IgnoreRecords",
+        "lua_filter": "record[\"OpenRecId\"] == \"7e185ed4-6d76-11ec-9ea0-00155dd154c9\""
+    },
+    "timestamp": "2021-12-20T06:18:00.000Z"
+  }
+]
+```
+
+As you can probably tell, A ChangeSet can contain a list of instructions to modify data. And as shown in the above example, an instruction has a Lua filter script to allow a single modification to apply to more than one un-matched record.
+
+Supposing a file of data was submitted with a record whose amount value was incorrect. A single ChangeSet instruction could be issued to correct the value allowing the record to be matched.
+
+```json
+[
+  {
+    "id": "f3916ea0-6324-11ec-a8e6-00155ddc3e05",
+    "change": {
+        "type": "UpdateFields",
+        "updates": [ { "field": "Amount", "value": "444.00" } ],
+        "lua_filter": "record[\"TransId\"] == 123"
+    },
+    "timestamp": "2021-12-20T06:18:00.000Z"
+  }
+]
+```
+
+Again, because you're very astute, you can probably see this single update can effect multiple fields on the record(s) it's to be applied to.
+
+Note: All changesets are applied to un-matched data as part of a match job - prior to celerity performing any charter instructions on it.
+
+##### Match Reports
+
 
 # Getting Started
 
+
 ## Examples
+
+# Wishlist.
+- changesets to run lua script to modify a record(s) not just set a field value.
+- generate changesets from record deltas
+- full sync controls (i.e. source data contains all data, match or unmatched)

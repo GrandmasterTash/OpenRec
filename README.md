@@ -10,13 +10,9 @@ TODO: archive/jetwash folders - ditch /original folder.
 TODO: Consider a 'watch tree ./tmp -h' - style progress meter showing files and sizes.
 
 
-```
-    .
-    ├──
-    └── 
-```
-
 ## Experimentation around a Rust reconcilliation engine and gRPC server.
-TODO: Herald - match job orchistrator
-TODO: Steward example UI to config and build a charter.
 TODO: Document child projects in this file.
+TODO: Sentinal to monitor inbox and rename .ready
+TODO: Sentinal to initiate match jobs  (jetwash then celerity)
+TODO: Sentinal to publish unmatched data to outbox
+TODO: Sentinal to publish match job stats to prometheus.
