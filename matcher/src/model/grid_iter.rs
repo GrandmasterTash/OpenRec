@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use super::grid::Grid;
-use crate::{model::{record::Record, schema::GridSchema}, Context, CsvReaders};
+use crate::{model::{record::Record, schema::GridSchema}, Context, utils::{CsvReaders, self}};
 
 const UNMATCHED: &str = "0"; // = 0 ascii.
+const COL_STATUS: usize = 0;
 
 ///
 /// Iterator allows iterating the record (indexes) in the grid.
@@ -18,13 +19,7 @@ impl GridIterator {
     pub fn new(ctx: &Context, grid: &Grid) -> Self {
         let data_readers = grid.schema().files()
             .iter()
-            .map(|file| {
-                // Create a reader for each file - skipping the schema row.
-                let mut rdr = csv::ReaderBuilder::new().from_path(file.path()).unwrap(); // TODO: Don't unwrap any of these.
-                let mut ignored = csv::ByteRecord::new();
-                rdr.read_byte_record(&mut ignored).unwrap();
-                rdr
-            })
+            .map(|file| utils::reader(file.path(), true))
             .collect();
 
         let derived_readers = match ctx.phase() {
@@ -32,13 +27,7 @@ impl GridIterator {
             crate::Phase::ComleteAndArchive =>
                 Some(grid.schema().files()
                     .iter()
-                    .map(|file| {
-                        // Create a reader for each derived file - skipping the schema row.
-                        let mut rdr = csv::ReaderBuilder::new().from_path(file.derived_path()).unwrap(); // TODO: Don't unwrap any of these.
-                        let mut ignored = csv::ByteRecord::new();
-                        rdr.read_byte_record(&mut ignored).unwrap();
-                        rdr
-                    })
+                    .map(|file| utils::reader(file.derived_path(), true))
                     .collect()),
             _ => None,
         };
@@ -96,7 +85,7 @@ fn read_next(pos: usize, readers: &mut CsvReaders, filter_status: bool) -> Resul
         match readers[pos].read_byte_record(&mut buffer) {
             Ok(result) => match result {
                 true  => {
-                    if !filter_status || String::from_utf8_lossy(buffer.get(0).unwrap()) == UNMATCHED {
+                    if !filter_status || String::from_utf8_lossy(buffer.get(COL_STATUS).unwrap()) == UNMATCHED {
                         return Ok(Some(buffer))
                     }
                 },

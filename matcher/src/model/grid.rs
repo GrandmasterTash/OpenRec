@@ -2,7 +2,7 @@ use ubyte::ToByteUnit;
 use super::grid_iter::GridIterator;
 use core::charter::MatchingSourceFile;
 use std::{fs::DirEntry, time::Instant};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, CSV_BUFFER};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, utils};
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -103,20 +103,16 @@ impl Grid {
 
             log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
-            let mut wtr = csv::WriterBuilder::new()
-                .quote_style(csv::QuoteStyle::Always)
-                .buffer_capacity(*CSV_BUFFER)
-                .from_path(&output_path)
-                .expect("Unable to build a debug writer");
-            wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
+            let mut writer = utils::writer(&output_path);
+            writer.write_record(self.schema().headers()).expect("Unable to write the debug headers");
 
             let mut count = 0;
             for record in self.iter(ctx) {
-                wtr.write_record(record.as_strings()).expect("Unable to write record");
+                writer.write_record(record.as_strings()).expect("Unable to write record");
                 count += 1;
             }
 
-            wtr.flush().expect("Unable to flush the debug file");
+            writer.flush().expect("Unable to flush the debug file");
             log::debug!("...{} rows written to {}", count, output_path.to_canoncial_string());
         }
     }
@@ -181,9 +177,7 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
     // For now, just count all the records in a file and log them.
     let mut count = 0;
 
-    let mut rdr = csv::ReaderBuilder::new()
-        .from_path(file.path())
-        .map_err(|source| MatcherError::CannotOpenCsv { source, path: file.path().to_canoncial_string() })?;
+    let mut rdr = utils::reader(file.path(), false);
 
     let schema = FileSchema::new(source_file.field_prefix(), &mut rdr)
         .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;

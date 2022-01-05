@@ -1,4 +1,5 @@
 mod lua;
+mod utils;
 mod error;
 mod model;
 mod convert;
@@ -9,18 +10,16 @@ mod instructions;
 
 use uuid::Uuid;
 use anyhow::Result;
-use ubyte::ToByteUnit;
 use error::MatcherError;
 use itertools::Itertools;
 use changeset::ChangeSet;
-use lazy_static::lazy_static;
 use model::schema::GridSchema;
 use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate};
 use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
-use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, fs::File, sync::Arc};
-use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler};
+use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
+use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::{CsvReader, CsvWriter, CsvWriters}};
 
-// TODO: csv utils where all readers and writers can be created - for consistency.
+// TODO: grid debug pre-post grouping....
 // TODO: Consider using more panics in this project rather than errors. It's designed to be re-runable and this would simplify a lot of fns
 // TODO: OR consider better use of anyhow https://docs.rs/anyhow/latest/anyhow/index.html with context and here! details.
 // TODO: Need tolerance for dates (unit = days)
@@ -33,16 +32,10 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 // TODO: Rename this lib to celerity.
 // TODO: Unified unmatched files - where schemas match - to avoid too many readers. Use a metadata column for original filename.
 
-lazy_static! {
-    // TODO: Read from charter - enforce sensible lower limit.
-    pub static ref MEMORY_BOUNDS: usize = 50.megabytes().as_u64() as usize;  // External merge sort memory bounds.
-    pub static ref CSV_BUFFER: usize = 1.megabytes().as_u64() as usize;      // For CSV writer buffers.
-}
-
-pub type CsvReader = csv::Reader<File>;
-pub type CsvWriter = csv::Writer<File>;
-pub type CsvReaders = Vec<CsvReader>;
-pub type CsvWriters = Vec<CsvWriter>;
+// lazy_static! {
+//     // TODO: Read from charter - enforce sensible lower limit.
+//     pub static ref MEMORY_BOUNDS: usize = 50.megabytes().as_u64() as usize;  // External merge sort memory bounds.
+// }
 
 ///
 /// These are the linear state transitions of a match Job.
@@ -263,7 +256,7 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
     }
 
     // Now we know what columns are derived, write their headers to the .derived files.
-    let mut writers = derived_writers(grid)?;
+    let mut writers = derived_writers(grid);
     write_derived_headers(grid.schema(), &mut writers)?;
 
     // Debug the grid after the columns are added (but before values are derived).
@@ -275,19 +268,12 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
 ///
 /// Create a csv::Writer<File> for every sourced data file - it should point to the derived csv file.
 ///
-fn derived_writers(grid: &Grid) -> Result<CsvWriters, MatcherError> {
-    Ok(grid.schema()
+fn derived_writers(grid: &Grid) -> CsvWriters {
+    grid.schema()
         .files()
         .iter()
-        .map(|f| {
-            csv::WriterBuilder::new()
-                .has_headers(false)
-                // .buffer_capacity(*MEM_CSV_WTR)
-                .quote_style(csv::QuoteStyle::Always)
-                .from_path(f.derived_path())
-                .map_err(|source| MatcherError::CannotOpenCsv{ path: f.derived_path().into(), source } )
-        })
-        .collect::<Result<Vec<_>, _>>()?)
+        .map(|f| utils::writer(f.derived_path()))
+        .collect::<CsvWriters>()
 }
 
 ///
@@ -331,13 +317,7 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
     let readers: Vec<CsvReader> = grid.schema()
         .files()
         .iter()
-        .map(|file| {
-            let mut rdr = csv::ReaderBuilder::new().has_headers(true).from_path(file.path())
-                .unwrap_or_else(|err| panic!("Failed to open {} : {}", file.path(), err)); // TODO: Consider putting all these in util somewhere.
-            let mut ignored = csv::ByteRecord::new();
-            rdr.read_byte_record(&mut ignored).unwrap();
-            rdr
-        })
+        .map(|file| utils::reader(file.path(), true))
         .collect();
 
     let mut zipped: Vec<(CsvReader, CsvWriter)> = readers.into_iter().zip(writers).collect();

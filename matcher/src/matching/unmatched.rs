@@ -1,6 +1,6 @@
 use csv::Writer;
 use std::{collections::HashMap, fs::File, path::PathBuf};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::grid::Grid, Context, CSV_BUFFER};
+use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::grid::Grid, Context, utils};
 
 ///
 /// Manages the unmatched files for the current job.
@@ -45,12 +45,7 @@ impl UnmatchedHandler {
                 // Create an new unmatched file.
                 let output_path = folders::new_unmatched_file(ctx, file); // $REC_HOME/unmatched/timestamp_invoices.unmatched.csv
                 let full_filename = folders::filename(&output_path)?; // timestamp_invoices.unmatched.csv
-
-                let mut writer = csv::WriterBuilder::new()
-                    .quote_style(csv::QuoteStyle::Always)
-                    .buffer_capacity(*CSV_BUFFER)
-                    .from_path(&output_path)
-                    .map_err(|source| MatcherError::CannotCreateUnmatchedFile{ path: output_path.to_canoncial_string(), source })?;
+                let mut writer = utils::writer(&output_path);
 
                 // Add the column header and schema rows.
                 let schema = grid.schema().file_schemas().get(file.schema_idx())

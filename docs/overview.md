@@ -13,8 +13,6 @@ The motivation for this project was simply personal, I wished to solve the probl
 - **Extendible** - OpenRec configuration utilizes the Lua scripting language to derive calculated fields and evaluate matching rules. Lua is a well documented and OpenRec provides some very handy helper functions which can also be leveraged (more detail in the examples).
 - **Database Free** - TODO
 
-You should read through the OpenRec concepts section which follows before jumping in to the <b>[Getting Started]</b> section.
-
 # OpenRec Concepts
 
 A matching control in OpenRec is configured via a single [yaml](https://en.wikipedia.org/wiki/YAML) file called a **charter** and requires a folder structure where data will be imported and manipulated.
@@ -498,3 +496,4 @@ Note: All changesets are applied to un-matched data as part of a match job - pri
 - changesets to run lua script to modify a record(s) not just set a field value.
 - generate changesets from record deltas
 - full sync controls (i.e. source data contains all data, match or unmatched)
+- rollback jobs

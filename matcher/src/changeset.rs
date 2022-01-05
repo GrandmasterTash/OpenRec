@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instant}};
-use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, CsvWriters, CSV_BUFFER};
+use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, CsvWriters, utils::{self, CsvWriter}};
 
 /*
     Changeset files are instructions to modified unmatched or yet-to-be-matched data.
@@ -319,15 +319,8 @@ fn writers(grid: &Grid) -> Result<CsvWriters, MatcherError> {
     let mut writers = grid.schema()
         .files()
         .iter()
-        .map(|f| {
-            csv::WriterBuilder::new()
-                .has_headers(true)
-                .buffer_capacity(*CSV_BUFFER)
-                .quote_style(csv::QuoteStyle::Always)
-                .from_path(f.modifying_path())
-                .map_err(|source| MatcherError::CannotOpenCsv{ path: f.modifying_path().into(), source } )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|f| utils::writer(f.modifying_path()))
+        .collect::<Vec<CsvWriter>>();
 
     // Write the headers and schema rows.
     for (idx, file) in grid.schema().files().iter().enumerate() {

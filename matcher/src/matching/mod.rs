@@ -9,7 +9,7 @@ use core::charter::Constraint;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf};
 use self::{prelude::*, group_iter::GroupIterator, matched::MatchedHandler};
-use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, convert, MEMORY_BOUNDS, lua, instructions::constraints::passes};
+use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders, convert, lua, instructions::constraints::passes, utils::{self, CsvWriter}};
 
 // The column position in our index records for the merge_key used to sort index records.
 mod prelude {
@@ -148,8 +148,8 @@ fn estimated_index_size(unsorted_path: &PathBuf, grid: &Grid) -> usize {
 ///
 /// Calculate how many index records form a batch that will fit in the memory bounds.
 ///
-fn batch_size(avg_len: usize) -> usize {
-    (*MEMORY_BOUNDS as f64 / avg_len as f64) as usize
+fn batch_size(avg_len: usize, ctx: &crate::Context) -> usize {
+    (ctx.charter().memory_limit() as f64 / avg_len as f64) as usize
 }
 
 ///
@@ -159,14 +159,7 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
     -> Result<(PathBuf, usize), MatcherError> {
 
     let unsorted_path = folders::matching(ctx).join("index.unsorted.csv");
-
-    let mut unsorted_writer = csv::WriterBuilder::new()
-        .has_headers(false)
-        // .buffer_capacity(*CSV_BUFFER)
-        .quote_style(csv::QuoteStyle::Always)
-        .from_path(&unsorted_path)
-        .map_err(|source| MatcherError::CannotOpenCsv{ path: unsorted_path.to_canoncial_string(), source } )?;
-
+    let mut unsorted_writer = utils::writer(&unsorted_path);
     let mut buffer = csv::ByteRecord::new();
 
     let start = Instant::now();
@@ -207,14 +200,9 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
 ///
 fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize) -> Result<usize, MatcherError> {
 
-    let batch_size = batch_size(avg_len);
+    let batch_size = batch_size(avg_len, ctx);
     let mut file_count = 0; // Number of split files containing the chunked, sorted data.
-
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_path(&unsorted_path) // TODO: This path can be deduced here, we don't need a param for it.
-        .map_err(|source| MatcherError::CannotOpenCsv { source, path: unsorted_path.to_canoncial_string() })?;
-
+    let mut reader = utils::index_reader(unsorted_path);
     let mut buffer: Vec<csv::ByteRecord> = Vec::with_capacity(batch_size);
 
     for result in reader.byte_records() {
@@ -229,7 +217,7 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
             file_count += 1;
 
             // Write the sorted data to a new split file.
-            let mut writer = sorted_writer(ctx, file_count)?;
+            let mut writer = sorted_writer(ctx, file_count);
             buffer.iter().for_each(|record| writer.write_byte_record(&record).unwrap());
 
             // Clear the buffer.
@@ -246,7 +234,7 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
         file_count += 1;
 
         // Write the sorted data to a new split file.
-        let mut writer = sorted_writer(ctx, file_count)?;
+        let mut writer = sorted_writer(ctx, file_count);
         buffer.iter().for_each(|record| writer.write_byte_record(&record).unwrap());
     }
 
@@ -259,14 +247,9 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
     Ok(file_count)
 }
 
-fn sorted_writer(ctx: &crate::Context, file_idx: usize) -> Result<csv::Writer<File>, MatcherError> {
+fn sorted_writer(ctx: &crate::Context, file_idx: usize) -> CsvWriter {
     let sorted_path = folders::matching(ctx).join(format!("index.sorted.{}", file_idx));
-    Ok(csv::WriterBuilder::new()
-        .has_headers(false)
-        // .buffer_capacity(*CSV_BUFFER)
-        .quote_style(csv::QuoteStyle::Always)
-        .from_path(&sorted_path)
-        .map_err(|source| MatcherError::CannotOpenCsv{ path: sorted_path.to_canoncial_string(), source } )?)
+    utils::writer(&sorted_path)
 }
 
 
@@ -274,20 +257,10 @@ fn sorted_writer(ctx: &crate::Context, file_idx: usize) -> Result<csv::Writer<Fi
 /// Initialise out merge sort buffers for reading in files and writing out a sorted file.
 ///
 fn initialise_buffers(ctx: &crate::Context, file_count: usize) -> (Vec<csv::Reader<File>>, csv::Writer<File>) {
-    let output = csv::WriterBuilder::new()
-        .has_headers(false)
-        .quote_style(csv::QuoteStyle::Always)
-        .from_path(folders::matching(ctx).join("index.sorted.csv"))
-        .unwrap();
+    let output = utils::writer(folders::matching(ctx).join("index.sorted.csv"));
 
     let inputs = (1..=file_count)
-        .map(|idx| {
-            // println!("READER:{}", PathBuf::from(folders::matching(ctx).join(format!("index.sorted.{}", idx))).to_canoncial_string());
-            csv::ReaderBuilder::new()
-                .has_headers(false)
-                .from_path(folders::matching(ctx).join(format!("index.sorted.{}", idx)))
-                .unwrap()
-        })
+        .map(|idx| utils::index_reader(folders::matching(ctx).join(format!("index.sorted.{}", idx))))
         .collect();
 
     (inputs, output)

@@ -1,6 +1,6 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 use super::prelude::*;
-use crate::{error::MatcherError, model::{record::Record, schema::GridSchema}, folders::{self}, CsvReader, CsvReaders};
+use crate::{error::MatcherError, model::{record::Record, schema::GridSchema}, folders, utils::{CsvReader, CsvReaders, self}};
 
 ///
 /// Iterate the file index.sorted.csv and use the merge-key to read entire groups of records.
@@ -17,29 +17,14 @@ impl GroupIterator {
     pub fn new(ctx: &crate::Context, schema: &GridSchema) -> Self {
         Self {
             schema: Arc::new(schema.clone()),
-            index_rdr: csv::ReaderBuilder::new()
-                .has_headers(false)
-                .from_path(folders::matching(ctx).join("index.sorted.csv"))
-                .unwrap(),
+            index_rdr: utils::index_reader(folders::matching(ctx).join("index.sorted.csv")),
             data_rdrs: schema.files()
                 .iter()
-                .map(|file| {
-                    // Create a reader for each file - skipping the schema row.
-                    let mut rdr = csv::ReaderBuilder::new().from_path(file.path()).unwrap(); // TODO: Don't unwrap any of these.
-                    let mut ignored = csv::ByteRecord::new();
-                    rdr.read_byte_record(&mut ignored).unwrap();
-                    rdr
-                })
+                .map(|file| utils::reader(file.path(), true))
                 .collect(),
             derived_rdrs: schema.files()
                 .iter()
-                .map(|file| {
-                    // Create a reader for each derived file - skipping the schema row.
-                    let mut rdr = csv::ReaderBuilder::new().from_path(file.derived_path()).unwrap(); // TODO: Don't unwrap any of these.
-                    let mut ignored = csv::ByteRecord::new();
-                    rdr.read_byte_record(&mut ignored).unwrap();
-                    rdr
-                })
+                .map(|file| utils::reader(file.derived_path(), true))
                 .collect(),
             current: None
         }

@@ -12,6 +12,9 @@ pub struct Charter {
     debug: Option<bool>,
     matching: Matching,
     jetwash: Option<Jetwash>,
+
+    #[serde(default = "default_memory")]
+    memory_limit: usize, // The maximum number of bytes allowed for grouping and sorting data.
 } // TODO: Allow global lua functions to be defined and ensure they are available in all contexts.
 
 #[derive(Debug, Deserialize)]
@@ -42,15 +45,6 @@ pub struct JetwashSourceFile {
     headers: Option<Vec<String>>,
     column_mappings: Option<Vec<ColumnMapping>>,
 }
-
-// #[derive(Clone, Debug, Deserialize)]
-// #[serde(deny_unknown_fields)]
-// pub struct ColumnMapping {
-//     #[serde(rename = "map")]
-//     column: String,    // The column (header) to transform.
-//     as_a: DataType, // The final type of the column.
-//     from: String, // The Lua script to evaluate.
-// }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -124,14 +118,6 @@ impl ColumnMapping {
             ColumnMapping::Trim( column )     => &column,
         }
     }
-
-    // pub fn as_a(&self) -> DataType {
-    //     self.as_a
-    // }
-
-    // pub fn from(&self) -> &str {
-    //     &self.from
-    // }
 }
 
 impl Charter {
@@ -149,6 +135,10 @@ impl Charter {
 
     pub fn version(&self) -> u64 {
         self.version
+    }
+
+    pub fn memory_limit(&self) -> usize {
+        self.memory_limit
     }
 
     pub fn source_files(&self) -> &[MatchingSourceFile] {
@@ -188,4 +178,9 @@ impl Charter {
 
         Ok(charter)
     }
+}
+
+
+fn default_memory() -> usize {
+    52428800 // 50MB, 50 * 1048576
 }
