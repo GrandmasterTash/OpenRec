@@ -87,6 +87,58 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
 }
 
 #[test]
+fn test_okay_when_not_all_files_present() {
+
+    let base_dir = common::init_test("tests/test_not_all_files_present/");
+
+    // Writer some payments.
+    common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-payments.csv",
+r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
+"IN","ST","ST","DE","DT","DE"
+"0","PAY001XXINV001XX","USD","1000.0000","2021-11-25T04:36:08.000Z","0.75"
+"0","PAY002XXINV002XX","EUR","400.9900","2021-10-21T11:16:08.000Z","0.844"
+"0","PAY003XXINV002XX","EUR","50.0000","2021-10-22T15:02:48.000Z","0.846"
+"0","PAY004XXINV003XX","USD","1234.56","2022-03-20T22:22:48.000Z","0.715"
+"#);
+
+    // Create a charter that merges and projects both invoice and payment columns.
+    let charter = common::example_charter("02-Projected-Columns.yaml");
+
+    // Run the charter without any payment files.
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+
+    // Check we have unmatch invoices.
+    let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 1);
+    assert_eq!(unmatched[0].file_name().unwrap().to_string_lossy(), "20211129_043300000_02-payments.unmatched.csv");
+
+    // Check the matched file contains the correct groupings.
+    common::assert_matched_contents(matched, json!(
+    [
+        {
+            "charter": {
+                "name": "Projected Columns",
+                "file": charter.canonicalize().unwrap().to_string_lossy(),
+                "version": 1
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [ "20211129_043300000_02-payments.csv" ]
+        },
+        {
+            "groups": []
+        },
+        {
+            "changesets": [],
+            "unmatched": [
+                {
+                    "file": "20211129_043300000_02-payments.unmatched.csv",
+                    "rows": 4
+                }
+            ]
+        }
+    ]));
+}
+
+#[test]
 fn test_no_charter_instructions() {
 
     let base_dir = common::init_test("tests/test_no_charter_instructions/");

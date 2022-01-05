@@ -281,7 +281,7 @@ impl Record {
         for header in source {
             let data_type = match self.schema.data_type(header) {
                 Some(data_type) => data_type,
-                None => return Err(MatcherError::UnknownDataTypeForHeader { header: header.into() }),
+                None => continue, // There may be source columns whose files aren't present.
             };
 
             let value = match data_type {

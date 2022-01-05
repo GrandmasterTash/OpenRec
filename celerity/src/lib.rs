@@ -27,7 +27,6 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 // TODO: Remove unwraps where possible.
 // TODO: Clippy!
 // TODO: An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
-// TODO: Rename this lib to celerity.
 // TODO: Unified unmatched files - where schemas match - to avoid too many readers. Use a metadata column for original filename.
 
 ///
@@ -140,9 +139,7 @@ impl Context {
 /// If this library is used as part of a wider solution, care must be taken to synchronise these match jobs
 /// so only one can exclusively run against a given charter/folder of data at any one time.
 ///
-pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> {
-
-    // println!("{}", error::here!()); // TODO: use this in errors.
+pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> { // TODO: Take P AsRef<Path>
 
     let ctx = init_job(charter, base_dir)?;
 
@@ -319,7 +316,7 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
     let schema = Arc::new(grid.schema().clone());
     let charter = Arc::new(ctx.charter());
 
-    pool.install(|| {
+    pool.install::<_, Result<(), MatcherError>>(|| {
         // Derive each file in a parallel iterator.
         let results = zipped
             .par_iter_mut()
@@ -327,12 +324,13 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
             .map(|(file_idx, (reader, writer))| {
                 derive_file(file_idx, reader, writer, schema.clone(), charter.clone(), projection_cols.clone())
             })
-            .collect::<Vec<Result<Metrics, MatcherError>>>();
+            .collect::<Result<Vec<Metrics>, MatcherError>>()?
+            .into_iter() // Result IntoIterator takes the R not the E
+            .collect::<Vec<Metrics>>();
 
         // Accumulate all of the time spent per instruction across all derived files.
         let mut total_metrics = Metrics::new();
         results.into_iter()
-            .filter_map(|r| r.ok())
             .for_each(|metric| merge_metrics(metric, &mut total_metrics));
 
         // Report the duration spent performing each projection and merge instruction.
@@ -345,7 +343,9 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
                 _ => {},
             }
         }
-    });
+
+        Ok(())
+    })?;
 
     // Debug the derived data now.
     grid.debug_grid(ctx, 1);
@@ -442,8 +442,6 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
 
     for inst in ctx.charter().instructions().iter() {
         match inst {
-            Instruction::Project { .. } => {},
-            Instruction::Merge { .. } => {},
             Instruction::Group { by, match_when } => {
                 matching::match_groups(
                     ctx,
@@ -452,6 +450,7 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
                     grid,
                     &mut matched)?;
             },
+            _ => {},
         };
 
         // BUG: Grid must be re-loaded each time. Otherwise len is wrong.
