@@ -9,6 +9,7 @@ use crate::{error::MatcherError, folders::{self, ToCanoncialString}};
 ///
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataFile {
+    // TODO: Revisit this jumble.
     shortname: String,         // 'invoices' if filename is '/tmp/20201118_053000000_invoices.csv' or '/tmp/20201118_053000000_invoices.unmatched.csv'
     filename: String,          // '20201118_053000000_invoices.csv' if path is '/tmp/20201118_053000000_invoices.csv'
     path: String,              // The full canonical path to the file.

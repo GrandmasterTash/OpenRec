@@ -1,8 +1,9 @@
 use ubyte::ToByteUnit;
+use anyhow::Context as ErrContext;
 use super::grid_iter::GridIterator;
 use core::charter::MatchingSourceFile;
 use std::{fs::DirEntry, time::Instant};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{datafile::DataFile, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, utils};
+use crate::{error::{MatcherError, here}, folders::{self, ToCanoncialString}, model::{datafile::DataFile, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, utils};
 
 ///
 /// Represents a virtual grid of data from one or more CSV files.
@@ -172,7 +173,9 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
     -> Result<(usize /* record count */, Option<usize> /* last_schema_idx */), MatcherError> {
 
     let started = Instant::now();
-    log::debug!("Reading file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
+    log::debug!("Reading file {path} ({len})",
+        path = file.path().to_string_lossy(),
+        len = file.metadata().with_context(|| format!("Unable to get metadata for {}{}", file.path().to_canoncial_string(), here!()))?.len().bytes());
 
     // For now, just count all the records in a file and log them.
     let mut count = 0;

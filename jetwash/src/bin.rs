@@ -22,8 +22,8 @@ pub fn main() -> Result<()> {
     log::info!("{}", BANNER);
 
     jetwash::run_charter(
-        options.value_of("CHARTER").unwrap(),
-        options.value_of("BASE_DIR").unwrap().into())?;
+        options.value_of("CHARTER").expect("no charter specified"),
+        options.value_of("BASE_DIR").expect("no base dir specififed").into())?;
 
     Ok(())
 }

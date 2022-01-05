@@ -90,8 +90,6 @@ pub fn match_groups(
     grid: &Grid,
     matched: &mut MatchedHandler) -> Result<(), MatcherError> {
 
-    // TODO: Remove all unwraps in these fn's.
-
     if grid.is_empty() {
         return Ok(())
     }
@@ -100,7 +98,6 @@ pub fn match_groups(
 
     let lua_time = Cell::new(Duration::from_millis(0));
 
-    // TODO: Shortcut if all data loads into initial buffer.
     // Build index.unsorted.csv. and calculate the approximate length of each index row.
     let (unsorted_path, avg_len) = create_unsorted(ctx, group_by, grid)?;
 
@@ -118,9 +115,6 @@ pub fn match_groups(
 
     // Delete all index files, index.unsorted.csv, index.sorted.*
     clean_up_indexes(ctx, file_count)?;
-
-    // TODO: grid.len() should be updated to reflect removed records. MAybe in match handler?
-    // TODO Debug grid....
 
     let (duration, rate) = formatted_duration_rate(group_count, lua_time.get());
     log::info!("Matched {} out of {} groups. Constraints took {} ({}/group)",
@@ -183,8 +177,9 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
 
     // TODO: If avg_len is only used in split_and_sort - do this in THAT fn instead.
     // Calculate the average index row length.
-    let f = File::open(&unsorted_path).unwrap();
-    let f_len = f.metadata().unwrap().len();
+    let f = File::open(&unsorted_path)
+        .with_context(|| format!("Unable to open {}{}", unsorted_path.to_canoncial_string(), here!()))?;
+    let f_len = f.metadata().expect("no metadata").len();
     let avg_len = estimated_index_size(&unsorted_path, grid)?;
 
     let (duration, _rate) = formatted_duration_rate(grid.len(), start.elapsed());
@@ -209,19 +204,20 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
     let mut buffer: Vec<csv::ByteRecord> = Vec::with_capacity(batch_size);
 
     for result in reader.byte_records() {
-        let record = result.unwrap();
+        let record = result.expect(&format!("Unable to read record from {}", unsorted_path.to_canoncial_string()));
         buffer.push(record);
 
         if buffer.len() == batch_size {
             // Sort by merge key.
-            buffer.sort_unstable_by(|r1, r2| r1.get(COL_MERGE_KEY).unwrap().cmp(r2.get(COL_MERGE_KEY).unwrap()) );
+            buffer.sort_unstable_by(|r1, r2| r1.get(COL_MERGE_KEY).expect("no merge key")
+                .cmp(r2.get(COL_MERGE_KEY).expect("no merge key")) );
 
             // Increment the count of split sorted files.
             file_count += 1;
 
             // Write the sorted data to a new split file.
             let mut writer = sorted_writer(ctx, file_count);
-            buffer.iter().for_each(|record| writer.write_byte_record(&record).unwrap());
+            buffer.iter().for_each(|record| writer.write_byte_record(&record).expect("unable to write sorted index"));
 
             // Clear the buffer.
             buffer.clear();
@@ -231,21 +227,15 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
     // Sort and write the last batch.
     if !buffer.is_empty() {
         // Sort by merge key.
-        buffer.sort_unstable_by(|r1, r2| r1.get(COL_MERGE_KEY).unwrap().cmp(r2.get(COL_MERGE_KEY).unwrap()) );
+        buffer.sort_unstable_by(|r1, r2| r1.get(COL_MERGE_KEY).expect("no merge key").cmp(r2.get(COL_MERGE_KEY).expect("no merge key")) );
 
         // Increment the count of split sorted files.
         file_count += 1;
 
         // Write the sorted data to a new split file.
         let mut writer = sorted_writer(ctx, file_count);
-        buffer.iter().for_each(|record| writer.write_byte_record(&record).unwrap());
+        buffer.iter().for_each(|record| writer.write_byte_record(&record).expect("unable to write sorted index"));
     }
-
-    // println!("Memory Bounds {bounds}\nBatch size was {batch}\ncsv::ByteRecord {csv}\ntotal data {data}",
-    //     bounds = MEMORY_BOUNDS.bytes(),
-    //     batch = batch_size,
-    //     csv = std::mem::size_of::<csv::ByteRecord>().bytes(),
-    //     data = total_data_size.bytes());
 
     Ok(file_count)
 }
@@ -285,7 +275,9 @@ fn merge_sort(mut inputs: Vec<csv::Reader<File>>, mut output: csv::Writer<File>)
         let idx = kway_sort(&registers);
 
         // Write the next record/index to the output file.
-        output.write_byte_record(registers[idx].as_ref().unwrap()).unwrap();
+        output.write_byte_record(registers[idx].as_ref()
+            .expect(&format!("no ref for sort register {}", idx)))
+            .expect("unable to write final sorted index");
 
         // Increment the register we just sorted.
         registers[idx] = inputs[idx].next();
@@ -310,7 +302,7 @@ fn kway_sort(registers: &[Option<csv::ByteRecord>]) -> usize {
                         current = record.get(COL_MERGE_KEY);
                     },
                     Some(cur) => {
-                        if record.get(COL_MERGE_KEY).unwrap() < cur {
+                        if record.get(COL_MERGE_KEY).expect("no merge key") < cur {
                             result = idx;
                             current = record.get(COL_MERGE_KEY);
                         }

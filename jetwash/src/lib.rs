@@ -2,8 +2,8 @@ mod analyser;
 mod error;
 mod folders;
 
-use regex::Regex;
 use uuid::Uuid;
+use regex::Regex;
 use anyhow::Result;
 use ubyte::ToByteUnit;
 use rlua::FromLuaMulti;
@@ -16,16 +16,16 @@ use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
 use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType};
 
-// TODO: Exclude byte - if experiment is successful.
+// TODO: Exclude byte - if experiment is successful. It was!
 // TODO: Append a uuid column to each record.
 // TODO: Changeset generation. Suggest this is a new component. handle update and full refresh data loads.
 
 lazy_static! {
     static ref DATES: Vec<Regex> = vec!(
-        Regex::new(r"^(\d{1,4})-(\d{1,4})-(\d{1,4})$").unwrap(),   // d-m-y
-        Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").unwrap(), // d/m/y
-        Regex::new(r"^(\d{1,4})\\(\d{1,4})\\(\d{1,4})$").unwrap(), // d\m\y
-        Regex::new(r"^(\d{1,4})\W(\d{1,4})\W(\d{1,4})$").unwrap(), // d m y
+        Regex::new(r"^(\d{1,4})-(\d{1,4})-(\d{1,4})$").expect("bad regex d-m-y"),   // d-m-y
+        Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").expect("bad regex d/m/y"), // d/m/y
+        Regex::new(r"^(\d{1,4})\\(\d{1,4})\\(\d{1,4})$").expect(r#"bad regex d\m\y"#), // d\m\y
+        Regex::new(r"^(\d{1,4})\W(\d{1,4})\W(\d{1,4})$").expect("bad regex d m y"), // d m y
     );
 }
 
@@ -184,8 +184,8 @@ pub fn run_charter(charter_path: &str, base_dir: &str) -> Result<(), JetwashErro
             let new_file = folders::complete_new_file(&new_file)?;
 
             // Log file sizes.
-            let f = File::open(new_file.clone())?;
-            log::info!("Created file {} ({})", new_file.to_canoncial_string(), f.metadata().unwrap().len().bytes());
+            let f = File::open(new_file.clone()).expect(&format!("Unable to open {}", new_file.to_canoncial_string()));
+            log::info!("Created file {} ({})", new_file.to_canoncial_string(), f.metadata().expect("no metadata").len().bytes());
         }
     }
 
@@ -376,7 +376,7 @@ fn analyse_and_validate(ctx: &Context, jetwash: &Jetwash) -> Result<AnalysisResu
         // Open a csv reader and iterate each row in the file to validate it's readable.
         for file in folders::files_in_inbox(ctx, source_file.pattern())? {
             let started = Instant::now();
-            log::debug!("Scanning file {} ({})", file.path().to_string_lossy(), file.metadata().unwrap().len().bytes());
+            log::debug!("Scanning file {} ({})", file.path().to_string_lossy(), file.metadata().expect("no metadata").len().bytes());
 
             // For now, just count all the records in a file and log them.
             let mut row_count = 0;

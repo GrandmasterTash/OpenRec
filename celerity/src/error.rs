@@ -127,8 +127,8 @@ pub enum MatcherError {
     #[error("Cannot create a derived file for {path}")]
     FileCantBeDerived { path: String },
 
-    #[error("Unable to load changeset {path}")]
-    UnableToParseChangset { path: String, source: serde_json::Error },
+    // #[error("Unable to load changeset {path}")]
+    // UnableToParseChangset { path: String, source: serde_json::Error },
 
     #[error("An error occured sourcing data")]
     GridSourceError { source: rlua::Error },

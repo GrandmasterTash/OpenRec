@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
+use anyhow::Context as ErrContext;
 use serde::{Deserialize, Serialize};
 use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instant}};
-use crate::{Context, error::MatcherError, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, CsvWriters, utils::{self, CsvWriter}};
+use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, CsvWriters, utils::{self, CsvWriter}};
 
 /*
     Changeset files are instructions to modified unmatched or yet-to-be-matched data.
@@ -276,9 +277,12 @@ fn load_changesets(ctx: &Context) -> Result<Vec<ChangeSet>, MatcherError> {
     let mut changesets: Vec<ChangeSet> = vec!();
 
     for file in folders::changesets_in_matching(ctx)? {
-        let reader = BufReader::new(File::open(file.path())?);
+        let reader = BufReader::new(File::open(file.path())
+            .with_context(|| format!("Unable to open {}{}", file.path().to_canoncial_string(), here!()))?);
+
         let mut content: Vec<ChangeSet> = serde_json::from_reader(reader)
-            .map_err(|source| MatcherError::UnableToParseChangset { path: file.path().to_canoncial_string(), source } )?;
+            .with_context(|| format!("Unable to parse {}{}", file.path().to_canoncial_string(), here!()))?;
+
         log::info!("Loaded changeset {}", file.file_name().to_string_lossy());
 
         for changeset in &mut content {

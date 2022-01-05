@@ -7,7 +7,7 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, folders};
 
 lazy_static! {
-    static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).unwrap();
+    static ref HEADER_REGEX: Regex = Regex::new(r#"record\["(.*?)"\]"#).expect("bad regex for HEADER_REGEX");
 }
 
 ///

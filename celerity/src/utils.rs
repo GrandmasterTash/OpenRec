@@ -24,7 +24,7 @@ where
 
     if skip_schema {
         let mut ignored = csv::ByteRecord::new();
-        reader.read_byte_record(&mut ignored).unwrap();
+        reader.read_byte_record(&mut ignored).expect("no schema record to ignore");
     }
 
     reader

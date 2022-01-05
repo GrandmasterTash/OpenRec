@@ -1,9 +1,10 @@
 use itertools::Itertools;
 use positioned_io::WriteAt;
 use serde_json::{json, Value};
+use anyhow::Context as ErrContext;
 use super::unmatched::UnmatchedHandler;
 use std::{fs::{File, OpenOptions}, io::{BufWriter, Write}};
-use crate::{error::MatcherError, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context, changeset::{ChangeSet, Change}};
+use crate::{error::{MatcherError, here}, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context, changeset::{ChangeSet, Change}};
 
 ///
 /// Manages the matched job file and appends matched groups to it.
@@ -56,7 +57,7 @@ impl MatchedHandler {
             path: path.to_canoncial_string(),
             data_writers: grid.schema().files()
                 .iter()
-                .map(|df| OpenOptions::new().write(true).open(df.path()).unwrap())
+                .map(|df| OpenOptions::new().write(true).open(df.path()).expect(&format!("unable to open {} to update status", df.path())))
                 .collect()
         })
     }
@@ -126,7 +127,8 @@ impl MatchedHandler {
 
         for record in records {
             let file = &mut self.data_writers[record.file_idx()];
-            file.write_all_at(record.data_position().byte() +/* Skip double-quotes */ 1, &buf).unwrap();
+            file.write_all_at(record.data_position().byte() +/* Skip double-quotes */ 1, &buf)
+                .with_context(|| format!("Unable to update status for record {} in {}{}", record.row(), record.file_idx(), here!()))?;
         }
 
         Ok(())

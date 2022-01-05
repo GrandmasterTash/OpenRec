@@ -50,12 +50,12 @@ pub const PRE_MODIFIED: &str = "pre_modified";
 const CHANGESET_PATTERN: &str = r"^(\d{8}_\d{9})_changeset\.json$";
 
 lazy_static! {
-    static ref FILENAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.csv$").unwrap();
-    static ref SHORTNAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*?)(\.unmatched)*\.csv$").unwrap();
-    static ref DERIVED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.derived\.csv$").unwrap();
-    static ref CHANGESET_REGEX: Regex = Regex::new(CHANGESET_PATTERN).unwrap();
-    static ref TIMESTAMP_REGEX: Regex = Regex::new(r"^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(\d{3})").unwrap();
-    pub static ref UNMATCHED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.unmatched\.csv$").unwrap();
+    static ref FILENAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.csv$").expect("bad regex for FILENAME_REGEX");
+    static ref SHORTNAME_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*?)(\.unmatched)*\.csv$").expect("bad regex for SHORTNAME_REGEX");
+    static ref DERIVED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.derived\.csv$").expect("bad regex for DERIVED_REGEX");
+    static ref CHANGESET_REGEX: Regex = Regex::new(CHANGESET_PATTERN).expect("bad regex for CHANGESET_REGEX");
+    static ref TIMESTAMP_REGEX: Regex = Regex::new(r"^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(\d{3})").expect("bad regex for TIMESTAMP_REGEX");
+    pub static ref UNMATCHED_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_(.*)\.unmatched\.csv$").expect("bad regex for UNMATCHED_REGEX");
 }
 
 ///

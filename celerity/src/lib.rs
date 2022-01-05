@@ -19,12 +19,10 @@ use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelI
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::{CsvReader, CsvWriter, CsvWriters}};
 
-// TODO: grid debug pre-post grouping....
 // TODO: Need tolerance for dates (unit = days)
 // TODO: Flesh-out examples.
 // TODO: Archive changesets to archive/matcher not to /matched folder.
 // TODO: Check code coverage. Need error tests.
-// TODO: Remove unwraps where possible.
 // TODO: Clippy!
 // TODO: An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 // TODO: Unified unmatched files - where schemas match - to avoid too many readers. Use a metadata column for original filename.
@@ -224,9 +222,6 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
 
     let mut projection_cols = HashMap::new();
 
-    // Because both grid needs to be borrowed mutablly, we'll copy an immutable schema to pass around.
-    // let schema = grid.schema().clone();
-
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
         let schema = grid.schema().clone();
         match inst {
@@ -235,9 +230,6 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
                 grid.schema_mut().add_projected_column(Column::new(column.into(), None, *as_a))?;
             },
             Instruction::Merge { into, columns } => {
-                if grid.is_empty() {
-                    continue;
-                }
                 let data_type = merge_col::validate(columns, grid)?;
                 grid.schema_mut().add_merged_column(Column::new(into.into(), None, data_type))?;
             },
@@ -301,7 +293,7 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(std::cmp::min(grid.schema().files().len(), num_cpus::get()))
         .build()
-        .unwrap();
+        .expect("can't build rayon thread pool");
 
     // Create a data reader per sourced file. Skip the schema rows.
     let readers: Vec<CsvReader> = grid.schema()
@@ -440,7 +432,10 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
     // Create unmatched files for each sourced file.
     let unmatched = UnmatchedHandler::new(ctx, grid)?;
 
-    for inst in ctx.charter().instructions().iter() {
+    // Debug the grid after each group instruction.
+    grid.debug_grid(ctx, 0);
+
+    for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
         match inst {
             Instruction::Group { by, match_when } => {
                 matching::match_groups(
@@ -449,11 +444,12 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
                     match_when,
                     grid,
                     &mut matched)?;
+
+                // Debug the grid after each group instruction.
+                grid.debug_grid(ctx, idx);
             },
             _ => {},
         };
-
-        // BUG: Grid must be re-loaded each time. Otherwise len is wrong.
     }
 
     Ok((matched, unmatched))

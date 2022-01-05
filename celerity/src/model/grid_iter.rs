@@ -85,7 +85,7 @@ fn read_next(pos: usize, readers: &mut CsvReaders, filter_status: bool) -> Resul
         match readers[pos].read_byte_record(&mut buffer) {
             Ok(result) => match result {
                 true  => {
-                    if !filter_status || String::from_utf8_lossy(buffer.get(COL_STATUS).unwrap()) == UNMATCHED {
+                    if !filter_status || String::from_utf8_lossy(buffer.get(COL_STATUS).expect("no status")) == UNMATCHED {
                         return Ok(Some(buffer))
                     }
                 },

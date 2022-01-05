@@ -34,7 +34,7 @@ impl GroupIterator {
         match &self.current {
             None => false, // This isn't a NEW group this is the FIRST group.
             Some(current) => {
-                current.get(COL_MERGE_KEY).unwrap() != csv_record.get(COL_MERGE_KEY).unwrap()
+                current.get(COL_MERGE_KEY).expect("no merge key") != csv_record.get(COL_MERGE_KEY).expect("no merge key")
             },
         }
     }

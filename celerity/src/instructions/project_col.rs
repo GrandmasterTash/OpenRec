@@ -17,7 +17,7 @@ pub fn project_column(
 
     // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip
     // attempting to calulate values that are not relevant to the record without having to write verbose scripts.
-    if when.is_none() || lua::eval(lua_ctx, when.as_ref().unwrap())? {
+    if when.is_none() || lua::eval(lua_ctx, when.as_ref().expect("weird"))? {
         // Now calculate the column value and append it to the underlying ByteRecord.
         match data_type {
             DataType::Unknown  => {},

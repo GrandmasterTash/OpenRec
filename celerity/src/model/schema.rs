@@ -1,6 +1,6 @@
 use itertools::Itertools;
-use super::{datafile::DataFile};
 use core::data_type::DataType;
+use super::{datafile::DataFile};
 use std::{collections::HashMap, fs};
 use crate::{model::record::Record, error::MatcherError};
 
@@ -215,7 +215,7 @@ impl GridSchema {
                     .for_each(|(fs_idx, _fsc)| {
                         position_map
                             .get_mut(&fs_idx)
-                            .unwrap()
+                            .expect(&format!("file {} missing from position map", fs_idx))
                             .insert(col.header.clone(), -((c_idx + 1) as isize)); // Derived columns start at -1
                     });
             });
@@ -233,7 +233,7 @@ impl GridSchema {
                         col_map.insert(col.header.clone(), col.clone());
                          position_map
                             .get_mut(&fs_idx)
-                            .unwrap()
+                            .expect(&format!("file {} missing from position map", fs_idx))
                             .insert(col.header.clone(), c_idx as isize);
                     } );
             } );
