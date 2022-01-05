@@ -20,8 +20,6 @@ use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{Pa
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::{CsvReader, CsvWriter, CsvWriters}};
 
 // TODO: grid debug pre-post grouping....
-// TODO: Consider using more panics in this project rather than errors. It's designed to be re-runable and this would simplify a lot of fns
-// TODO: OR consider better use of anyhow https://docs.rs/anyhow/latest/anyhow/index.html with context and here! details.
 // TODO: Need tolerance for dates (unit = days)
 // TODO: Flesh-out examples.
 // TODO: Archive changesets to archive/matcher not to /matched folder.
@@ -31,11 +29,6 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 // TODO: An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 // TODO: Rename this lib to celerity.
 // TODO: Unified unmatched files - where schemas match - to avoid too many readers. Use a metadata column for original filename.
-
-// lazy_static! {
-//     // TODO: Read from charter - enforce sensible lower limit.
-//     pub static ref MEMORY_BOUNDS: usize = 50.megabytes().as_u64() as usize;  // External merge sort memory bounds.
-// }
 
 ///
 /// These are the linear state transitions of a match Job.

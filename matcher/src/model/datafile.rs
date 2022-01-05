@@ -4,7 +4,7 @@ use crate::{error::MatcherError, folders::{self, ToCanoncialString}};
 ///
 /// Represents a physical sourced file of data.
 ///
-/// Contains various representations of it's path along with the index of it's schema 
+/// Contains various representations of it's path along with the index of it's schema
 /// held in the GridSchema.
 ///
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -33,14 +33,16 @@ impl DataFile {
         let derived = folders::derived(entry)?;
         let derived_path = derived.to_string_lossy().into();
         let derived_filename = derived.file_name()
-            .ok_or(MatcherError::PathNotAFile { path: derived.to_canoncial_string() })?
-            .to_string_lossy().into();
+            .unwrap_or_else(|| panic!("{} is not a file/has no filename",  derived.to_canoncial_string()))
+            .to_string_lossy()
+            .into();
 
         let modifying = folders::modifying(entry)?;
         let modifying_path = modifying.to_string_lossy().into();
         let modifying_filename = modifying.file_name()
-            .ok_or(MatcherError::PathNotAFile { path: modifying.to_canoncial_string() })?
-            .to_string_lossy().into();
+            .unwrap_or_else(|| panic!("{} is not a file/has no filename",  derived.to_canoncial_string()))
+            .to_string_lossy()
+            .into();
 
         let pre_modified_path = folders::pre_modified(entry).to_string_lossy().into();
 

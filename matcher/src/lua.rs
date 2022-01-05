@@ -240,17 +240,11 @@ fn append_meta<'a>(record: &Record, lua_record: &Table)
     -> Result<(), MatcherError> {
 
     let schema = record.schema();
-    let file = match schema.files().get(record.file_idx()) {
-        Some(file) => file,
-        None => return Err(MatcherError::MissingFileInSchema{ index: record.file_idx() }),
-    };
+    let file = &schema.files()[record.file_idx()];
 
     lua_record.set("META.filename", file.filename())?;
 
-    let file_schema = match schema.file_schemas().get(file.schema_idx()) {
-        Some(file_schema) => file_schema,
-        None => return Err(MatcherError::MissingSchemaInGrid{ index: file.schema_idx(), filename: file.filename().into() }),
-    };
+    let file_schema = &schema.file_schemas()[file.schema_idx()];
 
     if let Some(prefix) = file_schema.prefix() {
         lua_record.set("META.prefix", prefix)?;

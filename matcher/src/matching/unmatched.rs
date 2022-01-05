@@ -44,12 +44,11 @@ impl UnmatchedHandler {
             if !files.contains_key(file.filename()) {
                 // Create an new unmatched file.
                 let output_path = folders::new_unmatched_file(ctx, file); // $REC_HOME/unmatched/timestamp_invoices.unmatched.csv
-                let full_filename = folders::filename(&output_path)?; // timestamp_invoices.unmatched.csv
+                let full_filename = folders::filename(&output_path); // timestamp_invoices.unmatched.csv
                 let mut writer = utils::writer(&output_path);
 
                 // Add the column header and schema rows.
-                let schema = grid.schema().file_schemas().get(file.schema_idx())
-                    .ok_or(MatcherError::MissingSchemaInGrid{ filename: file.filename().into(), index: file.schema_idx()  })?;
+                let schema = &grid.schema().file_schemas()[file.schema_idx()];
 
                 writer.write_record(schema.columns().iter().map(|c| c.header_no_prefix()).collect::<Vec<&str>>())
                     .map_err(|source| MatcherError::CannotWriteHeaders{ filename: file.filename().into(), source })?;
@@ -98,7 +97,7 @@ impl UnmatchedHandler {
             } else {
                 // Rename any remaining .inprogress files.
                 let path = folders::complete_file(&unmatched.path.to_canoncial_string())?;
-                unmatched.full_filename = folders::filename(&path)?;
+                unmatched.full_filename = folders::filename(&path);
                 log::debug!("Created unmatched file {}", path.to_canoncial_string());
             }
         }

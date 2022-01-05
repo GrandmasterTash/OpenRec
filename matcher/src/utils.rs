@@ -1,5 +1,4 @@
 use std::{fs::File, path::Path};
-
 use crate::folders::ToCanoncialString;
 
 pub type CsvReader = csv::Reader<File>;

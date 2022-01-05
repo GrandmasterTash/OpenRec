@@ -354,7 +354,7 @@ fn eval_contraints(
                 matched.append_group(&records)?;
                 match_count += 1;
 
-            } else if group_count <= 0 /* TODO: Have a ENV to set this limit - default to 0 */{
+            } else if group_count <= 0 /* TODO: Have a ENV/charter to set this limit - default to 0 */{
                 log::info!("Unmatched group:-\n{:?}{}",
                     grid.schema().headers(),
                     records.iter().map(|r| format!("\n{:?}", r.as_strings())).collect::<String>());
@@ -372,10 +372,10 @@ fn eval_contraints(
 /// Remove sorted and unsorted index files.
 ///
 fn clean_up_indexes(ctx: &crate::Context, file_count: usize) -> Result<(), MatcherError> {
-    std::fs::remove_file(folders::matching(ctx).join("index.unsorted.csv"))?;
-    std::fs::remove_file(folders::matching(ctx).join("index.sorted.csv"))?;
+    folders::remove_file(folders::matching(ctx).join("index.unsorted.csv"))?;
+    folders::remove_file(folders::matching(ctx).join("index.sorted.csv"))?;
     for idx in 1..=file_count {
-        std::fs::remove_file(folders::matching(ctx).join(format!("index.sorted.{}", idx)))?;
+        folders::remove_file(folders::matching(ctx).join(format!("index.sorted.{}", idx)))?;
     }
     Ok(())
 }

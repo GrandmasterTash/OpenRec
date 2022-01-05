@@ -1,8 +1,9 @@
+use anyhow::Context as ErrContext;
 use chrono::{Utc, TimeZone};
 use regex::Regex;
 use lazy_static::lazy_static;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
-use crate::{model::{datafile::DataFile, grid::Grid}, error::MatcherError, Context};
+use crate::{model::{datafile::DataFile, grid::Grid}, error::{MatcherError, here}, Context};
 
 /*
     Files are processed alphabetically - hence the human-readable timestamp prefix - to ensure consistent ordering.
@@ -60,17 +61,32 @@ lazy_static! {
 ///
 /// Rename a folder or file - captures the paths to log if fails.
 ///
-pub fn rename(from: &str, to: &str) -> Result<(), MatcherError> {
+pub fn rename<P>(from: P, to: P) -> Result<(), MatcherError>
+where
+    P: AsRef<Path>
+{
+    let f_str = from.as_ref().to_canoncial_string();
+    let t_str = to.as_ref().to_canoncial_string();
+
+    log::debug!("Moving/renaming {} -> {}", f_str, t_str);
+
     Ok(fs::rename(from, to)
-        .map_err(|source| MatcherError::CannotRenameFile { from: from.into(), to: to.into(), source })?)
+        .with_context(|| format!("Cannot rename {} to {}{}", f_str, t_str, here!()))?)
 }
 
 ///
 /// Remove the file specified - captures the path to log if fails.
 ///
-pub fn remove_file(filename: &str) -> Result<(), MatcherError> {
+pub fn remove_file<P>(filename: P) -> Result<(), MatcherError>
+where
+    P: AsRef<Path>
+{
+    let f_str = filename.as_ref().to_canoncial_string();
+
+    log::debug!("Removing file {}", f_str);
+
     Ok(fs::remove_file(filename)
-        .map_err(|source| MatcherError::CannotDeleteFile { source, filename: filename.into() })?)
+        .with_context(|| format!("Cannot remove file {}{}", f_str, here!()))?)
 }
 
 ///
@@ -88,7 +104,7 @@ pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), MatcherError> {
 
     for folder in folders {
         fs::create_dir_all(&folder)
-            .map_err(|source| MatcherError::CannotCreateDir { source, path: folder.to_canoncial_string() } )?;
+            .with_context(|| format!("Unable to create directory {}{}", folder.to_canoncial_string(), here!()))?;
     }
 
     Ok(())
@@ -103,12 +119,7 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
         if let Ok(entry) = entry {
             if is_unmatched_data_file(&entry) {
                 let dest = matching(ctx).join(entry.file_name());
-
-                log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
-                    file = entry.file_name().to_string_lossy(),
-                    src = entry.path().parent().unwrap().to_string_lossy(),
-                    dest = dest.parent().unwrap().to_string_lossy());
-                fs::rename(entry.path(), dest)?;
+                rename(entry.path(), dest)?
             }
         }
     }
@@ -118,12 +129,7 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
         if let Ok(entry) = entry {
             if is_data_file(&entry) || is_changeset_file(&entry) {
                 let dest = matching(ctx).join(entry.file_name());
-
-                log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
-                    file = entry.file_name().to_string_lossy(),
-                    src = entry.path().parent().unwrap().to_string_lossy(),
-                    dest = dest.parent().unwrap().to_string_lossy());
-                fs::rename(entry.path(), dest)?;
+                rename(entry.path(), dest)?
             }
         }
     }
@@ -139,32 +145,24 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
         if let Ok(entry) = entry {
             if is_unmatched_data_file(&entry) {
                 // Delete .unmatched files don't move them to archive. At the end of a match job,
-                // their contents will have been written to a new unmatched file in the unmatched folder.
-                fs::remove_file(entry.path())?;
-                log::debug!("Deleted unmatched file [{}]", entry.path().to_string_lossy())
+                // their still-unmatched contents will have been written to a new unmatched file in
+                // the unmatched folder.
+                remove_file(entry.path())?;
 
             } else if is_derived_file(&entry) {
                 // Delete .derived files don't move them to archive.
-                fs::remove_file(entry.path())?;
-                log::debug!("Deleted derived file [{}]", entry.path().to_string_lossy())
+                remove_file(entry.path())?;
 
             } else if is_data_file(&entry) && was_processed(&entry, &grid) {
                 let dest = archive(ctx).join(entry.file_name());
 
-                // Ensure we don't blat existing files. This can happen if a changeset has been
+                // Ensure we don't blat existing archived files. This can happen if a changeset has been
                 // applied to a file. There will be a non-modified version of it already present.
                 if dest.exists() {
-                    log::debug!("Removing file [{file}] from [{src}] - archive version already exists",
-                        file = entry.file_name().to_string_lossy(),
-                        src = entry.path().parent().unwrap().to_string_lossy());
-                    fs::remove_file(entry.path())?;
+                    remove_file(entry.path())?; // TODO: Not happy with this. Add a unique counter to the filename so we don't remove archived files.
 
                 } else {
-                    log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
-                        file = entry.file_name().to_string_lossy(),
-                        src = entry.path().parent().unwrap().to_string_lossy(),
-                        dest = dest.parent().unwrap().to_string_lossy());
-                    fs::rename(entry.path(), dest)?;
+                    rename(entry.path(), dest)?;
                 }
             }
         }
@@ -178,15 +176,7 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
 ///
 pub fn progress_to_matched_now(ctx: &Context, entry: &DirEntry) -> Result<(), MatcherError> {
     let dest = matched(ctx).join(entry.file_name());
-
-    log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
-        file = entry.file_name().to_string_lossy(),
-        src = entry.path().parent().unwrap().to_string_lossy(),
-        dest = dest.parent().unwrap().to_string_lossy());
-
-    fs::rename(entry.path(), dest)?;
-
-    Ok(())
+    rename(entry.path(), dest)
 }
 
 ///
@@ -197,24 +187,16 @@ pub fn archive_immediately(ctx: &Context, path: &str) -> Result<(), MatcherError
     let p = Path::new(path);
 
     if !p.is_file() {
-        return Err(MatcherError::PathNotAFile { path: path.into() })
+        panic!("{} is not a file", path);
     }
 
     let filename = match p.file_name() {
         Some(filename) => filename,
-        None => return Err(MatcherError::PathNotAFile { path: path.into() }),
+        None => panic!("{} is not a file/has no filename", path),
     };
 
     let dest = archive(ctx).join(filename);
-
-    log::debug!("Moving file [{file}] from [{src}] to [{dest}]",
-        file = filename.to_string_lossy(),
-        src = p.parent().unwrap().to_string_lossy(),
-        dest = dest.parent().unwrap().to_string_lossy());
-
-    fs::rename(p, dest)?;
-
-    Ok(())
+    rename(p, &dest)
 }
 
 ///
@@ -287,19 +269,14 @@ pub fn complete_file(path: &str) -> Result<PathBuf, MatcherError> {
     let from = Path::new(path);
     let to = Path::new(path.strip_suffix(IN_PROGRESS).unwrap(/* Check above makes this safe */));
 
-    fs::rename(from, to)
-        .map_err(|source| MatcherError::CannotRenameFile { from: from.to_canoncial_string(), to: to.to_canoncial_string(), source })?;
-
-    log::debug!("Renaming {} -> {}", from.to_canoncial_string(), to.to_canoncial_string());
+    rename(from, to)?;
     Ok(to.to_path_buf())
 }
 
-pub fn delete_empty_unmatched(ctx: &Context, filename: &str) -> Result<(), MatcherError> {
-    log::debug!("Deleting empty unmatched file {}", filename);
-    let path = unmatched(ctx).join(filename);
 
-    Ok(fs::remove_file(&path)
-        .map_err(|source| MatcherError::CannotDeleteFile { filename: filename.into(), source })?)
+pub fn delete_empty_unmatched(ctx: &Context, filename: &str) -> Result<(), MatcherError> {
+    let path = unmatched(ctx).join(filename);
+    remove_file(&path)
 }
 
 pub fn waiting(ctx: &Context) -> PathBuf {
@@ -487,10 +464,10 @@ pub fn original_filename(filename: &str) -> Result<String, MatcherError> {
 ///
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv -> 20191209_020405000_INV.unmatched.csv
 ///
-pub fn filename(pb: &PathBuf) -> Result<String, MatcherError> {
+pub fn filename(pb: &PathBuf) -> String {
     match pb.file_name() {
-        Some(os_str) => Ok(os_str.to_string_lossy().into()),
-        None => Err(MatcherError::PathNotAFile { path: pb.to_canoncial_string() }),
+        Some(os_str) => os_str.to_string_lossy().into(),
+        None => panic!("{} is not a file/has no filename", pb.to_canoncial_string()),
     }
 }
 

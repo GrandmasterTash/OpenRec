@@ -4,41 +4,14 @@ use core::data_type::DataType;
 #[derive(Error, Debug)]
 pub enum MatcherError {
 
-    #[error("Charter {path} not found")]
-    CharterFileNotFound { path: String, source: std::io::Error },
-
-    #[error("Path {path} is not a file and has no filename")]
-    PathNotAFile { path: String },
-
     #[error("Attempted to remove the .inprogress suffix from {path}")]
     FileNotInProgress { path: String },
-
-    #[error("Unable to rename file {from} to {to}")]
-    CannotRenameFile { from: String, to: String, source: std::io::Error },
-
-    #[error("Unable to create directory {path}")]
-    CannotCreateDir { path: String, source: std::io::Error },
-
-    #[error("Unable to delete file {filename}")]
-    CannotDeleteFile { filename: String, source: std::io::Error },
-
-    #[error("Unable to create unmatched file {path}")]
-    CannotCreateUnmatchedFile { path: String, source: csv::Error },
-
-    #[error("A record indexed a file not in the schema/grid {index}")]
-    MissingFileInSchema { index: usize },
-
-    #[error("The schema for file {filename} {index} was not in the data grid")]
-    MissingSchemaInGrid { filename: String, index: usize },
 
     #[error("The file {filename} doesn't have a valid timestamp prefix")]
     InvalidTimestampPrefix { filename: String },
 
     #[error("Unable to read a sourced data file {path} due to {description}")]
     BadSourceFile { path: String, description: String },
-
-    #[error("Unable to open file {path}")]
-    CannotOpenCsv { path: String, source: csv::Error },
 
     #[error("Unable to read row from {path}")]
     CannotParseCsvRow { path: String, source: csv::Error },
@@ -168,6 +141,9 @@ pub enum MatcherError {
 
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+
+    #[error(transparent)]
+    GeneralError(#[from] anyhow::Error),
 }
 
 ///
@@ -175,7 +151,7 @@ pub enum MatcherError {
 ///
 macro_rules! here {
     () => {
-        concat!("at ", file!(), " line ", line!(), " column ", column!())
+        concat!(" ", file!(), " line ", line!(), " column ", column!())
     };
 }
 
