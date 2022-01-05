@@ -1,5 +1,5 @@
 [package]
-name = "matcher"
+name = "celerity"
 version = "0.1.0"
 edition = "2018"
 
@@ -7,12 +7,12 @@ edition = "2018"
 autotests = false
 
 [lib]
-name = "matcher"
+name = "celerity"
 path = "src/lib.rs"
 doctest = false
 
 [[bin]]
-name = "matcher"
+name = "celerity"
 path = "src/bin.rs"
 test = false
 
@@ -35,9 +35,7 @@ lazy_static = "1.4.0"
 chrono = { version = "0.4.19", features = ["serde"] }
 ubyte = "0.10.1"
 rlua = "0.18.0"
-#ansi_term = "0.12"
 rust_decimal = "1.17.0"
-#humantime = "2.1.0"
 bytes = "1.1.0"
 itertools = "0.10.1"
 serde = { version = "1.0.130", features = ["derive"] }
@@ -50,5 +48,4 @@ num_cpus = "1.13.1"
 
 [dev-dependencies]
 fs_extra = "1.2.0"
-#md5 = "0.7.0"
 assert-json-diff = "2.0.1"

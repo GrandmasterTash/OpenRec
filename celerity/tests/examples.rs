@@ -13,7 +13,7 @@ fn test_01_basic_match_from_examples() {
     let base_dir = common::init_test_from_examples("tests/test01/", &data_files);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&data_files, &base_dir);
@@ -56,7 +56,7 @@ fn test_02_projected_columns_from_examples() {
     let base_dir = common::init_test_from_examples("tests/test02/", &data_files);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&data_files, &base_dir);
@@ -102,7 +102,7 @@ fn test_03_net_with_tolerance_match_from_examples() {
     let base_dir = common::init_test_from_examples("tests/test03/", &data_files);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&data_files, &base_dir);
@@ -148,7 +148,7 @@ fn test_04_3_way_match_from_examples() {
     let base_dir = common::init_test_from_examples("tests/test04/", &data_files);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&data_files, &base_dir);
@@ -193,7 +193,7 @@ fn test_05_2_stage_match_from_examples() {
     let base_dir = common::init_test_from_examples("tests/test05/", &data_files);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&data_files, &base_dir);
@@ -236,7 +236,7 @@ fn test_07_unmatched_data_from_examples() {
     let base_dir = common::init_test_from_examples("tests/test07/", &data_files);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let (matched, unmatched) = common::assert_unmatched_ok(&data_files, &base_dir, 2);
@@ -295,7 +295,7 @@ fn test_07_unmatched_data_from_examples() {
     // Now copy payments-b in and run the match charter again.
     data_files.push(common::copy_example_data_file("20211129_043300000_07-payments-b.csv", &base_dir));
 
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&data_files, &base_dir);

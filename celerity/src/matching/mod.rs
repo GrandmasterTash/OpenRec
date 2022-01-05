@@ -6,10 +6,11 @@ use rlua::Context;
 use ubyte::ToByteUnit;
 use itertools::Itertools;
 use core::charter::Constraint;
+use anyhow::Context as ErrContext;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf};
 use self::{prelude::*, group_iter::GroupIterator, matched::MatchedHandler};
-use crate::{error::MatcherError, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders, convert, lua, instructions::constraints::passes, utils::{self, CsvWriter}};
+use crate::{error::{MatcherError, here}, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, convert, lua, instructions::constraints::passes, utils::{self, CsvWriter}};
 
 // The column position in our index records for the merge_key used to sort index records.
 mod prelude {
@@ -134,15 +135,17 @@ pub fn match_groups(
 ///
 /// Estimate the size of each record index row.
 ///
-fn estimated_index_size(unsorted_path: &PathBuf, grid: &Grid) -> usize {
-    let f = File::open(&unsorted_path).unwrap();
-    let f_len = f.metadata().unwrap().len();
+fn estimated_index_size(unsorted_path: &PathBuf, grid: &Grid) -> Result<usize, MatcherError> {
+    let f = File::open(&unsorted_path)
+        .with_context(|| format!("Unable to open {}{}", unsorted_path.to_canoncial_string(), here!()))?;
+
+    let f_len = f.metadata().expect("no metadata").len();
     let mut avg_len = (f_len as f64 / grid.len() as f64) as usize;   // Average data length.
     avg_len += std::mem::size_of::<csv::ByteRecord>();               // Struct 8B.
     // TODO: Count fields in bounds....
     avg_len += std::mem::size_of::<usize>();                         // Pointer to struct 8B.
     avg_len += std::mem::size_of::<usize>() * 6;                     // 4 fields, 4 pointers (in the bounds sub-struct)
-    avg_len
+    Ok(avg_len)
 }
 
 ///
@@ -182,7 +185,7 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
     // Calculate the average index row length.
     let f = File::open(&unsorted_path).unwrap();
     let f_len = f.metadata().unwrap().len();
-    let avg_len = estimated_index_size(&unsorted_path, grid);
+    let avg_len = estimated_index_size(&unsorted_path, grid)?;
 
     let (duration, _rate) = formatted_duration_rate(grid.len(), start.elapsed());
     log::debug!("Created {path}, {size}, avergage index length {avg_len}, took {duration}",

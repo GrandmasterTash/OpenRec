@@ -11,7 +11,7 @@ fn test_no_data_files() {
     let base_dir = common::init_test("tests/test_no_data/");
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&vec!(), &base_dir);
@@ -57,7 +57,7 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
 "#);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&vec!(), &base_dir);
@@ -110,7 +110,7 @@ matching:
 "#);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 1);
@@ -190,7 +190,7 @@ matching:
 "#);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     // Check the output files.
     let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 2);

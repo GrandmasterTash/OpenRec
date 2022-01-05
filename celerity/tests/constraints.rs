@@ -36,7 +36,7 @@ matching:
 "#);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty after the changeset was applied");
@@ -83,7 +83,7 @@ matching:
 "#);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty after the changeset was applied");
@@ -130,7 +130,7 @@ matching:
 "#);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty after the changeset was applied");
@@ -177,7 +177,7 @@ matching:
 "#);
 
     // Run the match.
-    matcher::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty after the changeset was applied");

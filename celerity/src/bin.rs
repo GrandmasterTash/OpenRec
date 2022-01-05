@@ -21,7 +21,7 @@ pub fn main() -> Result<()> {
 
     log::info!("{}", BANNER);
 
-    matcher::run_charter(
+    celerity::run_charter(
         options.value_of("CHARTER").unwrap(),
         options.value_of("BASE_DIR").unwrap().into())?;
 
