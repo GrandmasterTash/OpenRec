@@ -70,10 +70,13 @@ pub enum MatcherError {
     #[error("Schemas for {filename} must be the same, found these two schemas: -\n[{first}]\n[{second}]")]
     SchemaMismatch { filename: String, first: String, second: String },
 
-    #[error("Projected column {header} already exists")]
+    #[error("Two files are being loaded with different schemas but with a common header name. You should use field_prefix arguments to ensure headers are unique.")]
+    TwoSchemaWithDuplicateHeader { header: String },
+
+    #[error("Projected column name {header} already exists")]
     ProjectedColumnExists { header: String, },
 
-    #[error("Merged column {header} already exists")]
+    #[error("Merged column name {header} already exists")]
     MergedColumnExists { header: String },
 
     #[error("Instruction {instruction} was missing a set of script columms")]
@@ -123,9 +126,6 @@ pub enum MatcherError {
 
     #[error("Charter failed to load")]
     CharterLoadError ( #[from] core::error::Error ),
-
-    #[error("Cannot create a derived file for {path}")]
-    FileCantBeDerived { path: String },
 
     #[error("An error occured sourcing data")]
     GridSourceError { source: rlua::Error },

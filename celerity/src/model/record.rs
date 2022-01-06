@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use super::schema::GridSchema;
 use core::data_type::DataType;
 use bytes::{Bytes, BytesMut, BufMut};
-use crate::{convert, error::MatcherError};
+use crate::{utils::convert, error::MatcherError, folders::ToCanoncialString};
 
 pub struct Record {
     file_idx: usize,  // Index of the DataFile in the grid(schema).
@@ -182,7 +182,7 @@ impl Record {
             new = value,
             old = old,
             row = self.row(),
-            filename = file.modifying_filename());
+            filename = file.modifying_path().to_canoncial_string());
 
         Ok(())
     }

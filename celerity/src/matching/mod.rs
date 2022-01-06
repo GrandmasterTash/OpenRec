@@ -11,7 +11,7 @@ use anyhow::Context as ErrContext;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf};
 use self::{prelude::*, group_iter::GroupIterator, matched::MatchedHandler};
-use crate::{error::{MatcherError, here}, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, convert, lua, utils::{self, CsvWriter}};
+use crate::{error::{MatcherError, here}, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, lua, utils::{self, convert, csv::CsvWriter}};
 
 // The column position in our index records for the merge_key used to sort index records.
 mod prelude {
@@ -100,10 +100,10 @@ pub fn match_groups(
     let lua_time = Cell::new(Duration::from_millis(0));
 
     // Build index.unsorted.csv. and calculate the approximate length of each index row.
-    let (unsorted_path, avg_len) = create_unsorted(ctx, group_by, grid)?;
+    create_unsorted(ctx, group_by, grid)?;
 
     // Use a buffer to sort chunks of data and write each sorted chunk to it's own file.
-    let file_count = split_and_sort(ctx, &unsorted_path, avg_len)?;
+    let file_count = split_and_sort(ctx, grid)?;
 
     // Initialise input and output readers/writers - prior to merge sorting.
     let (inputs, output) = initialise_buffers(ctx, file_count);
@@ -137,9 +137,8 @@ fn estimated_index_size(unsorted_path: &PathBuf, grid: &Grid) -> Result<usize, M
     let f_len = f.metadata().expect("no metadata").len();
     let mut avg_len = (f_len as f64 / grid.len() as f64) as usize;   // Average data length.
     avg_len += std::mem::size_of::<csv::ByteRecord>();               // Struct 8B.
-    // TODO: Count fields in bounds....
     avg_len += std::mem::size_of::<usize>();                         // Pointer to struct 8B.
-    avg_len += std::mem::size_of::<usize>() * 6;                     // 4 fields, 4 pointers (in the bounds sub-struct)
+    avg_len += std::mem::size_of::<usize>() * 6;                     // 6 fields (in the bounds sub-struct)
     Ok(avg_len)
 }
 
@@ -153,11 +152,10 @@ fn batch_size(avg_len: usize, ctx: &crate::Context) -> usize {
 ///
 /// Create a file index for every record in the grid, along with the merge-key we'll use to sort the records.
 ///
-fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
-    -> Result<(PathBuf, usize), MatcherError> {
+fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid) -> Result<(), MatcherError> {
 
-    let unsorted_path = folders::matching(ctx).join("index.unsorted.csv");
-    let mut unsorted_writer = utils::writer(&unsorted_path);
+    let unsorted_path = folders::unsorted_index(ctx);
+    let mut unsorted_writer = utils::csv::writer(&unsorted_path);
     let mut buffer = csv::ByteRecord::new();
 
     let start = Instant::now();
@@ -176,32 +174,34 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid)
 
     unsorted_writer.flush()?;
 
-    // TODO: If avg_len is only used in split_and_sort - do this in THAT fn instead.
-    // Calculate the average index row length.
     let f = File::open(&unsorted_path)
         .with_context(|| format!("Unable to open {}{}", unsorted_path.to_canoncial_string(), here!()))?;
-    let f_len = f.metadata().expect("no metadata").len();
-    let avg_len = estimated_index_size(&unsorted_path, grid)?;
 
     let (duration, _rate) = formatted_duration_rate(grid.len(), start.elapsed());
-    log::debug!("Created {path}, {size}, avergage index length {avg_len}, took {duration}",
+    log::debug!("Created {path}, {size} took {duration}",
         path = unsorted_path.file_name().expect("no filename").to_string_lossy(),
-        size = f_len.bytes(),
-        avg_len = avg_len.bytes(),
+        size = f.metadata().expect("no metadata").len().bytes(),
         duration = blue(&duration));
 
-    Ok((unsorted_path, avg_len))
+    Ok(())
 }
 
 ///
 /// Load unsorted indexes into the memory buffer and sort them. Then writer the buffer to a sorted
 /// file - repeat until all unsorted indexes have been sorted into a file.
 ///
-fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize) -> Result<usize, MatcherError> {
+fn split_and_sort(ctx: &crate::Context, grid: &Grid) -> Result<usize, MatcherError> {
 
+    // Calculate the average index row length.
+    let unsorted_path = folders::unsorted_index(ctx);
+    let avg_len = estimated_index_size(&unsorted_path, grid)?;
+
+    log::debug!("Split-sorting with average index length {avg_len}", avg_len = avg_len.bytes());
+
+    // Create a reader and a buffer to sort batches of data.
     let batch_size = batch_size(avg_len, ctx);
     let mut file_count = 0; // Number of split files containing the chunked, sorted data.
-    let mut reader = utils::index_reader(unsorted_path);
+    let mut reader = utils::csv::index_reader(&unsorted_path);
     let mut buffer: Vec<csv::ByteRecord> = Vec::with_capacity(batch_size);
 
     for result in reader.byte_records() {
@@ -243,7 +243,7 @@ fn split_and_sort(ctx: &crate::Context, unsorted_path: &PathBuf, avg_len: usize)
 
 fn sorted_writer(ctx: &crate::Context, file_idx: usize) -> CsvWriter {
     let sorted_path = folders::matching(ctx).join(format!("index.sorted.{}", file_idx));
-    utils::writer(&sorted_path)
+    utils::csv::writer(&sorted_path)
 }
 
 
@@ -251,10 +251,10 @@ fn sorted_writer(ctx: &crate::Context, file_idx: usize) -> CsvWriter {
 /// Initialise out merge sort buffers for reading in files and writing out a sorted file.
 ///
 fn initialise_buffers(ctx: &crate::Context, file_count: usize) -> (Vec<csv::Reader<File>>, csv::Writer<File>) {
-    let output = utils::writer(folders::matching(ctx).join("index.sorted.csv"));
+    let output = utils::csv::writer(folders::matching(ctx).join("index.sorted.csv"));
 
     let inputs = (1..=file_count)
-        .map(|idx| utils::index_reader(folders::matching(ctx).join(format!("index.sorted.{}", idx))))
+        .map(|idx| utils::csv::index_reader(folders::matching(ctx).join(format!("index.sorted.{}", idx))))
         .collect();
 
     (inputs, output)
@@ -333,10 +333,9 @@ fn eval_contraints(
 
     log::info!("Evaluating constraints on groups");
 
-    // TODO: Enforce a group size limit.
     // Create a Lua context to evaluate Constraint rules in.
     ctx.lua().context(|lua_ctx| {
-        lua::init_context(&lua_ctx)?;
+        lua::init_context(&lua_ctx, ctx.charter().global_lua())?;
         lua::create_aggregate_fns(&lua_ctx)?;
 
         // Iterate groups one at a time, loading all the group's records into memory.
@@ -350,7 +349,7 @@ fn eval_contraints(
                 matched.append_group(&records)?;
                 match_count += 1;
 
-            } else if group_count <= 0 /* TODO: Have a ENV/charter to set this limit - default to 0 */{
+            } else if group_count <= 0 /* Useful but grid debugging might mean this isn't required. */{
                 log::info!("Unmatched group:-\n{:?}{}",
                     grid.schema().headers(),
                     records.iter().map(|r| format!("\n{:?}", r.as_strings())).collect::<String>());

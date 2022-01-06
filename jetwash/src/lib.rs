@@ -16,10 +16,11 @@ use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
 use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType};
 
+// TODO: Ensure global charter lua is evaluated and functions are available.
 // TODO: Exclude byte - if experiment is successful. It was!
 // TODO: Append a uuid column to each record.
 // TODO: Changeset generation. Suggest this is a new component. handle update and full refresh data loads.
-
+ 
 lazy_static! {
     static ref DATES: Vec<Regex> = vec!(
         Regex::new(r"^(\d{1,4})-(\d{1,4})-(\d{1,4})$").expect("bad regex d-m-y"),   // d-m-y

@@ -1,7 +1,7 @@
-use anyhow::Context as ErrContext;
-use chrono::{Utc, TimeZone};
 use regex::Regex;
+use chrono::{Utc, TimeZone};
 use lazy_static::lazy_static;
+use anyhow::Context as ErrContext;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
 use crate::{model::{datafile::DataFile, grid::Grid}, error::{MatcherError, here}, Context};
 
@@ -61,9 +61,10 @@ lazy_static! {
 ///
 /// Rename a folder or file - captures the paths to log if fails.
 ///
-pub fn rename<P>(from: P, to: P) -> Result<(), MatcherError>
+pub fn rename<F, T>(from: F, to: T) -> Result<(), MatcherError>
 where
-    P: AsRef<Path>
+    F: AsRef<Path>,
+    T: AsRef<Path>
 {
     let f_str = from.as_ref().to_canoncial_string();
     let t_str = to.as_ref().to_canoncial_string();
@@ -117,7 +118,7 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
     // Move files from the unmatched folder to the matching folder.
     for entry in unmatched(ctx).read_dir()? {
         if let Ok(entry) = entry {
-            if is_unmatched_data_file(&entry) {
+            if is_unmatched_data_file(&entry.path()) {
                 let dest = matching(ctx).join(entry.file_name());
                 rename(entry.path(), dest)?
             }
@@ -127,7 +128,8 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
     // Move waiting files to the matching folder.
     for entry in waiting(ctx).read_dir()? {
         if let Ok(entry) = entry {
-            if is_data_file(&entry) || is_changeset_file(&entry) {
+            let pb = entry.path();
+            if is_data_file(&pb) || is_changeset_file(&pb) {
                 let dest = matching(ctx).join(entry.file_name());
                 rename(entry.path(), dest)?
             }
@@ -138,32 +140,38 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
 }
 
 ///
-/// Move any matching files to the archive folder.
+/// Move any matching files to the archive folder, remove derived data and old unmatched data.
 ///
 pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError> {
     for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
-            if is_unmatched_data_file(&entry) {
+            let pb = entry.path();
+
+            if is_unmatched_data_file(&pb) {
                 // Delete .unmatched files don't move them to archive. At the end of a match job,
                 // their still-unmatched contents will have been written to a new unmatched file in
                 // the unmatched folder.
                 remove_file(entry.path())?;
 
-            } else if is_derived_file(&entry) {
+            } else if is_derived_file(&pb) {
                 // Delete .derived files don't move them to archive.
                 remove_file(entry.path())?;
 
-            } else if is_data_file(&entry) && was_processed(&entry, &grid) {
-                let dest = archive(ctx).join(entry.file_name());
+            } else if is_data_file(&pb) && was_processed(&entry, &grid) {
+// TODO: This logic needs to happen in the DF itself. and this fn just uses the archive_path - failing if exists.
+// TODO: Then the match job should record the archive filename not the source one. This is because source may not == archive.
 
                 // Ensure we don't blat existing archived files. This can happen if a changeset has been
                 // applied to a file. There will be a non-modified version of it already present.
-                if dest.exists() {
-                    remove_file(entry.path())?; // TODO: Not happy with this. Add a unique counter to the filename so we don't remove archived files.
+                let mut counter = 0;
+                let mut dest = archive(ctx).join(entry.file_name());
 
-                } else {
-                    rename(entry.path(), dest)?;
+                while dest.exists() {
+                    counter += 1;
+                    dest = archive(ctx).join(format!("{}_{:02}", entry.file_name().to_string_lossy(), counter));
                 }
+
+                rename(entry.path(), dest)?;
             }
         }
     }
@@ -182,17 +190,17 @@ pub fn progress_to_matched_now(ctx: &Context, entry: &DirEntry) -> Result<(), Ma
 ///
 /// Move the specified file to archive.
 ///
-pub fn archive_immediately(ctx: &Context, path: &str) -> Result<(), MatcherError> {
+pub fn archive_immediately<P: AsRef<Path>>(ctx: &Context, path: P) -> Result<(), MatcherError> {
 
-    let p = Path::new(path);
+    let p = path.as_ref();
 
     if !p.is_file() {
-        panic!("{} is not a file", path);
+        panic!("{} is not a file", p.to_canoncial_string());
     }
 
     let filename = match p.file_name() {
         Some(filename) => filename,
-        None => panic!("{} is not a file/has no filename", path),
+        None => panic!("{} is not a file/has no filename", p.to_canoncial_string()),
     };
 
     let dest = archive(ctx).join(filename);
@@ -207,7 +215,8 @@ pub fn files_in_matching(ctx: &Context, file_pattern: &str) -> Result<Vec<DirEnt
     let mut files = vec!();
     for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
-            if (is_data_file(&entry) || is_changeset_file(&entry)) && wildcard.is_match(&entry.file_name().to_string_lossy()) {
+            let pb = entry.path();
+            if (is_data_file(&pb) || is_changeset_file(&pb)) && wildcard.is_match(&entry.file_name().to_string_lossy()) {
                 files.push(entry);
             }
         }
@@ -328,19 +337,20 @@ pub fn new_timestamp() -> String {
 }
 
 ///
+/// The path to the unsorted index file.
+///
+pub fn unsorted_index(ctx: &Context) -> PathBuf {
+    matching(ctx).join("index.unsorted.csv")
+}
+
+///
 /// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
 /// a '.csv' suffix.
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_data_file(entry: &DirEntry) -> bool {
-    match entry.metadata() {
-        Ok(metadata) => metadata.is_file() && FILENAME_REGEX.is_match(&entry.file_name().to_string_lossy()),
-        Err(err) => {
-            log::warn!("Skipping file, failed to get metadata for {}: {}", entry.path().to_canoncial_string(), err);
-            false
-        }
-    }
+fn is_data_file(path: &PathBuf) -> bool {
+    path.is_file() && FILENAME_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
 ///
@@ -349,14 +359,8 @@ fn is_data_file(entry: &DirEntry) -> bool {
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_unmatched_data_file(entry: &DirEntry) -> bool {
-    match entry.metadata() {
-        Ok(metadata) => metadata.is_file() && UNMATCHED_REGEX.is_match(&entry.file_name().to_string_lossy()),
-        Err(err) => {
-            log::warn!("Skipping unmatched file, failed to get metadata for {}: {}", entry.path().to_canoncial_string(), err);
-            false
-        }
-    }
+fn is_unmatched_data_file(path: &PathBuf) -> bool {
+    path.is_file() && UNMATCHED_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
 ///
@@ -365,14 +369,8 @@ fn is_unmatched_data_file(entry: &DirEntry) -> bool {
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_derived_file(entry: &DirEntry) -> bool {
-    match entry.metadata() {
-        Ok(metadata) => metadata.is_file() && DERIVED_REGEX.is_match(&entry.file_name().to_string_lossy()),
-        Err(err) => {
-            log::warn!("Skipping derived file, failed to get metadata for {}: {}", entry.path().to_canoncial_string(), err);
-            false
-        }
-    }
+fn is_derived_file(path: &PathBuf) -> bool {
+    path.is_file() && DERIVED_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
 ///
@@ -380,14 +378,8 @@ fn is_derived_file(entry: &DirEntry) -> bool {
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_changeset_file(entry: &DirEntry) -> bool {
-    match entry.metadata() {
-        Ok(metadata) => metadata.is_file() && CHANGESET_REGEX.is_match(&entry.file_name().to_string_lossy()),
-        Err(err) => {
-            log::warn!("Skipping file, failed to get metadata for {}: {}", entry.path().to_canoncial_string(), err);
-            false
-        }
-    }
+fn is_changeset_file(path: &PathBuf) -> bool {
+    path.is_file() && CHANGESET_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
 ///
@@ -397,8 +389,7 @@ fn was_processed(entry: &DirEntry, grid: &Grid) -> bool {
     grid.schema()
         .files()
         .iter()
-        .map(|df| df.path())
-        .any(|path| path == entry.path().to_canoncial_string())
+        .any(|df| df.path().to_canoncial_string() == entry.path().to_canoncial_string())
 }
 
 ///
@@ -449,17 +440,6 @@ pub fn shortname<'a>(filename: &'a str) -> &'a str {
 }
 
 ///
-/// Returns the original filename for a file, regardless of whether it's unmatched or not.
-///
-/// e.g. 20201118_053000000_invoices.unmatched.csv -> 20201118_053000000_invoices.csv
-///
-pub fn original_filename(filename: &str) -> Result<String, MatcherError> {
-    let shortname = shortname(&filename).to_string();
-    let timestamp = timestamp(&filename)?.to_string();
-    Ok(format!("{}_{}.csv", timestamp, shortname))
-}
-
-///
 /// Return the filename part of the path.
 ///
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv -> 20191209_020405000_INV.unmatched.csv
@@ -477,13 +457,13 @@ pub fn filename(pb: &PathBuf) -> String {
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.csv
 ///    -> $REC_HOME/unmatched/20191209_020405000_INV.csv.derived.csv
 ///
-pub fn derived(entry: &DirEntry) -> Result<PathBuf, MatcherError> {
+pub fn derived(path: &PathBuf) -> PathBuf {
 
-    if is_data_file(entry) || is_unmatched_data_file(entry) {
-        return Ok(entry.path().with_extension(DERIVED))
+    if is_data_file(path) || is_unmatched_data_file(path) {
+        return path.with_extension(DERIVED)
     }
 
-    Err(MatcherError::FileCantBeDerived { path: entry.path().to_canoncial_string() })
+    panic!("Cannot create a derived file for {}", path.to_canoncial_string())
 }
 
 ///
@@ -495,13 +475,13 @@ pub fn derived(entry: &DirEntry) -> Result<PathBuf, MatcherError> {
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.csv
 ///    -> $REC_HOME/unmatched/20191209_020405000_INV.csv.modifyng
 ///
-pub fn modifying(entry: &DirEntry) -> Result<PathBuf, MatcherError> {
+pub fn modifying(path: &PathBuf) -> PathBuf {
 
-    if is_data_file(entry) || is_unmatched_data_file(entry) {
-        return Ok(entry.path().with_extension(MODIFYING))
+    if is_data_file(path) || is_unmatched_data_file(path) {
+        return path.with_extension(MODIFYING)
     }
 
-    Err(MatcherError::FileCantBeDerived { path: entry.path().to_canoncial_string() })
+    panic!("Cannot create a modifying file for {}", path.to_canoncial_string())
 }
 
 ///
@@ -510,8 +490,8 @@ pub fn modifying(entry: &DirEntry) -> Result<PathBuf, MatcherError> {
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.
 ///    -> $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.pre_modified
 ///
-pub fn pre_modified(entry: &DirEntry) -> PathBuf {
-    entry.path().with_extension(PRE_MODIFIED)
+pub fn pre_modified(path: &PathBuf) -> PathBuf {
+    path.with_extension(PRE_MODIFIED)
 }
 
 ///

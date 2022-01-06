@@ -40,8 +40,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1, "The unmatched folder should be empty after the changeset was applied");
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1, "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
     assert_json_eq!(common::get_matched_groups(&base_dir), json!([ [[0,3], [0,4], [0,5]] ]));
 }
 
@@ -85,8 +85,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1, "The unmatched folder should be empty after the changeset was applied");
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1, "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
     assert_json_eq!(common::get_matched_groups(&base_dir), json!([ [[0,3], [0,4], [0,5]] ]));
 }
 
@@ -130,8 +130,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1, "The unmatched folder should be empty after the changeset was applied");
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1, "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
     assert_json_eq!(common::get_matched_groups(&base_dir), json!([ [[0,3], [0,4], [0,5]] ]));
 }
 
@@ -173,8 +173,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1, "The unmatched folder should be empty after the changeset was applied");
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1, "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
     assert_json_eq!(common::get_matched_groups(&base_dir), json!([ [[0,3], [0,4], [0,5]] ]));
 }
 
@@ -218,8 +218,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1, "The unmatched folder should be empty after the changeset was applied");
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1, "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
     assert_json_eq!(common::get_matched_groups(&base_dir), json!([ [[0,3], [0,4], [0,5]] ]));
 }
 
@@ -262,8 +262,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1, "The unmatched folder should be empty after the changeset was applied");
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1, "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
     assert_json_eq!(common::get_matched_groups(&base_dir), json!([ [[0,3], [0,4], [0,5]] ]));
 }
 
@@ -304,8 +304,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0, "The unmatched folder should be empty after the changeset was applied");
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1, "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
 }
 
 #[test]
@@ -348,11 +348,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
-        "The unmatched folder should be empty after the changeset was applied");
-
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1,
-        "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
 }
 
 
@@ -396,11 +393,8 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
-        "The unmatched folder should be empty after the changeset was applied");
-
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1,
-        "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
 }
 
 #[test]
@@ -443,9 +437,6 @@ matching:
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
 
-    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
-        "The unmatched folder should be empty after the changeset was applied");
-
-    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1,
-        "The matched folder should contain a match file");
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
 }

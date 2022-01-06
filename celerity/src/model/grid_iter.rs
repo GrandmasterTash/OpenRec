@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use super::grid::Grid;
-use crate::{model::{record::Record, schema::GridSchema}, Context, utils::{CsvReaders, self}};
+use crate::{model::{record::Record, schema::GridSchema}, Context, utils::{self, csv::CsvReaders}};
 
 const UNMATCHED: &str = "0"; // = 0 ascii.
 const COL_STATUS: usize = 0;
@@ -19,7 +19,7 @@ impl GridIterator {
     pub fn new(ctx: &Context, grid: &Grid) -> Self {
         let data_readers = grid.schema().files()
             .iter()
-            .map(|file| utils::reader(file.path(), true))
+            .map(|file| utils::csv::reader(file.path(), true))
             .collect();
 
         let derived_readers = match ctx.phase() {
@@ -27,7 +27,7 @@ impl GridIterator {
             crate::Phase::ComleteAndArchive =>
                 Some(grid.schema().files()
                     .iter()
-                    .map(|file| utils::reader(file.derived_path(), true))
+                    .map(|file| utils::csv::reader(file.derived_path(), true))
                     .collect()),
             _ => None,
         };
@@ -60,7 +60,7 @@ impl Iterator for GridIterator {
                             Some(derived_readers) => {
                                 match read_next(self.pos, derived_readers, false) {
                                     Ok(derived) => derived.unwrap_or_default(),
-                                    Err(_) => csv::ByteRecord::new(), // TODO: Log error.
+                                    Err(err) => panic!("Failed to read next derived record for group: {}", err),
                                 }
                             },
                             None => csv::ByteRecord::new(),
@@ -72,7 +72,7 @@ impl Iterator for GridIterator {
                     // If there was no data in the file, move onto the next file.
                     self.pos += 1;
                 },
-                Err(_) => return None, // TODO: Log error.
+                Err(err) => panic!("Failed to read next record for group: {}", err),
             }
         }
     }

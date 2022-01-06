@@ -2,12 +2,12 @@ mod lua;
 mod utils;
 mod error;
 mod model;
-mod convert;
 mod folders;
 mod matching;
 mod changeset;
 mod instructions;
 
+use utils::csv::CsvWriters;
 use uuid::Uuid;
 use anyhow::Result;
 use error::MatcherError;
@@ -17,15 +17,12 @@ use model::schema::GridSchema;
 use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate};
 use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
-use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::{CsvReader, CsvWriter, CsvWriters}};
+use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
-// TODO: Need tolerance for dates (unit = days)
 // TODO: Flesh-out examples.
 // TODO: Archive changesets to archive/matcher not to /matched folder.
 // TODO: Check code coverage. Need error tests.
 // TODO: Clippy!
-// TODO: An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
-// TODO: Unified unmatched files - where schemas match - to avoid too many readers. Use a metadata column for original filename.
 
 ///
 /// These are the linear state transitions of a match Job.
@@ -254,7 +251,7 @@ fn derived_writers(grid: &Grid) -> CsvWriters {
     grid.schema()
         .files()
         .iter()
-        .map(|f| utils::writer(f.derived_path()))
+        .map(|f| utils::csv::writer(f.derived_path()))
         .collect::<CsvWriters>()
 }
 
@@ -299,7 +296,7 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
     let readers: Vec<CsvReader> = grid.schema()
         .files()
         .iter()
-        .map(|file| utils::reader(file.path(), true))
+        .map(|file| utils::csv::reader(file.path(), true))
         .collect();
 
     let mut zipped: Vec<(CsvReader, CsvWriter)> = readers.into_iter().zip(writers).collect();
@@ -371,7 +368,7 @@ fn derive_file(
     let lua = rlua::Lua::new();
 
     lua.context(|lua_ctx| {
-        lua::init_context(&lua_ctx)?;
+        lua::init_context(&lua_ctx, charter.global_lua())?;
         for csv_record in reader.byte_records() {
             let mut record = Record::new(file_idx, schema.clone(), csv_record?, csv::ByteRecord::new());
 

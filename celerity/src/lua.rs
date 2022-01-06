@@ -13,7 +13,7 @@ lazy_static! {
 ///
 /// Plug-in global Rust functions that can be called from Lua script.
 ///
-pub fn init_context(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
+pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>) -> Result<(), rlua::Error> {
     let globals = lua_ctx.globals();
 
     // Create a decimal() function to convert a Lua number to a Rust Decimal data-type.
@@ -31,6 +31,11 @@ pub fn init_context(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
     })?;
 
     globals.set("date_only", date_only)?;
+
+    // Run any global scripts.
+    if let Some(global_lua) = global_lua {
+        eval(lua_ctx, &global_lua)?;
+    }
 
     Ok(())
 }

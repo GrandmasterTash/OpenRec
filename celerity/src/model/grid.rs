@@ -51,11 +51,6 @@ impl Grid {
         &mut self.schema
     }
 
-    // TODO: Allow matched handle to call and decrement the count.
-    // pub fn remove_deleted(&mut self) {
-    //     // self.records.retain(|r| !r.deleted())
-    // }
-
     pub fn iter(&self, ctx: &Context) -> GridIterator {
         GridIterator::new(ctx, self)
     }
@@ -71,7 +66,6 @@ impl Grid {
         // Load and index all pending records.
         for source_file in ctx.charter().source_files() {
             log::info!("Sourcing data with pattern [{}]", source_file.pattern());
-            // TODO: Validate the source path is canonicalised in the rec base.
 
             // Track schema's added for this source instruction - if any do not equal, return a validation error.
             // Because all files of the same record type will need the same schema for any single match run.
@@ -104,7 +98,7 @@ impl Grid {
 
             log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
 
-            let mut writer = utils::writer(&output_path);
+            let mut writer = utils::csv::writer(&output_path);
             writer.write_record(self.schema().headers()).expect("Unable to write the debug headers");
 
             let mut count = 0;
@@ -117,52 +111,6 @@ impl Grid {
             log::debug!("...{} rows written to {}", count, output_path.to_canoncial_string());
         }
     }
-
-    // ///
-    // /// Writes all the grid's data to a file at this point
-    // ///
-    // pub fn start_debug_records(&self, ctx: &Context, sequence: usize) -> Option<csv::Writer<File>> {
-    //     if ctx.charter().debug() {
-    //         let output_path = folders::debug_path(ctx)
-    //             .join(format!("{timestamp}_{phase_num}_{phase_name:?}_{sequence}.debug.csv",
-    //             phase_num = ctx.phase().ordinal(),
-    //             phase_name = ctx.phase(),
-    //             sequence = sequence,
-    //             timestamp = ctx.ts()
-    //         ));
-
-    //         log::debug!("Creating grid debug file {}...", output_path.to_canoncial_string());
-
-    //         let mut wtr = csv::WriterBuilder::new()
-    //             .quote_style(csv::QuoteStyle::Always)
-    //             .buffer_capacity(*CSV_BUFFER)
-    //             .from_path(&output_path)
-    //             .expect("Unable to build a debug writer");
-    //         wtr.write_record(self.schema().headers()).expect("Unable to write the debug headers");
-    //         return Some(wtr)
-    //     }
-    //     None
-    // }
-
-    // ///
-    // /// Writes all the data specified to a file at this point
-    // ///
-    // pub fn debug_records(&self, wtr: &mut Option<csv::Writer<File>>, records: &[&Record]) {
-    //     if let Some(wtr) = wtr {
-    //         for record in records {
-    //             wtr.write_record(record.as_strings()).expect("Unable to write record");
-    //         }
-    //     }
-    // }
-
-    // ///
-    // /// Ensure all debug data is written.
-    // ///
-    // pub fn finish_debug_records(&self, wtr: Option<csv::Writer<File>>) {
-    //     if let Some(mut wtr) = wtr {
-    //         wtr.flush().expect("Unable to flush the debug file");
-    //     }
-    // }
 }
 
 ///
@@ -180,17 +128,17 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
     // For now, just count all the records in a file and log them.
     let mut count = 0;
 
-    let mut rdr = utils::reader(file.path(), false);
+    let mut rdr = utils::csv::reader(file.path(), false);
 
     let schema = FileSchema::new(source_file.field_prefix(), &mut rdr)
         .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;
 
     // Use an existing schema from the grid, if there is one, otherwise add this one.
-    let schema_idx = grid_schema.add_file_schema(schema.clone());
+    let schema_idx = grid_schema.add_file_schema(schema.clone())?;
     let last_schema_idx = validate_schema(&grid_schema, schema_idx, &last_schema_idx, &schema, source_file.pattern())?;
 
     // Register the data file with the grid.
-    let _file_idx = grid_schema.add_file(DataFile::new(&file, schema_idx)?);
+    let _file_idx = grid_schema.add_file(DataFile::new(&file, schema_idx));
 
     // Validate each record can be parsed okay.
     for result in rdr.byte_records() {
@@ -210,7 +158,9 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
     Ok((count, last_schema_idx))
 }
 
-// TODO: This seems like it should be part of add_file_schema in GridSchema.....
+///
+/// Ensure any files sources from the same pattern have identical schemas.
+///
 fn validate_schema(grid_schema: &GridSchema, schema_idx: usize, last_schema_idx: &Option<usize>, schema: &FileSchema, filename: &str)
     -> Result<Option<usize>, MatcherError> {
 

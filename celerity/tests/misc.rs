@@ -1,4 +1,5 @@
 use serde_json::json;
+use fs_extra::dir::get_dir_content;
 use crate::common::{self, FIXED_JOB_ID, function};
 
 // TODO: Test where net to zero considers a positive netted against a negative - i.e. ensure both values are abs before subtraction.
@@ -285,4 +286,116 @@ matching:
             ]
         }
     ]));
+}
+
+#[test]
+fn ensure_archive_filenames_are_unqiue() {
+
+    let base_dir = common::init_test(format!("tests/{}", function!()));
+
+    let file_content = r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T00:00:00.000Z","100.00","T1"
+"0","0002","2021-12-19T00:00:00.000Z","75.00","T2"
+"0","0003","2021-12-19T00:00:00.000Z","25.00","T2"
+"#;
+
+    common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv", file_content);
+
+    let charter = common::write_file(&base_dir, "charter.yaml",
+r#"name: archive filename test
+version: 1
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
+        - nets_to_zero:
+            column: Amount
+            lhs: record["Type"] == "T1"
+            rhs: record["Type"] == "T2"
+"#);
+
+    // Run the match.
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
+    assert_eq!(get_dir_content(base_dir.join("archive")).unwrap().files.len(), 1);
+    assert_eq!(common::get_filenames(&base_dir.join("archive")), vec!("20211219_082900000_transactions.csv"));
+
+    // Create another file with the same name.
+    common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv", file_content);
+
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1); // 2 in real life, but the fixed TS means only one.
+    assert_eq!(get_dir_content(base_dir.join("archive")).unwrap().files.len(), 2);
+    assert_eq!(common::get_filenames(&base_dir.join("archive")), vec!(
+        "20211219_082900000_transactions.csv",
+        "20211219_082900000_transactions.csv_01"));
+
+    // Ensure the renamed archive file is recorded in the job.
+    common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
+        [
+            {
+                "charter": {
+                    "name": "archive filename test",
+                    "version": 1,
+                    "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
+                },
+                "job_id": FIXED_JOB_ID,
+                "files": [
+                    "20211219_082900000_transactions.csv_01"
+                ]
+            },
+            {
+                "groups": [[[0,3],[0,4],[0,5]]]
+            },
+            {
+                "unmatched": [],
+                "changesets": []
+            }
+        ]));
+
+
+    // Create ANOTHER file with the same name.
+    common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv", file_content);
+
+    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1); // 3 in real life, but the fixed TS means only one.
+    assert_eq!(get_dir_content(base_dir.join("archive")).unwrap().files.len(), 3);
+    assert_eq!(common::get_filenames(&base_dir.join("archive")), vec!(
+        "20211219_082900000_transactions.csv",
+        "20211219_082900000_transactions.csv_01",
+        "20211219_082900000_transactions.csv_02"));
+
+    // Ensure the renamed archive file is recorded in the job.
+    common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
+        [
+            {
+                "charter": {
+                    "name": "archive filename test",
+                    "version": 1,
+                    "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
+                },
+                "job_id": FIXED_JOB_ID,
+                "files": [
+                    "20211219_082900000_transactions.csv_02"
+                ]
+            },
+            {
+                "groups": [[[0,3],[0,4],[0,5]]]
+            },
+            {
+                "unmatched": [],
+                "changesets": []
+            }
+        ]));
 }

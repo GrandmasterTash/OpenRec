@@ -57,7 +57,7 @@ impl MatchedHandler {
             path: path.to_canoncial_string(),
             data_writers: grid.schema().files()
                 .iter()
-                .map(|df| OpenOptions::new().write(true).open(df.path()).expect(&format!("unable to open {} to update status", df.path())))
+                .map(|df| OpenOptions::new().write(true).open(df.path()).expect(&format!("unable to open {} to update status", df.path().to_canoncial_string())))
                 .collect()
         })
     }

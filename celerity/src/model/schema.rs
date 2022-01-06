@@ -115,13 +115,20 @@ impl GridSchema {
     /// If the schema is already present, return the existing index, otherwise add the schema and return
     /// it's index.
     ///
-    pub fn add_file_schema(&mut self, schema: FileSchema) -> usize {
+    pub fn add_file_schema(&mut self, schema: FileSchema) -> Result<usize, MatcherError> {
         match self.file_schemas.iter().position(|s| *s == schema) {
-            Some(position) => position,
+            Some(position) => Ok(position),
             None => {
+                // Ensure every column header is unique and won't clash with an existing one.
+                for header in schema.columns().iter().map(|c| c.header()).collect::<Vec<&str>>() {
+                    if self.headers().iter().any(|h| h == header) {
+                        return Err(MatcherError::TwoSchemaWithDuplicateHeader { header: header.to_string() })
+                    }
+                }
+
                 self.file_schemas.push(schema);
                 self.rebuild_cache();
-                self.file_schemas.len() - 1
+                Ok(self.file_schemas.len() - 1)
             },
         }
     }
@@ -130,8 +137,8 @@ impl GridSchema {
     /// Added the projected column or error if it already exists.
     ///
     pub fn add_projected_column(&mut self, column: Column) -> Result<usize, MatcherError> {
-        if self.derived_cols.contains(&column) {
-            // TODO: This and merged should also check real columns for clashes.
+
+        if self.headers().iter().any(|h| h == column.header()) {
             return Err(MatcherError::ProjectedColumnExists { header: column.header })
         }
 
@@ -144,7 +151,8 @@ impl GridSchema {
     /// Added the merged column or error if it already exists.
     ///
     pub fn add_merged_column(&mut self, column: Column) -> Result<usize, MatcherError> {
-        if self.derived_cols.contains(&column) {
+
+        if self.headers().iter().any(|h| h == column.header()) {
             return Err(MatcherError::MergedColumnExists { header: column.header })
         }
 
@@ -293,5 +301,108 @@ impl FileSchema {
             .map(|col| col.data_type.as_str())
             .collect::<Vec<&str>>()
             .join(",")
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_headers_from_files_with_prefixes_cant_clash() {
+        let fs_1 = FileSchema {
+            prefix: Some("FS1".into()),
+            columns: vec!(
+                Column { header: "FS1.COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String },
+                Column { header: "FS1.COLB".into(), header_no_prefix: "COLB".into(), data_type: DataType::String })
+        };
+
+        let fs_2 = FileSchema {
+            prefix: Some("FS2".into()),
+            columns: vec!(
+                Column { header: "FS2.COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String },
+                Column { header: "FS2.COLB".into(), header_no_prefix: "COLB".into(), data_type: DataType::String })
+        };
+
+        let mut gs = GridSchema::default();
+
+        gs.add_file_schema(fs_1).unwrap();
+        gs.add_file_schema(fs_2).unwrap();
+        assert_eq!(4, gs.headers().len());
+    }
+
+
+    #[test]
+    fn test_headers_from_files_without_prefixes_can_clash() {
+        let fs_1 = FileSchema {
+            prefix: None,
+            columns: vec!(
+                Column { header: "COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String },
+                Column { header: "COLB".into(), header_no_prefix: "COLB".into(), data_type: DataType::String })
+        };
+
+        let fs_2 = FileSchema {
+            prefix: None,
+            columns: vec!(
+                Column { header: "COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String },
+                Column { header: "COLB".into(), header_no_prefix: "COLB".into(), data_type: DataType::Boolean })
+        };
+
+        let mut gs = GridSchema::default();
+        gs.add_file_schema(fs_1).unwrap();
+
+        match gs.add_file_schema(fs_2) {
+            Ok(_) => panic!("Expected an error adding duplicate headers"),
+            Err(err) => match err {
+                MatcherError::TwoSchemaWithDuplicateHeader { .. } => {},
+                e @ _ => panic!("Expected TwoSchemaWithDuplicateHeader error got: {}", e),
+            },
+        }
+    }
+
+    #[test]
+    fn test_cannot_project_duplicate_name() {
+        let fs_1 = FileSchema {
+            prefix: Some("FS1".into()),
+            columns: vec!(
+                Column { header: "FS1.COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String },
+                Column { header: "FS1.COLB".into(), header_no_prefix: "COLB".into(), data_type: DataType::String })
+        };
+
+
+        let mut gs = GridSchema::default();
+        gs.add_file_schema(fs_1).unwrap();
+
+        let col = Column { header: "FS1.COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String };
+        match gs.add_projected_column(col) {
+            Ok(_) => panic!("Expected an error adding duplicate headers"),
+            Err(err) => match err {
+                MatcherError::ProjectedColumnExists { .. } => {},
+                e @ _ => panic!("Expected ProjectedColumnExists error got: {}", e),
+            },
+        }
+    }
+
+    #[test]
+    fn test_cannot_merge_duplicate_name() {
+        let fs_1 = FileSchema {
+            prefix: Some("FS1".into()),
+            columns: vec!(
+                Column { header: "FS1.COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String },
+                Column { header: "FS1.COLB".into(), header_no_prefix: "COLB".into(), data_type: DataType::String })
+        };
+
+        let mut gs = GridSchema::default();
+        gs.add_file_schema(fs_1).unwrap();
+
+        let col = Column { header: "FS1.COLA".into(), header_no_prefix: "COLA".into(), data_type: DataType::String };
+        match gs.add_merged_column(col) {
+            Ok(_) => panic!("Expected an error adding merged column"),
+            Err(err) => match err {
+                MatcherError::MergedColumnExists { .. } => {},
+                e @ _ => panic!("Expected MergedColumnExists error got: {}", e),
+            },
+        }
     }
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use super::prelude::*;
-use crate::{error::MatcherError, model::{record::Record, schema::GridSchema}, folders, utils::{CsvReader, CsvReaders, self}};
+use crate::{error::MatcherError, model::{record::Record, schema::GridSchema}, folders, utils::{self, csv::{CsvReader, CsvReaders}}};
 
 ///
 /// Iterate the file index.sorted.csv and use the merge-key to read entire groups of records.
@@ -11,22 +11,24 @@ pub struct GroupIterator {
     data_rdrs: CsvReaders,
     derived_rdrs: CsvReaders,
     current: Option<csv::ByteRecord>,
+    limit: usize,
 }
 
 impl GroupIterator {
     pub fn new(ctx: &crate::Context, schema: &GridSchema) -> Self {
         Self {
             schema: Arc::new(schema.clone()),
-            index_rdr: utils::index_reader(folders::matching(ctx).join("index.sorted.csv")),
+            index_rdr: utils::csv::index_reader(folders::matching(ctx).join("index.sorted.csv")),
             data_rdrs: schema.files()
                 .iter()
-                .map(|file| utils::reader(file.path(), true))
+                .map(|file| utils::csv::reader(file.path(), true))
                 .collect(),
             derived_rdrs: schema.files()
                 .iter()
-                .map(|file| utils::reader(file.derived_path(), true))
+                .map(|file| utils::csv::reader(file.derived_path(), true))
                 .collect(),
-            current: None
+            current: None,
+            limit: ctx.charter().group_limit()
         }
     }
 
@@ -116,6 +118,10 @@ impl Iterator for GroupIterator {
                         match self.load_record(&csv_record) {
                             Ok(record) => group.push(record),
                             Err(err) => return Some(Err(err)),
+                        }
+
+                        if group.len() > self.limit {
+                            panic!("The current configuration and data would result in a group exceeding the maximum number of records ({}). This will have memory resource implications if allowed. If you still want to proceed, specify the group_limit property on the charter to be the maximum number of allowed records in a single group.", self.limit)
                         }
 
                         // Track the current group.

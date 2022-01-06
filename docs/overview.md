@@ -503,3 +503,4 @@ TODO: in own file.
 - grouping with ranges
 - group tagging
 - pgroups (proposed groups)
+- An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.

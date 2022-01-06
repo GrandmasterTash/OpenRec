@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use anyhow::Context as ErrContext;
 use serde::{Deserialize, Serialize};
 use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instant}};
-use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, CsvWriters, utils::{self, CsvWriter}};
+use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, utils::{self, csv::{CsvWriters, CsvWriter}}};
 
 /*
     Changeset files are instructions to modified unmatched or yet-to-be-matched data.
@@ -136,7 +136,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
         let mut eval_ctx = EvalContext { change_idx: 0, row: 0, file: 0 };
 
         ctx.lua().context(|lua_ctx| {
-            lua::init_context(&lua_ctx)?;
+            lua::init_context(&lua_ctx, ctx.charter().global_lua())?;
 
             // Apply each changeset in order to each record.
             for mut record in grid.iter(ctx) {
@@ -229,7 +229,7 @@ fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>) -> Result
                 // Then rename the modifying file, eg. 20210110_inv.csv.modifying -> 20210110_inv.csv
                 folders::archive_immediately(ctx, data_file.path())?;
 
-                log::debug!("Renaming {} to {}", data_file.modifying_filename(), data_file.filename());
+                log::debug!("Renaming {} to {}", data_file.modifying_path().to_canoncial_string(), data_file.filename());
                 folders::rename(data_file.modifying_path(), data_file.path())?;
 
             } else {
@@ -239,7 +239,7 @@ fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>) -> Result
                 folders::remove_file(data_file.pre_modified_path())?;
             }
         } else {
-            log::debug!("Removing unmodified modifying file {}", data_file.modifying_path());
+            log::debug!("Removing unmodified modifying file {}", data_file.modifying_path().to_canoncial_string());
             folders::remove_file(data_file.modifying_path())?;
         }
     }
@@ -323,7 +323,7 @@ fn writers(grid: &Grid) -> Result<CsvWriters, MatcherError> {
     let mut writers = grid.schema()
         .files()
         .iter()
-        .map(|f| utils::writer(f.modifying_path()))
+        .map(|f| utils::csv::writer(f.modifying_path()))
         .collect::<Vec<CsvWriter>>();
 
     // Write the headers and schema rows.

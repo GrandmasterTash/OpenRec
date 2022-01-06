@@ -45,7 +45,7 @@ impl UnmatchedHandler {
                 // Create an new unmatched file.
                 let output_path = folders::new_unmatched_file(ctx, file); // $REC_HOME/unmatched/timestamp_invoices.unmatched.csv
                 let full_filename = folders::filename(&output_path); // timestamp_invoices.unmatched.csv
-                let mut writer = utils::writer(&output_path);
+                let mut writer = utils::csv::writer(&output_path);
 
                 // Add the column header and schema rows.
                 let schema = &grid.schema().file_schemas()[file.schema_idx()];

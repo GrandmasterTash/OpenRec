@@ -12,10 +12,14 @@ pub struct Charter {
     debug: Option<bool>,
     matching: Matching,
     jetwash: Option<Jetwash>,
+    global_lua: Option<String>,
 
-    #[serde(default = "default_memory")]
+    #[serde(default = "default_memory_limit")]
     memory_limit: usize, // The maximum number of bytes allowed for grouping and sorting data.
-} // TODO: Allow global lua functions to be defined and ensure they are available in all contexts.
+
+    #[serde(default = "default_group_limit")]
+    group_limit: usize, // The maximum number of records in a single group.
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -142,12 +146,20 @@ impl Charter {
         self.memory_limit
     }
 
+    pub fn group_limit(&self) -> usize {
+        self.group_limit
+    }
+
     pub fn source_files(&self) -> &[MatchingSourceFile] {
         &self.matching.source_files
     }
 
     pub fn use_field_prefixes(&self) -> bool {
         self.matching.use_field_prefixes.unwrap_or(true)
+    }
+
+    pub fn global_lua(&self) -> &Option<String> {
+        &self.global_lua
     }
 
     pub fn instructions(&self) -> &[Instruction] {
@@ -181,7 +193,10 @@ impl Charter {
     }
 }
 
+fn default_group_limit() -> usize {
+    1000
+}
 
-fn default_memory() -> usize {
+fn default_memory_limit() -> usize {
     52428800 // 50MB, 50 * 1048576
 }

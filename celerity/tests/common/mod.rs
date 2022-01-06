@@ -233,3 +233,15 @@ fn use_fixed_timestamp() {
 fn use_fixed_job_id() {
     std::env::set_var("OPENREC_FIXED_JOB_ID", FIXED_JOB_ID);
 }
+
+///
+/// Return all the filenames in the folder specified.
+///
+pub fn get_filenames(path: &PathBuf) -> Vec<String> {
+    get_dir_content(path)
+        .unwrap()
+        .files
+        .iter()
+        .map(|f| PathBuf::from(f).file_name().unwrap().to_string_lossy().to_string())
+        .collect()
+}
