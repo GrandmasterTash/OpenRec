@@ -5,6 +5,8 @@ use crate::error::MatcherError;
 use core::data_type::{DataType, TRUE, FALSE};
 use chrono::{DateTime, Utc, TimeZone, SecondsFormat};
 
+// TODO: Move this to utils and utils::convert
+
 fn unparseable_csv_err(data_type: DataType, bytes: Bytes) -> MatcherError {
     MatcherError::UnparseableCsvField { data_type: data_type.as_str().into(), bytes: format!("{:?}", bytes) }
 }

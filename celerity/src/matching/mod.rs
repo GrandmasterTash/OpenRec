@@ -1,4 +1,5 @@
 mod group_iter;
+mod constraints;
 pub mod matched;
 pub mod unmatched;
 
@@ -10,7 +11,7 @@ use anyhow::Context as ErrContext;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf};
 use self::{prelude::*, group_iter::GroupIterator, matched::MatchedHandler};
-use crate::{error::{MatcherError, here}, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, convert, lua, instructions::constraints::passes, utils::{self, CsvWriter}};
+use crate::{error::{MatcherError, here}, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, convert, lua, utils::{self, CsvWriter}};
 
 // The column position in our index records for the merge_key used to sort index records.
 mod prelude {
@@ -49,7 +50,7 @@ fn is_match(
     let start = Instant::now();
 
     for (_index, constraint) in constraints.iter().enumerate() {
-        if !passes(constraint, group, schema, lua_ctx)? {
+        if !constraints::passes(constraint, group, schema, lua_ctx)? {
             failed.push(constraint);
         }
     }

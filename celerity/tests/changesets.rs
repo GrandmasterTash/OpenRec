@@ -1,11 +1,11 @@
-use crate::common::{self, FIXED_JOB_ID};
+use crate::common::{self, FIXED_JOB_ID, function};
 use fs_extra::dir::get_dir_content;
 use serde_json::json;
 
 #[test]
 fn test_changesets_are_recorded() {
 
-    let base_dir = common::init_test("tests/test_changesets_are_recorded/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Write 4 transactions, each T1 should match a T2 - but initially the second pair won't match -
     // due to an incorrect amount for T2.
@@ -121,10 +121,11 @@ r#"    [
 
 }
 
+
 #[test]
 fn test_changesets_affect_unmatched_and_new_data() {
 
-    let base_dir = common::init_test("tests/test_changesets_affect_unmatched_and_new_data/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Write 2 transactions which wont match until they are updated.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
@@ -222,10 +223,11 @@ matching:
     ]));
 }
 
+
 #[test]
 fn test_changsets_are_applied_in_order() {
 
-    let base_dir = common::init_test("tests/test_changsets_are_applied_in_order/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Create 2 transactions which will only match if the last changeset has been applied.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
@@ -340,10 +342,11 @@ r#"    [
     ]));
 }
 
+
 #[test]
 fn test_changesets_can_ignore_records() {
 
-    let base_dir = common::init_test("tests/test_changesets_can_ignore_records/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Create 2 transactions which will only match if the 3rd isn't present.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",

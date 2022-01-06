@@ -1,9 +1,9 @@
-use crate::common;
+use crate::common::{self, function};
 
 #[test]
 fn test_all_meta_present_in_lua() {
 
-    let base_dir = common::init_test("tests/test_all_meta_present_in_lua/");
+  let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Match two records, with a constraint rule that requires certain metadata fields are present.
     let _data_file = common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",

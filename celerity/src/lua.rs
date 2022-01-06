@@ -194,7 +194,7 @@ pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> 
 ///
 /// Return all the columns referenced in the script specified.
 ///
-pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
+pub fn referenced_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
     let mut columns = Vec::new();
 
     for cap in HEADER_REGEX.captures_iter(script) {
@@ -211,12 +211,12 @@ pub fn script_columns(script: &str, schema: &GridSchema) -> Vec<Column> {
 ///
 pub fn lua_record<'a>(
     record: &Record,
-    script_cols: &[Column],
+    avail_cols: &[Column],
     lua_ctx: &Context<'a>) -> Result<Table<'a>, MatcherError> {
 
     let lua_record = lua_ctx.create_table()?;
 
-    for col in script_cols {
+    for col in avail_cols {
         match col.data_type() {
             DataType::Unknown  => {},
             DataType::Boolean  => lua_record.set(col.header(), record.get_bool(col.header())?)?,
@@ -267,11 +267,11 @@ pub fn lua_filter<'a, 'b>(
     schema: &GridSchema) -> Result<Vec<&'a Record>, MatcherError> {
 
     let mut results = vec!();
-    let script_cols = script_columns(lua_script, schema);
+    let avail_cols = referenced_columns(lua_script, schema);
     let globals = lua_ctx.globals();
 
     for record in records {
-        let lua_record = lua_record(record, &script_cols, lua_ctx)?;
+        let lua_record = lua_record(record, &avail_cols, lua_ctx)?;
         globals.set("record", lua_record)?;
 
         // let lua_meta = lua_meta(record, accessor.schema(), lua_ctx)?;

@@ -43,3 +43,4 @@ matching:
               tolerance: 1.00
               # tol_type can also be Percent. In whice case the rhs sum must be with in
               # x percent of the lhs sum where x is the tolerance value. so 10.0 for 10%.
+# TODO: Add comments with an example date tolerance.

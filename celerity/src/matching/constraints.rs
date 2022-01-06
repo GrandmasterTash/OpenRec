@@ -10,37 +10,25 @@ pub fn passes(
     lua_ctx: &Context) -> Result<bool, MatcherError> {
 
     match constraint {
-        // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
         Constraint::NetsToZero { column, lhs, rhs } => {
-            let sum_checker = |lhs_sum: Decimal, rhs_sum: Decimal| {
-                let result = (lhs_sum.abs() - rhs_sum.abs()).abs() == Decimal::ZERO;
-                log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < 0 : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, Decimal::ZERO, result);
-                result
-            };
-            net(column, lhs, rhs, sum_checker, records, schema, lua_ctx)
+            match schema.data_type(column).unwrap_or(&DataType::Unknown) {
+                DataType::Decimal => net_to_zero(column, lhs, rhs, records, schema, lua_ctx),
+                DataType::Integer => net_to_zero(column, lhs, rhs, records, schema, lua_ctx),
+                col_type @ _ => return Err(MatcherError::CannotUseTypeForContstraint{ column: column.into(), col_type: format!("{:?}", col_type)})
+            }
         },
 
-        // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
         Constraint::NetsWithTolerance {column, lhs, rhs, tol_type, tolerance } => {
-            let sum_checker: Box<dyn Fn(Decimal, Decimal) -> bool> = match tol_type {
-                ToleranceType::Amount => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
-                        let result = (lhs_sum.abs() - rhs_sum.abs()).abs() < *tolerance;
-                        log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < tolerance : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, *tolerance, result);
-                        result
-                    }),
-
-                ToleranceType::Percent => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
-                        let percent_tol = lhs_sum / (Decimal::ONE_HUNDRED / *tolerance);
-                        let result = (lhs_sum.abs() - rhs_sum.abs()).abs() < percent_tol;
-                        log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < percent_tol : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, percent_tol, result);
-                        result
-                    }),
-            };
-
-            net(column, lhs, rhs, sum_checker, records, schema, lua_ctx)
+            match schema.data_type(column).unwrap_or(&DataType::Unknown) {
+                DataType::Decimal => nets_with_tolerance(column, lhs, rhs, tol_type, *tolerance, records, schema, lua_ctx),
+                DataType::Integer => nets_with_tolerance(column, lhs, rhs, tol_type, *tolerance, records, schema, lua_ctx),
+                col_type @ _ => return Err(MatcherError::CannotUseTypeForContstraint{ column: column.into(), col_type: format!("{:?}", col_type)})
+            }
         },
 
         Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, lua_ctx),
+
+        Constraint::DatesWithRange { column: _, lhs: _, rhs: _, days: _, hours: _, minutes: _, seconds: _ } => todo!(),
     }
 }
 
@@ -51,7 +39,7 @@ pub fn passes(
 /// This allows you to match a list of, for exaple, payments to a list of invoices, as long as all the payments cover the cost
 /// of the invoices.
 ///
-fn net<F>(
+fn net_decimal<F>(
     column: &String,
     lhs: &str,
     rhs: &str,
@@ -65,10 +53,6 @@ fn net<F>(
     // Validate NET column exists and is a DECIMAL (we can relax the type resiction if needed).
     if !schema.headers().contains(column) {
         return Err(MatcherError::ConstraintColumnMissing{ column: column.into() })
-    }
-
-    if *schema.data_type(column).unwrap_or(&DataType::Unknown) != DataType::Decimal {
-        return Err(MatcherError::ConstraintColumnNotDecimal{ column: column.into() })
     }
 
     // Collect records in the group which match lhs and rhs filters.
@@ -93,12 +77,12 @@ fn net<F>(
 ///
 fn custom_constraint(
     script: &str,
-    fields: &Option<Vec<String>>,
+    avail_cols: &Option<Vec<String>>,
     records: &[&Record],
     schema: &GridSchema,
     lua_ctx: &Context) -> Result<bool, MatcherError> {
 
-    let script_cols = match fields {
+    let avail_cols = match avail_cols {
         Some(fields) => {
             let fields = fields.iter().map(|f|f.as_str()).collect::<Vec<&str>>();
 
@@ -115,11 +99,59 @@ fn custom_constraint(
     let lua_records = lua_ctx.create_table()?;
 
     for (idx, record) in records.iter().enumerate() {
-        let lua_record = lua::lua_record(record, &script_cols, lua_ctx)?;
+        let lua_record = lua::lua_record(record, &avail_cols, lua_ctx)?;
         lua_records.set(idx + 1, lua_record)?;
     }
 
     globals.set("records", lua_records)?;
     lua::eval(lua_ctx, &script)
         .map_err(|source| MatcherError::CustomConstraintError { reason: "Unknown".into(), source })
+}
+
+
+fn net_to_zero(
+    column: &String,
+    lhs: &str,
+    rhs: &str,
+    records: &[&Record],
+    schema: &GridSchema,
+    lua_ctx: &Context) -> Result<bool, MatcherError>
+{
+    // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
+    let sum_checker = |lhs_sum: Decimal, rhs_sum: Decimal| {
+        let result = (lhs_sum.abs() - rhs_sum.abs()).abs() == Decimal::ZERO;
+        log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() < 0 : ({}.abs() - {}.abs()).abs() < {} = {}", lhs_sum, rhs_sum, Decimal::ZERO, result);
+        result
+    };
+    net_decimal(column, lhs, rhs, sum_checker, records, schema, lua_ctx)
+}
+
+
+fn nets_with_tolerance(
+    column: &String,
+    lhs: &str,
+    rhs: &str,
+    tol_type: &ToleranceType,
+    tolerance: Decimal,
+    records: &[&Record],
+    schema: &GridSchema,
+    lua_ctx: &Context) -> Result<bool, MatcherError>
+{
+    // Create a closure to calculate the sum of lhs and rhs and pass it to the NET fn.
+    let sum_checker: Box<dyn Fn(Decimal, Decimal) -> bool> = match tol_type {
+        ToleranceType::Amount => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
+                let result = (lhs_sum.abs() - rhs_sum.abs()).abs() <= tolerance;
+                log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() <= tolerance : ({}.abs() - {}.abs()).abs() <= {} = {}", lhs_sum, rhs_sum, tolerance, result);
+                result
+            }),
+
+        ToleranceType::Percent => Box::new(|lhs_sum: Decimal, rhs_sum: Decimal| {
+                let percent_tol = lhs_sum / (Decimal::ONE_HUNDRED / tolerance);
+                let result = (lhs_sum.abs() - rhs_sum.abs()).abs() <= percent_tol;
+                log::trace!("(lhs_sum.abs() - rhs_sum.abs()).abs() <= percent_tol : ({}.abs() - {}.abs()).abs() <= {} = {}", lhs_sum, rhs_sum, percent_tol, result);
+                result
+            }),
+    };
+
+    net_decimal(column, lhs, rhs, sum_checker, records, schema, lua_ctx)
 }

@@ -486,6 +486,8 @@ Note: All changesets are applied to un-matched data as part of a match job - pri
 
 ##### Match Reports
 
+# Lua Helper Functions
+TODO: in own file.
 
 # Getting Started
 
@@ -497,3 +499,7 @@ Note: All changesets are applied to un-matched data as part of a match job - pri
 - generate changesets from record deltas
 - full sync controls (i.e. source data contains all data, match or unmatched)
 - rollback jobs
+- date-range constraints
+- grouping with ranges
+- group tagging
+- pgroups (proposed groups)

@@ -17,7 +17,7 @@ use model::schema::GridSchema;
 use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate};
 use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
-use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, script_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::{CsvReader, CsvWriter, CsvWriters}};
+use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::{CsvReader, CsvWriter, CsvWriters}};
 
 // TODO: Need tolerance for dates (unit = days)
 // TODO: Flesh-out examples.
@@ -226,7 +226,7 @@ fn create_derived_schema(ctx: &Context, grid: &mut Grid) -> Result<(HashMap<usiz
         let schema = grid.schema().clone();
         match inst {
             Instruction::Project { column, as_a, from, when } => {
-                projection_cols.insert(idx, script_cols(from, when.as_ref().map(String::as_ref), &schema));
+                projection_cols.insert(idx, referenced_cols(from, when.as_ref().map(String::as_ref), &schema));
                 grid.schema_mut().add_projected_column(Column::new(column.into(), None, *as_a))?;
             },
             Instruction::Merge { into, columns } => {
@@ -360,7 +360,7 @@ fn derive_file(
     writer: &mut CsvWriter,
     schema: Arc<GridSchema>,
     charter: Arc<&Charter>,
-    projection_cols: HashMap<usize, Vec<Column>>) -> Result<HashMap<usize, Duration>, MatcherError> {
+    avail_cols: HashMap<usize, Vec<Column>>) -> Result<HashMap<usize, Duration>, MatcherError> {
 
     // Track accumulated time in each project and merge instruction.
     let mut metrics: HashMap<usize, Duration> = HashMap::new();
@@ -381,8 +381,8 @@ fn derive_file(
 
                 match inst {
                     Instruction::Project { column: _, as_a, from, when } => {
-                        let script_cols = projection_cols.get(&i_idx).ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
-                        project_column(*as_a, from, &when, &mut record, script_cols, &lua_ctx)?;
+                        let avail_cols = avail_cols.get(&i_idx).ok_or(MatcherError::MissingScriptCols { instruction: i_idx })?;
+                        project_column(*as_a, from, &when, &mut record, avail_cols, &lua_ctx)?;
                         record_duration(i_idx, &mut metrics, started.elapsed());
                     },
 

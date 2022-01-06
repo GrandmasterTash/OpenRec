@@ -1,6 +1,8 @@
 use std::{fs::File, path::Path};
 use crate::folders::ToCanoncialString;
 
+// TODO: Move to csv sub-module.
+
 pub type CsvReader = csv::Reader<File>;
 pub type CsvWriter = csv::Writer<File>;
 pub type CsvReaders = Vec<CsvReader>;

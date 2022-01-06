@@ -7,19 +7,44 @@ const FIXED_TS: &str = "20211201_053700000";
 pub const FIXED_JOB_ID: &str = "74251904-63d9-11ec-a665-00155dd15f9e";
 
 ///
+/// Return the current function name.
+///
+/// https://stackoverflow.com/questions/38088067/equivalent-of-func-or-function-in-rust
+///
+macro_rules! function {
+    () => {{
+        fn f() {}
+        fn type_name_of<T>(_: T) -> &'static str {
+            std::any::type_name::<T>()
+        }
+        let name = type_name_of(f);
+
+        // Find and cut the rest of the path
+        match &name[..name.len() - 3].rfind(':') {
+            Some(pos) => &name[pos + 1..name.len() - 3],
+            None => &name[..name.len() - 3],
+        }
+    }};
+  }
+
+pub(crate) use function;
+
+///
 /// Set-up logging and ensure a fixed timestamp is used when writing output matched files.
 ///
 /// Create a worker folder structure under the base_dir specified.
 ///
 /// This function will delete any existing files in base_dir before creating a new waiting folder.
 ///
-pub fn init_test(folder: &str) -> PathBuf {
+// pub fn init_test(folder: &str) -> PathBuf {
+pub fn init_test<P: AsRef<str>>(folder: P) -> PathBuf {
+
     dotenv::dotenv().ok();
     let _ = env_logger::builder().is_test(true).try_init();
 
     use_fixed_timestamp();
     use_fixed_job_id();
-    let base_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(folder);
+    let base_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(folder.as_ref());
 
     // Delete everything in base_dir.
     remove(&base_dir)
@@ -165,6 +190,18 @@ pub fn assert_unmatched_ok(data_files: &Vec<PathBuf>, base_dir: &PathBuf, expect
     assert_eq!(unmatched_dir.files.len(), expected_unmatched, "Unmatched files didn't match expect number");
 
     (matched, unmatched_dir.files.iter().map(|f| PathBuf::from(f)).collect())
+}
+
+///
+/// Get the json array of matched groups from the match job json file.
+///
+pub fn get_matched_groups(base_dir: &PathBuf) -> serde_json::Value {
+    // Check there's a matched JSON file.
+    let matched = Path::new(base_dir).join("matched").join(format!("{}_matched.json", FIXED_TS));
+    assert!(matched.exists(), "matched file {} doesn't exist", matched.to_string_lossy());
+
+    let actual = read_json_file(matched);
+    actual[1]["groups"].clone()
 }
 
 ///

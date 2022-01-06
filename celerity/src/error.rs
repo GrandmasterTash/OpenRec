@@ -106,8 +106,8 @@ pub enum MatcherError {
     #[error("The constraint column {column} is not present")]
     ConstraintColumnMissing { column: String },
 
-    #[error("The constraint column {column} is not a DECIMAL data-type")]
-    ConstraintColumnNotDecimal { column: String },
+    #[error("The column {column} cannot be used in a constraint it's data-type is {col_type}, only integers, decimals and datetimes are supported")]
+    CannotUseTypeForContstraint { column: String, col_type: String },
 
     #[error("Failed to write the match job header {job_header} to {path}")]
     FailedToWriteJobHeader { job_header: String, path: String, source: serde_json::Error },
@@ -126,9 +126,6 @@ pub enum MatcherError {
 
     #[error("Cannot create a derived file for {path}")]
     FileCantBeDerived { path: String },
-
-    // #[error("Unable to load changeset {path}")]
-    // UnableToParseChangset { path: String, source: serde_json::Error },
 
     #[error("An error occured sourcing data")]
     GridSourceError { source: rlua::Error },

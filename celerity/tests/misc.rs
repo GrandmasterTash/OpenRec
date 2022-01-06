@@ -1,5 +1,5 @@
 use serde_json::json;
-use crate::common::{self, FIXED_JOB_ID};
+use crate::common::{self, FIXED_JOB_ID, function};
 
 // TODO: Test where net to zero considers a positive netted against a negative - i.e. ensure both values are abs before subtraction.
 
@@ -7,8 +7,7 @@ use crate::common::{self, FIXED_JOB_ID};
 fn test_no_data_files() {
     let charter = common::example_charter("02-Projected-Columns.yaml");
 
-    // Copy the test data files into a temporary working folder.
-    let base_dir = common::init_test("tests/test_no_data/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Run the match.
     celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
@@ -38,12 +37,12 @@ fn test_no_data_files() {
     ]));
 }
 
+
 #[test]
 fn test_empty_data_file() {
     let charter = common::example_charter("02-Projected-Columns.yaml");
 
-    // Copy the test data files into a temporary working folder.
-    let base_dir = common::init_test("tests/test_empty_data_file/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Create an empty invoice and empty payment file.
     common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-invoices.csv",
@@ -86,10 +85,11 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
     ]));
 }
 
+
 #[test]
 fn test_okay_when_not_all_files_present() {
 
-    let base_dir = common::init_test("tests/test_not_all_files_present/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Writer some payments.
     common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-payments.csv",
@@ -138,10 +138,11 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
     ]));
 }
 
+
 #[test]
 fn test_no_charter_instructions() {
 
-    let base_dir = common::init_test("tests/test_no_charter_instructions/");
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Write 2 transactions to match with each other.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
@@ -195,9 +196,11 @@ matching:
     ]));
 }
 
+
 #[test]
 fn test_data_exists_but_no_matches() {
-    let base_dir = common::init_test("tests/test_data_exists_but_no_matches/");
+
+    let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Write 2 invoices.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_invoices.csv",

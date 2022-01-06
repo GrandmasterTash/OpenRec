@@ -7,12 +7,12 @@ pub fn project_column(
     lua: &str,
     when: &Option<String>,
     record: &mut Record,
-    script_cols: &[Column],
+    avail_cols: &[Column],
     lua_ctx: &rlua::Context) -> Result<(), MatcherError> {
 
     let globals = lua_ctx.globals();
 
-    let lua_record = lua::lua_record(record, script_cols, lua_ctx)?;
+    let lua_record = lua::lua_record(record, avail_cols, lua_ctx)?;
     globals.set("record", lua_record)?;
 
     // Evalute the WHEN script to see if we should even evaluate the EVAL script. This allows us to skip
@@ -39,10 +39,10 @@ pub fn project_column(
 ///
 /// Return the columns involved in any Lua script for this projection.
 ///
-pub fn script_cols(eval: &str, when: Option<&str>, schema: &GridSchema) -> Vec<Column> {
+pub fn referenced_cols(eval: &str, when: Option<&str>, schema: &GridSchema) -> Vec<Column> {
     match when {
-        Some(when) => vec!(lua::script_columns(eval, schema), lua::script_columns(when, schema)),
-        None => vec!(lua::script_columns(eval, schema)),
+        Some(when) => vec!(lua::referenced_columns(eval, schema), lua::referenced_columns(when, schema)),
+        None => vec!(lua::referenced_columns(eval, schema)),
     }.concat()
         .into_iter()
         .unique()
