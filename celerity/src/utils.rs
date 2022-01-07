@@ -128,7 +128,7 @@ pub mod convert {
 
     pub fn datetime_to_string(value: u64) -> String {
         let dt = Utc.timestamp(value as i64 / 1000, (value % 1000) as u32 * 1000000);
-        dt.to_rfc3339_opts(SecondsFormat::Millis, true).to_string()
+        dt.to_rfc3339_opts(SecondsFormat::Millis, true)
     }
 
     pub fn decimal_to_string(value: Decimal) -> String {

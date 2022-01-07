@@ -43,7 +43,7 @@ impl MatchedHandler {
                 .sorted_by(|f1, f2| Ord::cmp(&f1.filename(), &f2.filename()))
                 .map(|f| {
                     match f.archived_filename() {
-                        Some(archived_filename) => &archived_filename,
+                        Some(archived_filename) => archived_filename,
                         None => f.filename(),
                     }
                 })
@@ -62,7 +62,10 @@ impl MatchedHandler {
             path: path.to_canoncial_string(),
             data_writers: grid.schema().files()
                 .iter()
-                .map(|df| OpenOptions::new().write(true).open(df.path()).expect(&format!("unable to open {} to update status", df.path().to_canoncial_string())))
+                .map(|df| OpenOptions::new()
+                    .write(true)
+                    .open(df.path())
+                    .unwrap_or_else(|_| panic!("unable to open {} to update status", df.path().to_canoncial_string())))
                 .collect()
         })
     }
@@ -115,7 +118,7 @@ impl MatchedHandler {
             .map_err(|source| MatcherError::CannotWriteFooter { filename: self.path.clone(), source })?;
 
         // Terminate the root array.
-        write!(&mut self.writer, "]\n")
+        writeln!(&mut self.writer, "]")
             .map_err(|source| MatcherError::CannotWriteThing { thing: "matched file terminator".into(), filename: self.path.clone(), source })?;
 
         // Remove the .inprogress suffix

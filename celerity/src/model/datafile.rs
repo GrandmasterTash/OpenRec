@@ -49,14 +49,14 @@ impl DataFile {
     /// 'invoices' if filename is '/tmp/20201118_053000000_invoices.csv' or '/tmp/20201118_053000000_invoices.unmatched.csv'
     ///
     pub fn shortname(&self) -> &str {
-        &folders::shortname(self.filename())
+        folders::shortname(self.filename())
     }
 
     ///
     /// '20201118_053000000' if the filename is '20201118_053000000_invoices.csv'.
     ///
     pub fn timestamp(&self) -> &str {
-        &folders::timestamp(self.filename()).expect("timestamp not correct")
+        folders::timestamp(self.filename()).expect("timestamp not correct")
     }
 
     ///

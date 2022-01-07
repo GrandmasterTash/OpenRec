@@ -79,7 +79,7 @@ impl GroupIterator {
 }
 
 pub fn csv_to_u64(bytes: Option<&[u8]>) -> u64 {
-    String::from_utf8_lossy(&bytes.expect("Index usize field missing"))
+    String::from_utf8_lossy(bytes.expect("Index usize field missing"))
         .parse()
         .expect("Unable to convert index field to usize")
 }

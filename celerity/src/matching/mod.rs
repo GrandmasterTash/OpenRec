@@ -9,7 +9,7 @@ use itertools::Itertools;
 use core::charter::Constraint;
 use anyhow::Context as ErrContext;
 use bytes::{BufMut, Bytes, BytesMut};
-use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::PathBuf};
+use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::Path};
 use self::{prelude::*, group_iter::GroupIterator, matched::MatchedHandler};
 use crate::{error::{MatcherError, here}, formatted_duration_rate, model::{grid::Grid, record::Record, schema::GridSchema}, blue, folders::{self, ToCanoncialString}, lua, utils::{self, convert, csv::CsvWriter}};
 
@@ -130,7 +130,7 @@ pub fn match_groups(
 ///
 /// Estimate the size of each record index row.
 ///
-fn estimated_index_size(unsorted_path: &PathBuf, grid: &Grid) -> Result<usize, MatcherError> {
+fn estimated_index_size(unsorted_path: &Path, grid: &Grid) -> Result<usize, MatcherError> {
     let f = File::open(&unsorted_path)
         .with_context(|| format!("Unable to open {}{}", unsorted_path.to_canoncial_string(), here!()))?;
 
@@ -205,7 +205,7 @@ fn split_and_sort(ctx: &crate::Context, grid: &Grid) -> Result<usize, MatcherErr
     let mut buffer: Vec<csv::ByteRecord> = Vec::with_capacity(batch_size);
 
     for result in reader.byte_records() {
-        let record = result.expect(&format!("Unable to read record from {}", unsorted_path.to_canoncial_string()));
+        let record = result.unwrap_or_else(|_| panic!("Unable to read record from {}", unsorted_path.to_canoncial_string()));
         buffer.push(record);
 
         if buffer.len() == batch_size {
@@ -218,7 +218,7 @@ fn split_and_sort(ctx: &crate::Context, grid: &Grid) -> Result<usize, MatcherErr
 
             // Write the sorted data to a new split file.
             let mut writer = sorted_writer(ctx, file_count);
-            buffer.iter().for_each(|record| writer.write_byte_record(&record).expect("unable to write sorted index"));
+            buffer.iter().for_each(|record| writer.write_byte_record(record).expect("unable to write sorted index"));
 
             // Clear the buffer.
             buffer.clear();
@@ -235,7 +235,7 @@ fn split_and_sort(ctx: &crate::Context, grid: &Grid) -> Result<usize, MatcherErr
 
         // Write the sorted data to a new split file.
         let mut writer = sorted_writer(ctx, file_count);
-        buffer.iter().for_each(|record| writer.write_byte_record(&record).expect("unable to write sorted index"));
+        buffer.iter().for_each(|record| writer.write_byte_record(record).expect("unable to write sorted index"));
     }
 
     Ok(file_count)
@@ -277,7 +277,7 @@ fn merge_sort(mut inputs: Vec<csv::Reader<File>>, mut output: csv::Writer<File>)
 
         // Write the next record/index to the output file.
         output.write_byte_record(registers[idx].as_ref()
-            .expect(&format!("no ref for sort register {}", idx)))
+            .unwrap_or_else(|| panic!("no ref for sort register {}", idx)))
             .expect("unable to write final sorted index");
 
         // Increment the register we just sorted.
@@ -294,7 +294,7 @@ fn kway_sort(registers: &[Option<csv::ByteRecord>]) -> usize {
     let mut result = 0;
     let mut current = None;
 
-    for idx in 0..registers.len() {
+    for (idx, _) in registers.iter().enumerate() {
         match &registers[idx] {
             Some(record) => {
                 match current {
@@ -343,9 +343,9 @@ fn eval_contraints(
             let group = group?;
             group_count += 1;
 
-            let records: Vec<&Record> = group.iter().map(|r|r).collect();
+            let records: Vec<&Record> = group.iter().collect();
 
-            if is_match(&records, constraints, grid.schema(), &lua_ctx, &lua_time)? {
+            if is_match(&records, constraints, grid.schema(), &lua_ctx, lua_time)? {
                 matched.append_group(&records)?;
                 match_count += 1;
 

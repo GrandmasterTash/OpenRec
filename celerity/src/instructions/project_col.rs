@@ -21,12 +21,12 @@ pub fn project_column(
         // Now calculate the column value and append it to the underlying ByteRecord.
         match data_type {
             DataType::Unknown  => {},
-            DataType::Boolean  => record.append_bool(lua::eval(lua_ctx, &lua)?),
-            DataType::Datetime => record.append_datetime(lua::eval(lua_ctx, &lua)?),
-            DataType::Decimal  => record.append_decimal(lua::eval::<lua::LuaDecimal>(lua_ctx, &lua)?.0),
-            DataType::Integer  => record.append_int(lua::eval(lua_ctx, &lua)?),
-            DataType::String   => record.append_string(&lua::eval::<String>(lua_ctx, &lua)?),
-            DataType::Uuid     => record.append_uuid(lua::eval::<String>(lua_ctx, &lua).map(|s|s.parse().expect("Lua returned an invalid uuid"))?),
+            DataType::Boolean  => record.append_bool(lua::eval(lua_ctx, lua)?),
+            DataType::Datetime => record.append_datetime(lua::eval(lua_ctx, lua)?),
+            DataType::Decimal  => record.append_decimal(lua::eval::<lua::LuaDecimal>(lua_ctx, lua)?.0),
+            DataType::Integer  => record.append_int(lua::eval(lua_ctx, lua)?),
+            DataType::String   => record.append_string(&lua::eval::<String>(lua_ctx, lua)?),
+            DataType::Uuid     => record.append_uuid(lua::eval::<String>(lua_ctx, lua).map(|s|s.parse().expect("Lua returned an invalid uuid"))?),
         };
     } else {
         // Put a blank value in the projected column if we're not evaluating it.

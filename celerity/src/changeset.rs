@@ -31,7 +31,6 @@ use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialStr
                               20210109_inv.unmatched.csv                                           20210109_matched.json   20210109_inv.csv
                               20210110_inv.unmatched.csv                                           20210111_matched.json   20210110_inv.csv
                                                                                                    20210111_changeset.json 20210110_inv.csv.pre_modified 
-                                                                                                   TODO: This is no longer accurate.
 
     Whilst changesets are being applied, new data files are written into the matching folder with the .modifying extension. These files
     contain the original data with any changeset modifications applied. Note: If a record is ignored by a changeset, it is absent from the
@@ -162,7 +161,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
                         Change::IgnoreRecords { lua_filter }            => lua_filter,
                     };
 
-                    if record_effected(&record, &lua_filter, &lua_ctx, &schema)? {
+                    if record_effected(&record, lua_filter, &lua_ctx, &schema)? {
                         match changeset.change() {
                             Change::UpdateFields { updates, .. } => {
                                 // Modify the record in a buffer.
@@ -187,7 +186,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
                 if !deleted {
                     let csv = record.flush();
                     let writer = &mut writers[record.file_idx()];
-                    writer.write_byte_record(&csv).map_err(|err| MatcherError::CSVError(err))?;
+                    writer.write_byte_record(&csv).map_err(MatcherError::CSVError)?;
                 }
             }
             Ok(())
@@ -271,7 +270,7 @@ fn record_effected(
     lua_ctx: &rlua::Context,
     schema: &GridSchema) -> Result<bool, MatcherError> {
 
-    let effected = !lua::lua_filter(&vec!(record), &lua_filter, lua_ctx, schema)?.is_empty();
+    let effected = !lua::lua_filter(&[record], &lua_filter, lua_ctx, schema)?.is_empty();
 
     log::trace!("record_effected: {} : {:?} : {}", lua_filter, record.as_strings(), effected);
 

@@ -83,23 +83,19 @@ pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), MatcherError> {
 ///
 pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
     // Move files from the unmatched folder to the matching folder.
-    for entry in unmatched(ctx).read_dir()? {
-        if let Ok(entry) = entry {
-            if is_unmatched_data_file(&entry.path()) {
-                let dest = matching(ctx).join(entry.file_name());
-                rename(entry.path(), dest)?
-            }
+    for entry in (unmatched(ctx).read_dir()?).flatten() { // Result is an iterator, so flatten if only interested in Ok values.
+        if is_unmatched_data_file(&entry.path()) {
+            let dest = matching(ctx).join(entry.file_name());
+            rename(entry.path(), dest)?
         }
     }
 
     // Move waiting files to the matching folder.
-    for entry in waiting(ctx).read_dir()? {
-        if let Ok(entry) = entry {
-            let pb = entry.path();
-            if is_data_file(&pb) || is_changeset_file(&pb) {
-                let dest = matching(ctx).join(entry.file_name());
-                rename(entry.path(), dest)?
-            }
+    for entry in (waiting(ctx).read_dir()?).flatten() {
+        let pb = entry.path();
+        if is_data_file(&pb) || is_changeset_file(&pb) {
+            let dest = matching(ctx).join(entry.file_name());
+            rename(entry.path(), dest)?
         }
     }
 
@@ -110,27 +106,23 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
 /// Move any matching files to the archive folder, remove derived data and old unmatched data.
 ///
 pub fn progress_to_archive(ctx: &Context, mut grid: Grid) -> Result<(), MatcherError> {
-    for entry in matching(ctx).read_dir()? {
-        if let Ok(entry) = entry {
-            let pb = entry.path();
+    for entry in (matching(ctx).read_dir()?).flatten() {
+        let pb = entry.path();
 
-            if is_unmatched_data_file(&pb) {
-                // Delete .unmatched files don't move them to archive. At the end of a match job,
-                // their still-unmatched contents will have been written to a new unmatched file in
-                // the unmatched folder.
-                remove_file(entry.path())?;
+        if is_unmatched_data_file(&pb) || is_derived_file(&pb) {
+            // Delete .unmatched files don't move them to archive. At the end of a match job,
+            // their still-unmatched contents will have been written to a new unmatched file in
+            // the unmatched folder.
+            //   also
+            // Delete .derived files don't move them to archive.
+            remove_file(entry.path())?;
 
-            } else if is_derived_file(&pb) {
-                // Delete .derived files don't move them to archive.
-                remove_file(entry.path())?;
+        } else if is_data_file(&pb) {
+            // If the data file is in the grid, get a mut and archive it.
+            if let Some(data_file) = grid.schema_mut().files_mut()
+                .find(|df| df.path().to_canoncial_string() == entry.path().to_canoncial_string()) {
 
-            } else if is_data_file(&pb) {
-                // If the data file is in the grid, get a mut and archive it.
-                if let Some(data_file) = grid.schema_mut().files_mut()
-                    .find(|df| df.path().to_canoncial_string() == entry.path().to_canoncial_string()) {
-
-                    archive_data_file(ctx, data_file)?;
-                }
+                archive_data_file(ctx, data_file)?;
             }
         }
     }
@@ -175,17 +167,15 @@ pub fn archive_data_file(ctx: &Context, file: &mut DataFile) -> Result<(), Match
 pub fn files_in_matching(ctx: &Context, file_pattern: &str) -> Result<Vec<DirEntry>, MatcherError> {
     let wildcard = Regex::new(file_pattern).map_err(|source| MatcherError::InvalidSourceFileRegEx { source })?;
     let mut files = vec!();
-    for entry in matching(ctx).read_dir()? {
-        if let Ok(entry) = entry {
-            let pb = entry.path();
-            if (is_data_file(&pb) || is_changeset_file(&pb)) && wildcard.is_match(&entry.file_name().to_string_lossy()) {
-                files.push(entry);
-            }
+    for entry in (matching(ctx).read_dir()?).flatten() {
+        let pb = entry.path();
+        if (is_data_file(&pb) || is_changeset_file(&pb)) && wildcard.is_match(&entry.file_name().to_string_lossy()) {
+            files.push(entry);
         }
     }
 
     // Ensure files are processed by sorted filename - i.e. chronologically.
-    files.sort_by(|a,b| a.file_name().cmp(&b.file_name()));
+    files.sort_by_key(|a| a.file_name());
 
     Ok(files)
 }
@@ -203,27 +193,23 @@ pub fn changesets_in_matching(ctx: &Context) -> Result<Vec<DirEntry>, MatcherErr
 pub fn rollback_any_incomplete(ctx: &Context) -> Result<(), MatcherError> {
 
     for folder in vec!(matched(ctx), unmatched(ctx)) {
-        for entry in folder.read_dir()? {
-            if let Ok(entry) = entry {
-                if entry.file_name().to_string_lossy().ends_with(IN_PROGRESS) {
-                    log::warn!("Rolling back file {}", entry.path().to_canoncial_string());
-                    fs::remove_file(entry.path())?;
-                }
+        for entry in (folder.read_dir()?).flatten() {
+            if entry.file_name().to_string_lossy().ends_with(IN_PROGRESS) {
+                log::warn!("Rolling back file {}", entry.path().to_canoncial_string());
+                fs::remove_file(entry.path())?;
             }
         }
     }
 
     for folder in vec!(matching(ctx)) {
-        for entry in folder.read_dir()? {
-            if let Ok(entry) = entry {
-                let filename = entry.file_name().to_string_lossy().to_string();
+        for entry in (folder.read_dir()?).flatten() {
+            let filename = entry.file_name().to_string_lossy().to_string();
 
-                if filename.ends_with(MODIFYING)
-                    || filename.ends_with(DERIVED)
-                    || filename.starts_with("index.") {
-                    log::warn!("Rolling back file {}", entry.path().to_canoncial_string());
-                    fs::remove_file(entry.path())?;
-                }
+            if filename.ends_with(MODIFYING)
+                || filename.ends_with(DERIVED)
+                || filename.starts_with("index.") {
+                log::warn!("Rolling back file {}", entry.path().to_canoncial_string());
+                fs::remove_file(entry.path())?;
             }
         }
     }
@@ -313,7 +299,7 @@ pub fn unsorted_index(ctx: &Context) -> PathBuf {
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_data_file(path: &PathBuf) -> bool {
+fn is_data_file(path: &Path) -> bool {
     path.is_file() && FILENAME_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
@@ -323,7 +309,7 @@ fn is_data_file(path: &PathBuf) -> bool {
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_unmatched_data_file(path: &PathBuf) -> bool {
+fn is_unmatched_data_file(path: &Path) -> bool {
     path.is_file() && UNMATCHED_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
@@ -333,7 +319,7 @@ fn is_unmatched_data_file(path: &PathBuf) -> bool {
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_derived_file(path: &PathBuf) -> bool {
+fn is_derived_file(path: &Path) -> bool {
     path.is_file() && DERIVED_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
@@ -342,7 +328,7 @@ fn is_derived_file(path: &PathBuf) -> bool {
 ///
 /// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
-fn is_changeset_file(path: &PathBuf) -> bool {
+fn is_changeset_file(path: &Path) -> bool {
     path.is_file() && CHANGESET_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 

@@ -1,6 +1,6 @@
 use serde::Deserialize;
-use std::{io::BufReader, path::PathBuf};
 use rust_decimal::Decimal;
+use std::{io::BufReader, path::Path};
 use crate::{data_type::DataType, error::Error};
 
 #[derive(Debug, Deserialize)]
@@ -116,11 +116,11 @@ impl MatchingSourceFile {
 impl ColumnMapping {
     pub fn column(&self) -> &str {
         match self {
-            ColumnMapping::Map { column, .. } => &column,
-            ColumnMapping::Dmy( column )     => &column,
-            ColumnMapping::Mdy( column )     => &column,
-            ColumnMapping::Ymd( column )     => &column,
-            ColumnMapping::Trim( column )     => &column,
+            ColumnMapping::Map { column, .. } => column,
+            ColumnMapping::Dmy( column )      => column,
+            ColumnMapping::Mdy( column )      => column,
+            ColumnMapping::Ymd( column )      => column,
+            ColumnMapping::Trim( column )     => column,
         }
     }
 }
@@ -164,7 +164,7 @@ impl Charter {
 
     pub fn instructions(&self) -> &[Instruction] {
         match &self.matching.instructions {
-            Some(instructions) => &instructions,
+            Some(instructions) => instructions,
             None => &[],
         }
     }
@@ -173,7 +173,7 @@ impl Charter {
         &self.jetwash
     }
 
-    pub fn load(path: &PathBuf) -> Result<Self, Error> {
+    pub fn load(path: &Path) -> Result<Self, Error> {
         let rdr = BufReader::new(std::fs::File::open(&path)
             .map_err(|source| Error::CharterFileNotFound { path: path.to_string_lossy().into(), source })?);
 
@@ -183,10 +183,8 @@ impl Charter {
 
         // If field_aliases are defined, there should be one for every file_pattern.
         let count_aliases = charter.source_files().iter().filter(|df| df.field_prefix.is_some() ).count();
-        if count_aliases > 0 {
-            if count_aliases != charter.source_files().len() {
-                return Err(Error::CharterValidationError { reason: "If field_aliases are defined, there must be one for each defined file_pattern".into() })
-            }
+        if count_aliases > 0 && count_aliases != charter.source_files().len() {
+            return Err(Error::CharterValidationError { reason: "If field_aliases are defined, there must be one for each defined file_pattern".into() })
         }
 
         Ok(charter)

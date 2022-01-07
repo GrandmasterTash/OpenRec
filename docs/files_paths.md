@@ -7,6 +7,8 @@ TODO:
 
 ## Celerity
 
+TODO: Feel this would look better as an image with arrows....
+
 Let's show an example of a file being processed by Celerity and how files are created and moved/removed during the internal phases of a match job.
 
 ***Note*** In all the examples below the milliseconds have been removed from the timestamps in the filenames, simply for brevity. In reality, each filename would have 3 more digits in the timestamp representing the milliseconds.

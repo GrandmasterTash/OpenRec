@@ -28,7 +28,7 @@ pub struct FileSchema {
 /// The grid schema is built from sourced data files and projected columns. It can be used to get or set fields
 /// on records in the grid.
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct GridSchema {
     // Cached column details. The position map is used to get to the correct grid column from a header for a
     // specific record - as records may have different underlying FileSchemas.
@@ -89,19 +89,6 @@ impl Column {
 impl FileSchema {
     pub fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
-    }
-}
-
-impl Default for GridSchema {
-    fn default() -> Self {
-        Self {
-            headers: Vec::new(),
-            col_map: HashMap::new(),
-            position_map: HashMap::new(),
-            files: Vec::new(),
-            file_schemas: Vec::new(),
-            derived_cols: Vec::new(),
-        }
     }
 }
 
@@ -227,7 +214,7 @@ impl GridSchema {
                     .for_each(|(fs_idx, _fsc)| {
                         position_map
                             .get_mut(&fs_idx)
-                            .expect(&format!("file {} missing from position map", fs_idx))
+                            .unwrap_or_else(|| panic!("file {} missing from position map", fs_idx))
                             .insert(col.header.clone(), -((c_idx + 1) as isize)); // Derived columns start at -1
                     });
             });
@@ -245,7 +232,7 @@ impl GridSchema {
                         col_map.insert(col.header.clone(), col.clone());
                          position_map
                             .get_mut(&fs_idx)
-                            .expect(&format!("file {} missing from position map", fs_idx))
+                            .unwrap_or_else(|| panic!("file {} missing from position map", fs_idx))
                             .insert(col.header.clone(), c_idx as isize);
                     } );
             } );

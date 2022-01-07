@@ -30,11 +30,11 @@ impl Record {
     }
 
     pub fn data_position(&self) -> &csv::Position {
-        &self.data.position().expect("no data position")
+        self.data.position().expect("no data position")
     }
 
     pub fn derived_position(&self) -> &csv::Position {
-        &self.derived.position().expect("no derived position")
+        self.derived.position().expect("no derived position")
     }
 
     pub fn file_idx(&self) -> usize {

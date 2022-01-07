@@ -184,13 +184,13 @@ fn init_job<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<Context, MatcherE
 /// Prepare the working folders before loading data.
 ///
 fn init_folders(ctx: &Context) -> Result<(), MatcherError> {
-    folders::ensure_dirs_exist(&ctx)?;
+    folders::ensure_dirs_exist(ctx)?;
 
     // On start-up, any matching files should log warning and be moved to waiting.
-    folders::rollback_any_incomplete(&ctx)?;
+    folders::rollback_any_incomplete(ctx)?;
 
     // Move any waiting files to the matching folder.
-    folders::progress_to_matching(&ctx)?;
+    folders::progress_to_matching(ctx)?;
 
     Ok(())
 }
@@ -395,7 +395,7 @@ fn derive_file(
             }
 
             // Flush the current record's buffer to the appropriate derived file.
-            writer.write_byte_record(&record.flush()).map_err(|err| MatcherError::CSVError(err))?;
+            writer.write_byte_record(&record.flush()).map_err(MatcherError::CSVError)?;
         }
 
         Ok(metrics)
@@ -412,10 +412,10 @@ fn derive_file(
 /// Set the initial or increment the existing duration for the specified charter instruction.
 ///
 fn record_duration(instruction: usize, metrics: &mut HashMap<usize, Duration>, elapsed: Duration) {
-    if !metrics.contains_key(&instruction) {
-        metrics.insert(instruction, Duration::ZERO);
-    }
+    // Ensure there's an entry.
+    metrics.entry(instruction).or_insert(Duration::ZERO);
 
+    // Now add the ellapsed to it.
     metrics.insert(instruction, elapsed + *metrics.get(&instruction).expect("Instruction metric missing"));
 }
 
@@ -435,20 +435,17 @@ fn match_and_group(ctx: &Context, grid: &mut Grid) -> Result<(MatchedHandler, Un
     grid.debug_grid(ctx, 0);
 
     for (idx, inst) in ctx.charter().instructions().iter().enumerate() {
-        match inst {
-            Instruction::Group { by, match_when } => {
-                matching::match_groups(
-                    ctx,
-                    by,
-                    match_when,
-                    grid,
-                    &mut matched)?;
+        if let Instruction::Group { by, match_when } = inst {
+            matching::match_groups(
+                ctx,
+                by,
+                match_when,
+                grid,
+                &mut matched)?;
 
-                // Debug the grid after each group instruction.
-                grid.debug_grid(ctx, idx);
-            },
-            _ => {},
-        };
+            // Debug the grid after each group instruction.
+            grid.debug_grid(ctx, idx);
+        }
     }
 
     Ok((matched, unmatched))
@@ -476,7 +473,7 @@ fn complete_and_archive(
     grid.debug_grid(ctx, 1);
 
     // Move matching files to the archive.
-    folders::progress_to_archive(&ctx, grid)?;
+    folders::progress_to_archive(ctx, grid)?;
 
     // Log a warning for any file left in matching at the end of a job.
     let left_overs = folders::matching(ctx).read_dir()?

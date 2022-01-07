@@ -25,7 +25,7 @@ pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>) -> Res
 
     // Create a date_only() function to remove the time portion of a datetime value.
     let date_only = lua_ctx.create_function(|_, value: String| {
-        let ts = value.parse::<i64>().expect(&format!("date_only called with a non-numeric: {}", value));
+        let ts = value.parse::<i64>().unwrap_or_else(|_| panic!("date_only called with a non-numeric: {}", value));
         let dt = Utc.timestamp(ts / 1000, 0).date();
         Ok(dt.and_hms_milli(0,0,0,0).timestamp_millis())
     })?;
@@ -34,7 +34,7 @@ pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>) -> Res
 
     // Run any global scripts.
     if let Some(global_lua) = global_lua {
-        eval(lua_ctx, &global_lua)?;
+        eval(lua_ctx, global_lua)?;
     }
 
     Ok(())
@@ -241,7 +241,7 @@ pub fn lua_record<'a>(
 ///
 /// Create some contextural information regarding the file that loaded a record.
 ///
-fn append_meta<'a>(record: &Record, lua_record: &Table)
+fn append_meta(record: &Record, lua_record: &Table)
     -> Result<(), MatcherError> {
 
     let schema = record.schema();
@@ -282,7 +282,7 @@ pub fn lua_filter<'a, 'b>(
         // let lua_meta = lua_meta(record, accessor.schema(), lua_ctx)?;
         // globals.set("meta", lua_meta)?;
 
-        if eval(lua_ctx, &lua_script)? {
+        if eval(lua_ctx, lua_script)? {
             results.push(*record);
         }
     }

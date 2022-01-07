@@ -14,7 +14,7 @@ pub fn passes(
             match schema.data_type(column).unwrap_or(&DataType::Unknown) {
                 DataType::Decimal => net_to_zero(column, lhs, rhs, records, schema, lua_ctx),
                 DataType::Integer => net_to_zero(column, lhs, rhs, records, schema, lua_ctx),
-                col_type @ _ => return Err(MatcherError::CannotUseTypeForContstraint{ column: column.into(), col_type: format!("{:?}", col_type)})
+                col_type => return Err(MatcherError::CannotUseTypeForContstraint{ column: column.into(), col_type: format!("{:?}", col_type)})
             }
         },
 
@@ -22,7 +22,7 @@ pub fn passes(
             match schema.data_type(column).unwrap_or(&DataType::Unknown) {
                 DataType::Decimal => nets_with_tolerance(column, lhs, rhs, tol_type, *tolerance, records, schema, lua_ctx),
                 DataType::Integer => nets_with_tolerance(column, lhs, rhs, tol_type, *tolerance, records, schema, lua_ctx),
-                col_type @ _ => return Err(MatcherError::CannotUseTypeForContstraint{ column: column.into(), col_type: format!("{:?}", col_type)})
+                col_type => return Err(MatcherError::CannotUseTypeForContstraint{ column: column.into(), col_type: format!("{:?}", col_type)})
             }
         },
 
@@ -40,7 +40,7 @@ pub fn passes(
 /// of the invoices.
 ///
 fn net_decimal<F>(
-    column: &String,
+    column: &str,
     lhs: &str,
     rhs: &str,
     sum_checker: F,
@@ -51,7 +51,7 @@ fn net_decimal<F>(
     where F: Fn(Decimal, Decimal) -> bool, {
 
     // Validate NET column exists and is a DECIMAL (we can relax the type resiction if needed).
-    if !schema.headers().contains(column) {
+    if !schema.headers().contains(&column.to_string()) {
         return Err(MatcherError::ConstraintColumnMissing{ column: column.into() })
     }
 
@@ -104,13 +104,13 @@ fn custom_constraint(
     }
 
     globals.set("records", lua_records)?;
-    lua::eval(lua_ctx, &script)
+    lua::eval(lua_ctx, script)
         .map_err(|source| MatcherError::CustomConstraintError { reason: "Unknown".into(), source })
 }
 
 
 fn net_to_zero(
-    column: &String,
+    column: &str,
     lhs: &str,
     rhs: &str,
     records: &[&Record],
@@ -128,7 +128,7 @@ fn net_to_zero(
 
 
 fn nets_with_tolerance(
-    column: &String,
+    column: &str,
     lhs: &str,
     rhs: &str,
     tol_type: &ToleranceType,
