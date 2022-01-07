@@ -5,6 +5,8 @@ use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instan
 use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, utils::{self, csv::{CsvWriters, CsvWriter}}};
 
 /*
+    TODO: Put this in a readme.
+    
     Changeset files are instructions to modified unmatched or yet-to-be-matched data.
     The following shows how the flow of files through thr folder 'pipe-line' functions when a changeset is involved.
     Note: Only the date portion of the filename timestamp is shown for brevity.

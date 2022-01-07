@@ -5,43 +5,10 @@ use anyhow::Context as ErrContext;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
 use crate::{model::{datafile::DataFile, grid::Grid}, error::{MatcherError, here}, Context};
 
-/*
-    Files are processed alphabetically - hence the human-readable timestamp prefix - to ensure consistent ordering.
-    Note: There are some additional files involved with changesets. These are documented in the changeset module.
+///
+/// This module provides file and folder util methods.
+///
 
-    $REC_HOME/waiting
-    20200103_030405000_INV.csv.incomplete <<< External component is writing or moving the file here.
-    20200102_030405000_INV.csv            <<< This file is waiting to be matched.
-
-    $REC_HOME/matching
-    20191210_020405000_INV.csv            <<< These files are being matched. Any files present here at start-up are re-processed.
-    20191212_020405000_REC.csv            <<<
-    20191214_020405000_PAY.csv            <<<
-    20191209_020405000_INV.unmatched.csv  <<< Files in /unmatched are moved here at the start of a job. At the end of a job
-                                          <<< .unmatched.csv files in this folder are deleted (their data will have been
-                                          <<< written to a /matched json file or a new /unmatched file).
-
-    $REC_HOME/unmatched
-    20191210_020405000_INV.unmatched.csv.inprogress <<< This file is part of the in-progress match job and contains records which failed to match.
-    20191212_020405000_REC.unmatched.csv.inprogress <<< These files only contain a subset of records from the original file(s).
-    20191214_020405000_PAY.unmatched.csv.inprogress <<< After a match job has completed, the .inprogress is removed.
-                                                    <<< Any .inprogress here at start-up under-go a rollback procedure.
-                                                    <<< These file are moved to matching at the start of a job.
-
-    $REC_HOME/matched
-    20200201_093000000_JOB.json           <<< Match groups indexes generated from a match job.
-                                          <<< Fields along these lines: GroupId, LogFile, Row, CharterId, CharterVersion
-    20200202_093000000_JOB.json.inprogress
-
-    $REC_HOME/archive/celerity
-    20181209_020405000_INV.csv            <<< These files are the original files recieved without being modified in anyway.
-    20181209_020405000_REC.csv            <<< i.e. files from MATCHING are moved to here when done.
-    20181209_020405000_PAY.csv            <<< data from them is sifted into MATCHED/UNMATCHED files as well but the original
-                                          <<< file is always preserved.
-
-*/
-
-// The root folder under which all data files are processed. In future this may become a mandatory command-line arg.
 pub const IN_PROGRESS: &str = ".inprogress";
 pub const UNMATCHED: &str = ".unmatched.csv";
 pub const DERIVED: &str = "derived.csv";

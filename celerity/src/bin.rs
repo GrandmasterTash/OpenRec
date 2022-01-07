@@ -3,15 +3,15 @@ use clap::{App, Arg};
 
 pub fn main() -> Result<()> {
 
-    let options = App::new("matcher")
+    let options = App::new("celerity")
         .version("1.0")
-        .about("TODO: Some info here") // TODO: Cmdline help
-        .arg(Arg::with_name("CHARTER")
-            .help("The charter yaml file")
+        .about("Celerity is a reconciliation engine used to group and match data from CSV files. Leaving only unmatched data behind. Data must be in the correct format and placed in the waiting folder. Results are written to the matched and unmatched folders. Incoming files are recorded in the archive/celerity folder. Refer to the README.md for more details.")
+        .arg(Arg::with_name("charter_path")
+            .help("The full path to the charter yaml file containing the instructions for matching")
             .required(true)
             .takes_value(true))
-        .arg(Arg::with_name("BASE_DIR")
-            .help("The base directory where data files will be processed")
+        .arg(Arg::with_name("control_dir")
+            .help("The base directory where data files will be processed. This should be distinct from any other control's directory")
             .required(true)
             .takes_value(true))
         .get_matches();
@@ -22,8 +22,8 @@ pub fn main() -> Result<()> {
     log::info!("{}", BANNER);
 
     celerity::run_charter(
-        options.value_of("CHARTER").expect("no charter specified"),
-        options.value_of("BASE_DIR").expect("no base dir specififed").into())?;
+        options.value_of("charter_path").expect("no charter specified"),
+        options.value_of("control_dir").expect("no base dir specififed").into())?;
 
     Ok(())
 }
