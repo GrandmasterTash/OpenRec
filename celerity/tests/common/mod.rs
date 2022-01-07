@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use serde_json::Value;
 use assert_json_diff::assert_json_eq;
 use std::{path::{PathBuf, Path}, fs::File, io::BufReader};
@@ -158,7 +159,7 @@ pub fn assert_matched_ok(data_files: &Vec<PathBuf>, base_dir: &PathBuf) -> PathB
 
     // Check the data files have been archived
     for source in data_files {
-        let archive = Path::new(base_dir).join("archive").join(source.file_name().unwrap());
+        let archive = Path::new(base_dir).join("archive/celerity").join(source.file_name().unwrap());
         assert!(archive.exists(), "archived file {} doesn't exist", archive.to_string_lossy());
     }
 
@@ -182,7 +183,7 @@ pub fn assert_unmatched_ok(data_files: &Vec<PathBuf>, base_dir: &PathBuf, expect
 
     // Check the data files have been archived, and for each one, ensure it's not been modified.
     for source in data_files {
-        let archive = Path::new(base_dir).join("archive").join(source.file_name().unwrap());
+        let archive = Path::new(base_dir).join("archive/celerity").join(source.file_name().unwrap());
         assert!(archive.exists(), "archived file {} doesn't exist", archive.to_string_lossy());
     }
 
@@ -243,5 +244,6 @@ pub fn get_filenames(path: &PathBuf) -> Vec<String> {
         .files
         .iter()
         .map(|f| PathBuf::from(f).file_name().unwrap().to_string_lossy().to_string())
+        .sorted()
         .collect()
 }

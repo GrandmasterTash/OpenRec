@@ -11,7 +11,7 @@ fn test_no_data_files() {
     let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&vec!(), &base_dir);
@@ -57,7 +57,7 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
 "#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the output files.
     let matched = common::assert_matched_ok(&vec!(), &base_dir);
@@ -106,7 +106,7 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
     let charter = common::example_charter("02-Projected-Columns.yaml");
 
     // Run the charter without any payment files.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check we have unmatch invoices.
     let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 1);
@@ -164,7 +164,7 @@ matching:
 "#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the output files.
     let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 1);
@@ -246,7 +246,7 @@ matching:
 "#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the output files.
     let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 2);
@@ -320,7 +320,7 @@ matching:
 "#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
     assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
@@ -330,7 +330,7 @@ matching:
     // Create another file with the same name.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv", file_content);
 
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
     assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1); // 2 in real life, but the fixed TS means only one.
@@ -350,7 +350,7 @@ matching:
                 },
                 "job_id": FIXED_JOB_ID,
                 "files": [
-                    "20211219_082900000_transactions.csv_01"
+                    "20211219_082900000_transactions.csv"
                 ]
             },
             {
@@ -366,7 +366,7 @@ matching:
     // Create ANOTHER file with the same name.
     common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv", file_content);
 
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
     assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1); // 3 in real life, but the fixed TS means only one.
@@ -387,7 +387,7 @@ matching:
                 },
                 "job_id": FIXED_JOB_ID,
                 "files": [
-                    "20211219_082900000_transactions.csv_02"
+                    "20211219_082900000_transactions.csv"
                 ]
             },
             {

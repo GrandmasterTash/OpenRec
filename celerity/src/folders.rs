@@ -33,7 +33,7 @@ use crate::{model::{datafile::DataFile, grid::Grid}, error::{MatcherError, here}
                                           <<< Fields along these lines: GroupId, LogFile, Row, CharterId, CharterVersion
     20200202_093000000_JOB.json.inprogress
 
-    $REC_HOME/archive
+    $REC_HOME/archive/celerity
     20181209_020405000_INV.csv            <<< These files are the original files recieved without being modified in anyway.
     20181209_020405000_REC.csv            <<< i.e. files from MATCHING are moved to here when done.
     20181209_020405000_PAY.csv            <<< data from them is sifted into MATCHED/UNMATCHED files as well but the original
@@ -142,7 +142,7 @@ pub fn progress_to_matching(ctx: &Context) -> Result<(), MatcherError> {
 ///
 /// Move any matching files to the archive folder, remove derived data and old unmatched data.
 ///
-pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError> {
+pub fn progress_to_archive(ctx: &Context, mut grid: Grid) -> Result<(), MatcherError> {
     for entry in matching(ctx).read_dir()? {
         if let Ok(entry) = entry {
             let pb = entry.path();
@@ -157,21 +157,13 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
                 // Delete .derived files don't move them to archive.
                 remove_file(entry.path())?;
 
-            } else if is_data_file(&pb) && was_processed(&entry, &grid) {
-// TODO: This logic needs to happen in the DF itself. and this fn just uses the archive_path - failing if exists.
-// TODO: Then the match job should record the archive filename not the source one. This is because source may not == archive.
+            } else if is_data_file(&pb) {
+                // If the data file is in the grid, get a mut and archive it.
+                if let Some(data_file) = grid.schema_mut().files_mut()
+                    .find(|df| df.path().to_canoncial_string() == entry.path().to_canoncial_string()) {
 
-                // Ensure we don't blat existing archived files. This can happen if a changeset has been
-                // applied to a file. There will be a non-modified version of it already present.
-                let mut counter = 0;
-                let mut dest = archive(ctx).join(entry.file_name());
-
-                while dest.exists() {
-                    counter += 1;
-                    dest = archive(ctx).join(format!("{}_{:02}", entry.file_name().to_string_lossy(), counter));
+                    archive_data_file(ctx, data_file)?;
                 }
-
-                rename(entry.path(), dest)?;
             }
         }
     }
@@ -179,32 +171,35 @@ pub fn progress_to_archive(ctx: &Context, grid: Grid) -> Result<(), MatcherError
     Ok(())
 }
 
+
 ///
-/// Move the specified file to the matched folder immediately.
+/// Move the specified file to the archive folder immediately.
 ///
-pub fn progress_to_matched_now(ctx: &Context, entry: &DirEntry) -> Result<(), MatcherError> {
-    let dest = matched(ctx).join(entry.file_name());
+pub fn progress_to_archive_now(ctx: &Context, entry: &DirEntry) -> Result<(), MatcherError> {
+    let dest = archive(ctx).join(entry.file_name());
     rename(entry.path(), dest)
 }
 
-///
-/// Move the specified file to archive.
-///
-pub fn archive_immediately<P: AsRef<Path>>(ctx: &Context, path: P) -> Result<(), MatcherError> {
 
-    let p = path.as_ref();
+///
+/// Archive the data file ensuring it's archive filename is unique and recorded.
+///
+pub fn archive_data_file(ctx: &Context, file: &mut DataFile) -> Result<(), MatcherError> {
 
-    if !p.is_file() {
-        panic!("{} is not a file", p.to_canoncial_string());
+    if file.archived_filename().is_none() {
+        let mut counter = 0;
+        let mut dest = archive(ctx).join(file.filename());
+
+        while dest.exists() {
+            counter += 1;
+            dest = archive(ctx).join(format!("{}_{:02}", file.filename(), counter));
+        }
+
+        rename(file.path(), &dest)?;
+        file.set_archived_filename(dest.file_name().expect("no archive filename").to_string_lossy().into());
     }
 
-    let filename = match p.file_name() {
-        Some(filename) => filename,
-        None => panic!("{} is not a file/has no filename", p.to_canoncial_string()),
-    };
-
-    let dest = archive(ctx).join(filename);
-    rename(p, &dest)
+    Ok(())
 }
 
 ///
@@ -239,8 +234,7 @@ pub fn changesets_in_matching(ctx: &Context) -> Result<Vec<DirEntry>, MatcherErr
 /// Any .inprogress files should be deleted.
 ///
 pub fn rollback_any_incomplete(ctx: &Context) -> Result<(), MatcherError> {
-    // TODO: Any index.* files.
-    
+
     for folder in vec!(matched(ctx), unmatched(ctx)) {
         for entry in folder.read_dir()? {
             if let Ok(entry) = entry {
@@ -255,8 +249,11 @@ pub fn rollback_any_incomplete(ctx: &Context) -> Result<(), MatcherError> {
     for folder in vec!(matching(ctx)) {
         for entry in folder.read_dir()? {
             if let Ok(entry) = entry {
-                if entry.file_name().to_string_lossy().ends_with(MODIFYING)
-                    || entry.file_name().to_string_lossy().ends_with(DERIVED) {
+                let filename = entry.file_name().to_string_lossy().to_string();
+
+                if filename.ends_with(MODIFYING)
+                    || filename.ends_with(DERIVED)
+                    || filename.starts_with("index.") {
                     log::warn!("Rolling back file {}", entry.path().to_canoncial_string());
                     fs::remove_file(entry.path())?;
                 }
@@ -305,7 +302,7 @@ pub fn unmatched(ctx: &Context) -> PathBuf {
 }
 
 pub fn archive(ctx: &Context) -> PathBuf {
-    Path::new(ctx.base_dir()).join("archive/")
+    Path::new(ctx.base_dir()).join("archive/celerity")
 }
 
 pub fn debug_path(ctx: &Context) -> PathBuf {
@@ -380,16 +377,6 @@ fn is_derived_file(path: &PathBuf) -> bool {
 ///
 fn is_changeset_file(path: &PathBuf) -> bool {
     path.is_file() && CHANGESET_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
-}
-
-///
-/// True if the file is a data-file in the grid (and has therefore been 'sourced').
-///
-fn was_processed(entry: &DirEntry, grid: &Grid) -> bool {
-    grid.schema()
-        .files()
-        .iter()
-        .any(|df| df.path().to_canoncial_string() == entry.path().to_canoncial_string())
 }
 
 ///

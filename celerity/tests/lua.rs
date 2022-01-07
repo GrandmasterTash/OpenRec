@@ -48,7 +48,7 @@ matching:
 "#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
     assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
@@ -93,7 +93,7 @@ matching:
 "#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
     assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);

@@ -7,6 +7,7 @@ mod matching;
 mod changeset;
 mod instructions;
 
+use folders::ToCanoncialString;
 use utils::csv::CsvWriters;
 use uuid::Uuid;
 use anyhow::Result;
@@ -20,7 +21,6 @@ use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{Pa
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
 // TODO: Flesh-out examples.
-// TODO: Archive changesets to archive/matcher not to /matched folder.
 // TODO: Check code coverage. Need error tests.
 // TODO: Clippy!
 
@@ -65,14 +65,14 @@ pub struct Context {
     job_id: Uuid,          // Each job is given a unique id.
     charter: Charter,      // The charter of instructions to run.
     charter_path: PathBuf, // The path to the charter being run.
-    base_dir: String,      // The root of the working folder for data (see the folders module).
+    base_dir: PathBuf,     // The root of the working folder for data (see the folders module).
     timestamp: String,     // A unique timestamp to prefix any generated files with for this job.
     lua: rlua::Lua,        // Lua engine state.
     phase: Cell<Phase>,    // The current point in the linear state transition of the job.
 }
 
 impl Context {
-    pub fn new(charter: Charter, charter_path: PathBuf, base_dir: String) -> Self {
+    pub fn new(charter: Charter, charter_path: PathBuf, base_dir: PathBuf) -> Self {
         let job_id = match std::env::var("OPENREC_FIXED_JOB_ID") {
             Ok(job_id) => uuid::Uuid::from_str(&job_id).expect("Test JOB_ID has invalid format"),
             Err(_) => uuid::Uuid::new_v4(),
@@ -106,7 +106,7 @@ impl Context {
         &self.charter_path
     }
 
-    pub fn base_dir(&self) -> &str {
+    pub fn base_dir(&self) -> &PathBuf {
         &self.base_dir
     }
 
@@ -134,7 +134,7 @@ impl Context {
 /// If this library is used as part of a wider solution, care must be taken to synchronise these match jobs
 /// so only one can exclusively run against a given charter/folder of data at any one time.
 ///
-pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> { // TODO: Take P AsRef<Path>
+pub fn run_charter<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<()> {
 
     let ctx = init_job(charter, base_dir)?;
 
@@ -166,14 +166,16 @@ pub fn run_charter(charter: &str, base_dir: &str) -> Result<()> { // TODO: Take 
 ///
 /// Parse and load the charter configuration, return a job Context.
 ///
-fn init_job(charter: &str, base_dir: &str) -> Result<Context, MatcherError> {
-    let ctx = Context::new(Charter::load(charter)?, Path::new(charter).canonicalize()?.to_path_buf(),  base_dir.into());
+fn init_job<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<Context, MatcherError> {
+    let charter_pb = charter.as_ref().to_path_buf().canonicalize()?;
+    let base_dir_pb = base_dir.as_ref().to_path_buf().canonicalize()?;
+    let ctx = Context::new(Charter::load(&charter_pb)?, charter_pb, base_dir_pb);
 
     log::info!("Starting match job:\nJob ID: {job_id}\nCharter: {charter} (v{version})\nBase Dir: {base_dir}",
         job_id = ctx.job_id(),
         charter = ctx.charter().name(),
         version = ctx.charter().version(),
-        base_dir = ctx.base_dir());
+        base_dir = ctx.base_dir().to_canoncial_string());
 
     Ok(ctx)
 }
@@ -464,7 +466,7 @@ fn complete_and_archive(
     mut unmatched: UnmatchedHandler,
     changesets: Vec<ChangeSet>) -> Result<(), MatcherError> {
 
-    // Write all unmatched records now - this will be optimised at a later stage to be a single call.
+    // Write all unmatched records now.
     unmatched.write_records(ctx, &grid)?;
 
     // Complete the matched JSON file.

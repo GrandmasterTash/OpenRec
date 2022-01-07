@@ -16,6 +16,8 @@ use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
 use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType};
 
+// TODO: rename column_mappings to column_transforms - consider flipping it, i.e.: -
+//      - deal_date: dmy
 // TODO: Ensure global charter lua is evaluated and functions are available.
 // TODO: Exclude byte - if experiment is successful. It was!
 // TODO: Append a uuid column to each record.
@@ -38,13 +40,13 @@ pub struct Context {
     job_id: Uuid,          // Each job is given a unique id.
     charter: Charter,      // The charter of instructions to run.
     charter_path: PathBuf, // The path to the charter being run.
-    base_dir: String,      // The root of the working folder for data (see the folders module).
+    base_dir: PathBuf,     // The root of the working folder for data (see the folders module).
     timestamp: String,     // A unique timestamp to prefix any generated files with for this job.
     lua: rlua::Lua,        // Lua engine state.
 }
 
 impl Context {
-    pub fn new(charter: Charter, charter_path: PathBuf, base_dir: String) -> Self {
+    pub fn new(charter: Charter, charter_path: PathBuf, base_dir: PathBuf) -> Self {
         let job_id = match std::env::var("OPENREC_FIXED_JOB_ID") {
             Ok(job_id) => uuid::Uuid::from_str(&job_id).expect("Test JOB_ID has invalid format"),
             Err(_) => uuid::Uuid::new_v4(),
@@ -77,7 +79,7 @@ impl Context {
         &self.charter_path
     }
 
-    pub fn base_dir(&self) -> &str {
+    pub fn base_dir(&self) -> &PathBuf {
         &self.base_dir
     }
 
@@ -114,10 +116,12 @@ type AnalysisResults = HashMap<PathBuf /* inbox-file */, AnalysisResult>;
 ///
 /// Scan and analyse inbox files, then run them through the Jetwash to produce waiting files for celerity.
 ///
-pub fn run_charter(charter_path: &str, base_dir: &str) -> Result<(), JetwashError> {
+pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P) -> Result<(), JetwashError> {
 
     // Load the charter and create a load job context.
-    let ctx = init_job(charter_path, base_dir)?;
+    let ctx = init_job(
+        charter_path.as_ref().to_path_buf().canonicalize()?,
+        base_dir.as_ref().to_path_buf().canonicalize()?)?;
 
     // Create inbox, archive and waiting folders (if required).
     folders::ensure_dirs_exist(&ctx)?;
@@ -351,16 +355,16 @@ fn abort_if_previous_failures(ctx: &Context) -> Result<(), JetwashError> {
 ///
 /// Parse and load the charter configuration, return a job Context.
 ///
-fn init_job(charter: &str, base_dir: &str) -> Result<Context, JetwashError> {
+fn init_job(charter: PathBuf, base_dir: PathBuf) -> Result<Context, JetwashError> {
     let ctx = Context::new(
-        Charter::load(charter)?,
-        Path::new(charter).canonicalize()?.to_path_buf(),
-        base_dir.into());
+        Charter::load(&charter)?,
+        charter,
+        base_dir);
 
     log::info!("Starting jetwash job:");
     log::info!("    Job ID: {}", ctx.job_id());
     log::info!("   Charter: {} (v{})", ctx.charter().name(), ctx.charter().version());
-    log::info!("  Base dir: {}", ctx.base_dir());
+    log::info!("  Base dir: {}", ctx.base_dir().to_canoncial_string());
 
     Ok(ctx)
 }

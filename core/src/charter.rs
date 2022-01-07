@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::io::BufReader;
+use std::{io::BufReader, path::PathBuf};
 use rust_decimal::Decimal;
 use crate::{data_type::DataType, error::Error};
 
@@ -173,13 +173,13 @@ impl Charter {
         &self.jetwash
     }
 
-    pub fn load(path: &str) -> Result<Self, Error> {
-        let rdr = BufReader::new(std::fs::File::open(path)
-            .map_err(|source| Error::CharterFileNotFound { path: path.into(), source })?);
+    pub fn load(path: &PathBuf) -> Result<Self, Error> {
+        let rdr = BufReader::new(std::fs::File::open(&path)
+            .map_err(|source| Error::CharterFileNotFound { path: path.to_string_lossy().into(), source })?);
 
 
         let charter: Self = serde_yaml::from_reader(rdr)
-            .map_err(|source| Error::InvalidCharter { path: path.into(), source })?;
+            .map_err(|source| Error::InvalidCharter { path: path.to_string_lossy().into(), source })?;
 
         // If field_aliases are defined, there should be one for every file_pattern.
         let count_aliases = charter.source_files().iter().filter(|df| df.field_prefix.is_some() ).count();

@@ -41,7 +41,12 @@ impl MatchedHandler {
                 .files()
                 .iter()
                 .sorted_by(|f1, f2| Ord::cmp(&f1.filename(), &f2.filename()))
-                .map(|f|f.filename())
+                .map(|f| {
+                    match f.archived_filename() {
+                        Some(archived_filename) => &archived_filename,
+                        None => f.filename(),
+                    }
+                })
                 .collect::<Vec<&str>>()
         });
 

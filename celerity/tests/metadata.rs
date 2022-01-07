@@ -57,12 +57,12 @@ matching:
                 end
               end
 
-              print("Well done, all the metadata is present in the Lua script")
+              -- print("Well done, all the metadata is present in the Lua script")
               return true
             "#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the output files.
     let _matched = common::assert_matched_ok(&vec!(), &base_dir);

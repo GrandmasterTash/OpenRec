@@ -17,6 +17,7 @@ pub struct DataFile {
     pre_modified_path: PathBuf,
     filename: String,
     derived_filename: String,
+    archived_filename: Option<String>,
     schema_idx: usize,
 }
 
@@ -31,6 +32,7 @@ impl DataFile {
             derived_filename: derived_path.file_name().expect("no dervied filename").to_string_lossy().into(),
             modifying_path: folders::modifying(&pb),
             pre_modified_path: folders::pre_modified(&pb),
+            archived_filename: None,
             derived_path,
             schema_idx,
         }
@@ -99,4 +101,18 @@ impl DataFile {
         &self.pre_modified_path
     }
 
+    ///
+    /// The name of the archived file - only set for datafiles when they are first archived.
+    ///
+    pub fn archived_filename(&self) -> &Option<String> {
+        &self.archived_filename
+    }
+
+    ///
+    /// Record that this file has been archived and where that is (as the filename may change as part of the
+    /// archive process).
+    ///
+    pub fn set_archived_filename(&mut self, archived_filename: String) {
+        self.archived_filename = Some(archived_filename);
+    }
 }

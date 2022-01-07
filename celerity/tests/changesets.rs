@@ -36,7 +36,7 @@ matching:
             rhs: record["Type"] == "T2""#);
 
     // Run the match.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check we have two unmatched records.
     common::assert_file_contents(&base_dir.join("unmatched/20211219_082900000_transactions.unmatched.csv"),
@@ -85,14 +85,14 @@ r#"    [
     common::write_file(&base_dir.join("waiting/"), "20211220_061800000_changeset.json", changeset);
 
     // Run the match again to apply the changes to correct the unmatched data.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty after the changeset was applied");
 
     // Check the changeset is recorded and moved to the matched folder. Note, the fixed timestamp in tests
     // means the original match job file is overwritten with the second match job file.
-    common::assert_file_contents(&base_dir.join("matched/20211220_061800000_changeset.json"), changeset);
+    common::assert_file_contents(&base_dir.join("archive/celerity/20211220_061800000_changeset.json"), changeset);
     common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
     [
         {
@@ -187,7 +187,7 @@ matching:
             rhs: record["Type"] == "T2""#);
 
     // Run a match job.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty after the changeset was applied");
@@ -304,7 +304,7 @@ r#"    [
     common::write_file(&base_dir.join("waiting/"), "20211221_061800000_changeset.json", changeset_2);
 
     // Run a match job.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty after the changeset was applied");
@@ -375,7 +375,7 @@ matching:
             rhs: record["Type"] == "T2""#);
 
     // Run a match job. There should be unmatched data at the end.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 1,
         "The unmatched folder should have an unmatched file");
@@ -397,7 +397,7 @@ r#"    [
     common::write_file(&base_dir.join("waiting/"), "20211220_061800000_changeset.json", changeset);
 
     // Run a match job again. There should be no more unmatched data at the end.
-    celerity::run_charter(&charter.to_string_lossy(), &base_dir.to_string_lossy()).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
 
     assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0,
         "The unmatched folder should be empty");

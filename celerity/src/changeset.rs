@@ -28,7 +28,8 @@ use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialStr
     WAITING                   UNMATCHED                              MATCHING                      MATCHED                 ARCHIVE
                               20210109_inv.unmatched.csv                                           20210109_matched.json   20210109_inv.csv
                               20210110_inv.unmatched.csv                                           20210111_matched.json   20210110_inv.csv
-                                                                                                   20210111_changeset.json 20210110_inv.csv.pre_modified
+                                                                                                   20210111_changeset.json 20210110_inv.csv.pre_modified 
+                                                                                                   TODO: This is no longer accurate.
 
     Whilst changesets are being applied, new data files are written into the matching folder with the .modifying extension. These files
     contain the original data with any changeset modifications applied. Note: If a record is ignored by a changeset, it is absent from the
@@ -197,7 +198,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
         })?;
 
         // Finalise the modifying files, renaming and archiving things as required.
-        any_applied = finalise_files(ctx, &metrics)?;
+        any_applied = finalise_files(ctx, &metrics, grid)?;
 
         for changeset in &changesets {
             let (duration, rate) = formatted_duration_rate(grid.len(), changeset.elapsed);
@@ -217,7 +218,8 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
 ///
 /// Report on any changes made to the data.
 ///
-fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>) -> Result<bool, MatcherError> {
+fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>, grid: &mut Grid) -> Result<bool, MatcherError> {
+
     let mut any_applied = false;
 
     for (data_file, metric) in metrics.iter() {
@@ -225,10 +227,15 @@ fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>) -> Result
             any_applied = true;
 
             if !is_unmatched(data_file) {
-                // For new data files, we need to archive the original file immediately.
-                // Then rename the modifying file, eg. 20210110_inv.csv.modifying -> 20210110_inv.csv
-                folders::archive_immediately(ctx, data_file.path())?;
+                // For new data files, we need to archive the original file immediately. Find the mutable grid instance
+                // so we can archive and set the archived filename.
+                if let Some(grid_df) = grid.schema_mut().files_mut()
+                    .find(|df| df.path().to_canoncial_string() == data_file.path().to_canoncial_string()) {
 
+                    folders::archive_data_file(ctx, grid_df)?;
+                }
+
+                // Then rename the modifying file, eg. 20210110_inv.csv.modifying -> 20210110_inv.csv
                 log::debug!("Renaming {} to {}", data_file.modifying_path().to_canoncial_string(), data_file.filename());
                 folders::rename(data_file.modifying_path(), data_file.path())?;
 
@@ -247,7 +254,7 @@ fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>) -> Result
     // Move all the changesets (.json) to the matched folder now. This means, any future error wont
     // attempt to re-apply them to already modified data.
     for file in &folders::changesets_in_matching(ctx)? {
-        folders::progress_to_matched_now(ctx, file)?;
+        folders::progress_to_archive_now(ctx, file)?;
     }
 
     Ok(any_applied)

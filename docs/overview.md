@@ -495,12 +495,12 @@ TODO: in own file.
 ## Examples
 
 # Wishlist.
-- changesets to run lua script to modify a record(s) not just set a field value.
+- An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.
 - generate changesets from record deltas
 - full sync controls (i.e. source data contains all data, match or unmatched)
 - rollback jobs
+- changesets to run lua script to modify a record(s) not just set a field value.
 - date-range constraints
 - grouping with ranges
 - group tagging
 - pgroups (proposed groups)
-- An 'abort' changeset to cancel an erroneous/stuck changeset (maybe it has a syntx error). This would avoid manual tampering.

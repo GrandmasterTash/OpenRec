@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use core::data_type::DataType;
 use super::{datafile::DataFile};
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, slice::IterMut};
 use crate::{model::record::Record, error::MatcherError};
 
 const STATUS: &str = "OpenRecStatus";
@@ -163,6 +163,10 @@ impl GridSchema {
 
     pub fn files(&self) -> &[DataFile] {
         &self.files
+    }
+
+    pub fn files_mut(&mut self) -> IterMut<'_, DataFile> {
+        self.files.iter_mut()
     }
 
     pub fn file_schemas(&self) -> &[FileSchema] {
