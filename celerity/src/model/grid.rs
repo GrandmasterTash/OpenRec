@@ -2,7 +2,7 @@ use ubyte::ToByteUnit;
 use anyhow::Context as ErrContext;
 use super::grid_iter::GridIterator;
 use core::charter::MatchingSourceFile;
-use std::{fs::DirEntry, time::Instant};
+use std::{fs::{DirEntry, self}, time::Instant};
 use crate::{error::{MatcherError, here}, folders::{self, ToCanoncialString}, model::{datafile::DataFile, schema::{FileSchema, GridSchema}}, Context, blue, formatted_duration_rate, utils};
 
 ///
@@ -31,6 +31,7 @@ use crate::{error::{MatcherError, here}, folders::{self, ToCanoncialString}, mod
 ///
 pub struct Grid {
     count: usize,
+    data_size: usize,
     schema: GridSchema,         // Represents the column structure of the grid and maps headers to the underlying record columns.
 }
 
@@ -41,6 +42,10 @@ impl Grid {
 
     pub fn is_empty(&self) -> bool {
         self.count == 0
+    }
+
+    pub fn data_size(&self) -> usize {
+        self.data_size
     }
 
     pub fn schema(&self) -> &GridSchema {
@@ -62,6 +67,7 @@ impl Grid {
 
         let mut grid_schema = GridSchema::default();
         let mut total_count = 0;
+        let mut data_size = 0;
 
         // Load and index all pending records.
         for source_file in ctx.charter().source_files() {
@@ -72,15 +78,20 @@ impl Grid {
             let mut last_schema_idx = None;
 
             for file in folders::files_in_matching(ctx, source_file.pattern())? {
-                let (count, last) = load_file(&file, source_file, &mut grid_schema, last_schema_idx)?;
+                let (count, file_size, last) = load_file(&file, source_file, &mut grid_schema, last_schema_idx)?;
                 last_schema_idx = last;
                 total_count += count;
+                data_size += file_size;
             }
         }
 
         log::info!("Scanned {} record - ready to match", blue(&format!("{}", total_count)));
 
-        Ok(Grid { count: total_count, schema: grid_schema })
+        Ok(Grid {
+            count: total_count,
+            data_size,
+            schema: grid_schema
+        })
     }
 
     ///
@@ -118,12 +129,15 @@ impl Grid {
 /// have different column schemas.
 ///
 fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mut GridSchema, last_schema_idx: Option<usize>)
-    -> Result<(usize /* record count */, Option<usize> /* last_schema_idx */), MatcherError> {
+    -> Result<(usize /* record count */, usize /* file size bytes */, Option<usize> /* last_schema_idx */), MatcherError> {
 
     let started = Instant::now();
     log::debug!("Reading file {path} ({len})",
         path = file.path().to_string_lossy(),
         len = file.metadata().with_context(|| format!("Unable to get metadata for {}{}", file.path().to_canoncial_string(), here!()))?.len().bytes());
+
+    // Get the size of the file.
+    let file_size = fs::metadata(&file.path())?.len() as usize;
 
     // For now, just count all the records in a file and log them.
     let mut count = 0;
@@ -155,7 +169,7 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
         file.file_name().to_string_lossy(),
         blue(&duration));
 
-    Ok((count, last_schema_idx))
+    Ok((count, file_size, last_schema_idx))
 }
 
 ///

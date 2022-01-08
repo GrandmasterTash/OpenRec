@@ -2,8 +2,6 @@ use serde_json::json;
 use fs_extra::dir::get_dir_content;
 use crate::common::{self, FIXED_JOB_ID, function};
 
-// TODO: Test where net to zero considers a positive netted against a negative - i.e. ensure both values are abs before subtraction.
-
 #[test]
 fn test_no_data_files() {
     let charter = common::example_charter("02-Projected-Columns.yaml");
@@ -289,7 +287,7 @@ matching:
 }
 
 #[test]
-fn ensure_archive_filenames_are_unqiue() {
+fn test_ensure_archive_filenames_are_unqiue() {
 
     let base_dir = common::init_test(format!("tests/{}", function!()));
 
@@ -398,4 +396,42 @@ matching:
                 "changesets": []
             }
         ]));
+}
+
+
+#[test]
+fn test_netting_to_zero_uses_abs_sides() {
+
+    let base_dir = common::init_test(format!("tests/{}", function!()));
+
+    let file_content = r#""OpenRecStatus","TransId","Date","Amount","Type"
+"IN","IN","DT","DE","ST"
+"0","0001","2021-12-19T00:00:00.000Z","100.00","T1"
+"0","0002","2021-12-19T00:00:00.000Z","-75.00","T2"
+"0","0003","2021-12-19T00:00:00.000Z","-25.00","T2"
+"#;
+
+    common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv", file_content);
+
+    let charter = common::write_file(&base_dir, "charter.yaml",
+r#"name: archive filename test
+version: 1
+matching:
+  use_field_prefixes: false
+  source_files:
+    - pattern: .*.csv
+  instructions:
+    - group:
+        by: ['Date']
+        match_when:
+        - nets_to_zero:
+            column: Amount
+            lhs: record["Type"] == "T1"
+            rhs: record["Type"] == "T2"
+"#);
+
+    // Run the match.
+    celerity::run_charter(&charter, &base_dir).unwrap();
+    assert_eq!(get_dir_content(base_dir.join("unmatched")).unwrap().files.len(), 0);
+    assert_eq!(get_dir_content(base_dir.join("matched")).unwrap().files.len(), 1);
 }

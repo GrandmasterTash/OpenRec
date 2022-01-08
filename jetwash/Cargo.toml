@@ -13,10 +13,10 @@ name = "jetwash"
 path = "src/bin.rs"
 test = false
 
-[[test]]
-name = "integration"
-path = "tests/mod.rs"
-harness = true
+#[[test]]
+#name = "integration"
+#path = "tests/mod.rs"
+#harness = true
 
 [dependencies]
 core = { path = "../core" }
@@ -25,6 +25,7 @@ env_logger = "0.9.0"
 dotenv = "0.15.0"
 anyhow = "1.0"
 thiserror = "1.0.30"
+rust_decimal = "1.17"
 csv = "1.1.6"
 uuid = { version = "0.8.2", features = ["v4", "serde"] }
 chrono = { version = "0.4.19", features = ["serde"] }

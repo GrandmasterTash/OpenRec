@@ -3,7 +3,7 @@ use positioned_io::WriteAt;
 use serde_json::{json, Value};
 use anyhow::Context as ErrContext;
 use super::unmatched::UnmatchedHandler;
-use std::{fs::{File, OpenOptions}, io::{BufWriter, Write}};
+use std::{fs::{File, OpenOptions}, io::{BufWriter, Write}, time::Duration};
 use crate::{error::{MatcherError, here}, folders::{self, ToCanoncialString}, model::{grid::Grid, record::Record}, Context, changeset::{ChangeSet, Change}};
 
 ///
@@ -11,6 +11,8 @@ use crate::{error::{MatcherError, here}, folders::{self, ToCanoncialString}, mod
 ///
 pub struct MatchedHandler {
     groups: usize,
+    records: usize,
+    data_size: usize,
     path: String,
     writer: BufWriter<File>, // For the matched.json file.
     data_writers: Vec<File>, // To update the status byte for matched records.
@@ -58,6 +60,8 @@ impl MatchedHandler {
 
         Ok(Self {
             groups: 0,
+            records: 0,
+            data_size: grid.data_size(),
             writer,
             path: path.to_canoncial_string(),
             data_writers: grid.schema().files()
@@ -94,6 +98,7 @@ impl MatchedHandler {
             .map_err(|source| MatcherError::CannotWriteMatchedRecord{ filename: self.path.clone(), source })?;
 
         self.groups += 1;
+        self.records += records.len();
 
         Ok(())
     }
@@ -101,7 +106,8 @@ impl MatchedHandler {
     ///
     /// Terminate the matched file to make it's contents valid JSON.
     ///
-    pub fn complete_files(&mut self, unmatched: &UnmatchedHandler, changesets: Vec<ChangeSet>) -> Result<(), MatcherError> {
+    pub fn complete_files(&mut self, unmatched: &UnmatchedHandler, changesets: Vec<ChangeSet>, duration: Duration)
+        -> Result<(), MatcherError> {
 
         // Terminate the groups object.
         write!(&mut self.writer, "]\n}},\n")
@@ -111,6 +117,11 @@ impl MatchedHandler {
         {
             "unmatched": summerise_unmatched(unmatched),
             "changesets": summerise_changesets(changesets),
+            "umatched_records": unmatched.unmatched_files().iter().map(|f|f.rows()).sum::<usize>(),
+            "matched_records": self.records,
+            "matched_groups": self.groups,
+            "duration_ms": (duration.as_secs() * 1000) + duration.subsec_millis() as u64,
+            "data_size_bytes": self.data_size,
         });
 
         // Write the unmatched count and changeset metrics.

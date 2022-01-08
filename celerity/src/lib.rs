@@ -15,14 +15,13 @@ use error::MatcherError;
 use itertools::Itertools;
 use changeset::ChangeSet;
 use model::schema::GridSchema;
-use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate};
+use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate, lua::init_context};
 use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
 // TODO: Flesh-out examples.
 // TODO: Check code coverage. Need error tests.
-// TODO: Clippy!
 
 ///
 /// These are the linear state transitions of a match Job.
@@ -370,7 +369,7 @@ fn derive_file(
     let lua = rlua::Lua::new();
 
     lua.context(|lua_ctx| {
-        lua::init_context(&lua_ctx, charter.global_lua())?;
+        init_context(&lua_ctx, charter.global_lua())?;
         for csv_record in reader.byte_records() {
             let mut record = Record::new(file_idx, schema.clone(), csv_record?, csv::ByteRecord::new());
 
@@ -466,8 +465,10 @@ fn complete_and_archive(
     // Write all unmatched records now.
     unmatched.write_records(ctx, &grid)?;
 
+    let duration = ctx.started().elapsed();
+
     // Complete the matched JSON file.
-    matched.complete_files(&unmatched, changesets)?;
+    matched.complete_files(&unmatched, changesets, duration)?;
 
     // Debug the final grid now.
     grid.debug_grid(ctx, 1);
@@ -484,8 +485,7 @@ fn complete_and_archive(
         log::warn!("The following files were still in the matching folder at the end of the job:\n{}", left_overs);
     }
 
-    // TODO: Log (and record in job json) how many records processed, rate, MB size, etc.
-    log::info!("Completed match job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, ctx.started().elapsed()).0));
+    log::info!("Completed match job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, duration).0));
 
     Ok(())
 }

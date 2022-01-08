@@ -16,10 +16,10 @@ name = "celerity"
 path = "src/bin.rs"
 test = false
 
-[[test]]
-name = "integration"
-path = "tests/mod.rs"
-harness = true
+#[[test]]
+#name = "integration"
+#path = "tests/mod.rs"
+#harness = true
 
 [dependencies]
 core = { path = "../core" }

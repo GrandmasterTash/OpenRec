@@ -36,6 +36,9 @@ pub enum JetwashError {
     #[error("A problem occured mapping a record")]
     TransformRecordError { source: rlua::Error },
 
+    #[error("Cannot map a new column {column} it is already present")]
+    CannotMapNewExistingColumn { column: String },
+
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 

@@ -89,6 +89,6 @@ mod tests {
     #[should_panic(expected = "Unknown data type 'x'")]
     fn test_parse_err() {
         let mut rng = StdRng::seed_from_u64(1234567890u64);
-        let _schema = Schema::new("ID,BO,BY,x", &mut rng, &mut vec!());
+        let _schema = Schema::new("ID,BO,ST,x", &mut rng, &mut vec!());
     }
 }

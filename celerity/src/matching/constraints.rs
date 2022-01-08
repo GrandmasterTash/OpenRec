@@ -1,6 +1,6 @@
 use rlua::Context;
 use rust_decimal::Decimal;
-use core::{data_type::DataType, charter::{Constraint, ToleranceType}};
+use core::{data_type::DataType, charter::{Constraint, ToleranceType}, lua::eval};
 use crate::{model::{record::Record, schema::{Column, GridSchema}}, error::MatcherError, lua};
 
 pub fn passes(
@@ -104,7 +104,7 @@ fn custom_constraint(
     }
 
     globals.set("records", lua_records)?;
-    lua::eval(lua_ctx, script)
+    eval(lua_ctx, script)
         .map_err(|source| MatcherError::CustomConstraintError { reason: "Unknown".into(), source })
 }
 

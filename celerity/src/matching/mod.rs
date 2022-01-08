@@ -6,7 +6,7 @@ pub mod unmatched;
 use rlua::Context;
 use ubyte::ToByteUnit;
 use itertools::Itertools;
-use core::charter::Constraint;
+use core::{charter::Constraint, lua::init_context};
 use anyhow::Context as ErrContext;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{cell::Cell, time::{Duration, Instant}, fs::File, path::Path};
@@ -335,7 +335,7 @@ fn eval_contraints(
 
     // Create a Lua context to evaluate Constraint rules in.
     ctx.lua().context(|lua_ctx| {
-        lua::init_context(&lua_ctx, ctx.charter().global_lua())?;
+        init_context(&lua_ctx, ctx.charter().global_lua())?;
         lua::create_aggregate_fns(&lua_ctx)?;
 
         // Iterate groups one at a time, loading all the group's records into memory.

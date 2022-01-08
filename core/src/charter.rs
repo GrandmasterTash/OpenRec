@@ -3,6 +3,8 @@ use rust_decimal::Decimal;
 use std::{io::BufReader, path::Path};
 use crate::{data_type::DataType, error::Error};
 
+// TODO: Celerity and Jetwash sub-modules.
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Charter {
@@ -48,12 +50,21 @@ pub struct JetwashSourceFile {
     pattern: String,
     headers: Option<Vec<String>>,
     column_mappings: Option<Vec<ColumnMapping>>,
+    new_columns: Option<Vec<NewColumn>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewColumn {
+    column: String,
+    as_a: DataType,
+    from: String
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ColumnMapping {
-    Map { column: String, as_a: DataType, from: String  }, // Lua script mapping.
+    Map { column: String, as_a: DataType, from: String  }, // Lua script creating a new column.
     Dmy ( String /* column */ ),  // Parse a day/month/year into a UTC Datetime
     Mdy ( String /* column */ ),  // Parse a month/day/year into a UTC Datetime
     Ymd ( String /* column */ ),  // Parse a year/month/day into a UTC Datetime
@@ -101,6 +112,10 @@ impl JetwashSourceFile {
     pub fn column_mappings(&self) -> &Option<Vec<ColumnMapping>> {
         &self.column_mappings
     }
+
+    pub fn new_columns(&self) -> &Option<Vec<NewColumn>> {
+        &self.new_columns
+    }
 }
 
 impl MatchingSourceFile {
@@ -110,6 +125,20 @@ impl MatchingSourceFile {
 
     pub fn field_prefix(&self) -> &Option<String> {
         &self.field_prefix
+    }
+}
+
+impl NewColumn {
+    pub fn column(&self) -> &str {
+        &self.column
+    }
+
+    pub fn as_a(&self) -> DataType {
+        self.as_a
+    }
+
+    pub fn from(&self) -> &str {
+        &self.from
     }
 }
 
@@ -186,6 +215,8 @@ impl Charter {
         if count_aliases > 0 && count_aliases != charter.source_files().len() {
             return Err(Error::CharterValidationError { reason: "If field_aliases are defined, there must be one for each defined file_pattern".into() })
         }
+
+        // TODO 'META' is a reserved word and can't be an alias.
 
         Ok(charter)
     }

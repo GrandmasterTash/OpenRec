@@ -1,6 +1,6 @@
-use itertools::Itertools;
 use serde_json::Value;
-use assert_json_diff::assert_json_eq;
+use itertools::Itertools;
+use assert_json_diff::assert_json_include;
 use std::{path::{PathBuf, Path}, fs::File, io::BufReader};
 use fs_extra::{dir::{CopyOptions, get_dir_content, remove}, copy_items};
 
@@ -135,8 +135,8 @@ pub fn example_data_files(filenames: Vec<&str>) -> Vec<PathBuf> {
 pub fn assert_matched_contents(matched: PathBuf, expected: Value) {
     let actual = read_json_file(matched);
     assert!(!actual[0]["job_id"].as_str().expect("No jobId").is_empty()); // Uuid. Note the '!' in this assert!
-    // assert_json_include!(actual: a, expected: e);
-    assert_json_eq!(actual, expected);
+    assert_json_include!(actual: actual, expected: expected);
+    // assert_json_eq!(actual, expected);
 }
 
 ///

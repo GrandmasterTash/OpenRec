@@ -1,6 +1,6 @@
-mod analyser;
 mod error;
 mod folders;
+mod analyser;
 
 use uuid::Uuid;
 use regex::Regex;
@@ -9,26 +9,25 @@ use ubyte::ToByteUnit;
 use rlua::FromLuaMulti;
 use error::JetwashError;
 use itertools::Itertools;
-use chrono::{Utc, TimeZone};
+use rust_decimal::Decimal;
 use lazy_static::lazy_static;
 use bytes::{Bytes, BytesMut, BufMut};
 use crate::folders::ToCanoncialString;
+use chrono::{Utc, TimeZone, SecondsFormat};
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
-use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType};
+use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType, lua::{init_context, LuaDecimal}};
 
-// TODO: rename column_mappings to column_transforms - consider flipping it, i.e.: -
-//      - deal_date: dmy
-// TODO: Ensure global charter lua is evaluated and functions are available.
-// TODO: Exclude byte - if experiment is successful. It was!
+// TODO: Allow Esccape, Quote and Delimeter chars to be configured.
+// TODO: Status byte - if experiment is successful. It was!
 // TODO: Append a uuid column to each record.
-// TODO: Changeset generation. Suggest this is a new component. handle update and full refresh data loads.
- 
+// TODO: Lookups. https://github.com/geoffleyland/lua-csv
+
 lazy_static! {
     static ref DATES: Vec<Regex> = vec!(
-        Regex::new(r"^(\d{1,4})-(\d{1,4})-(\d{1,4})$").expect("bad regex d-m-y"),   // d-m-y
-        Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").expect("bad regex d/m/y"), // d/m/y
+        Regex::new(r"^(\d{1,4})-(\d{1,4})-(\d{1,4})$").expect("bad regex d-m-y"),      // d-m-y
+        Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").expect("bad regex d/m/y"),      // d/m/y
         Regex::new(r"^(\d{1,4})\\(\d{1,4})\\(\d{1,4})$").expect(r#"bad regex d\m\y"#), // d\m\y
-        Regex::new(r"^(\d{1,4})\W(\d{1,4})\W(\d{1,4})$").expect("bad regex d m y"), // d m y
+        Regex::new(r"^(\d{1,4})\W(\d{1,4})\W(\d{1,4})$").expect("bad regex d m y"),    // d m y
     );
 }
 
@@ -154,10 +153,13 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P) -> Result<(), J
                 .map_err(|source| JetwashError::CannotOpenCsv{ path: new_file.to_canoncial_string(), source } )?;
 
             // Use either hardcoded headers (from the charter), or headers from source file.
-            let header_record = match result.source_file().headers() {
+            let mut header_record = match result.source_file().headers() {
                 Some(headers) => csv::ByteRecord::from(headers.iter().map(|hdr| hdr.as_str()).collect::<Vec<&str>>()),
                 None => reader.byte_headers()?.clone(),
             };
+
+            // Add any column headers for Jetwash-created columns.
+            add_new_columns(&mut header_record, result.source_file());
 
             writer.write_byte_record(&header_record)?;
 
@@ -167,6 +169,8 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P) -> Result<(), J
                 .map_err(|source| JetwashError::CannotWriteSchema{ filename: new_file.to_canoncial_string(), source })?;
 
             ctx.lua().context(|lua_ctx| {
+                init_context(&lua_ctx, ctx.charter().global_lua())?;
+
                 // Read each row in, write to new file.
                 for record_result in reader.byte_records() {
                     let record = record_result // Ensure we can read the record - but ignore it at this point.
@@ -198,6 +202,17 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P) -> Result<(), J
 }
 
 ///
+/// If there are new columns defined, add there headers to the header_record.
+///
+fn add_new_columns(header_record: &mut csv::ByteRecord, source_file: &JetwashSourceFile) {
+    if let Some(new_cols) = source_file.new_columns() {
+        for column in new_cols {
+            header_record.push_field(column.column().to_string().as_bytes());
+        }
+    }
+}
+
+///
 /// Perform any column Lua script transformations on the data.
 ///
 fn transform_record(
@@ -206,45 +221,101 @@ fn transform_record(
     header_record: &csv::ByteRecord,
     record: csv::ByteRecord) -> Result<csv::ByteRecord, JetwashError> {
 
-    match source_file.column_mappings() {
+    let line = record.position().expect("no row position").line();
+
+    let mut transformed = match source_file.column_mappings() {
         Some(mappings) => {
             if mappings.is_empty() {
-                return Ok(record)
+                record
+
+            } else {
+                let mut new_record = csv::ByteRecord::new();
+
+                for (idx, header) in header_record.iter().enumerate() {
+                    let header = String::from_utf8_lossy(header);
+
+                    // Only map existing columns in this section, new columns are appended later.
+                    if let Some(data) = record.get(idx) {
+                        // Get the record field data into a Bytes snapshot to avoid lifetime issues.
+                        let mut original = BytesMut::new();
+                        original.put(data);
+                        let original = original.freeze();
+
+                        // If there's a mapping perform it now - otherwise just copy the source record value.
+                        let new_value = match mappings.iter().find(|m| m.column() == header) {
+                            Some(mapping) => {
+                                let new_value = map_field(lua_ctx, mapping, original.clone())?;
+
+                                log::trace!("Mapping row {row}, column {column} from [{from}] to [{to}]",
+                                    column = header,
+                                    row = line,
+                                    from = String::from_utf8_lossy(&original),
+                                    to = String::from_utf8_lossy(&new_value.to_vec()));
+
+                                new_value
+                            },
+                            None => original.clone(),
+                        };
+
+                        new_record.push_field(&new_value);
+                    }
+                }
+
+                new_record
             }
-
-            let mut new_record = csv::ByteRecord::new();
-
-            for (idx, header) in header_record.iter().enumerate() {
-                let header = String::from_utf8_lossy(header);
-
-                // Get the record field data into a Bytes snapshot to avoid lifetime issues.
-                let mut original = BytesMut::new();
-                original.put(record.get(idx).expect("No data"));
-                let original = original.freeze();
-
-                // If there's a mapping perform it now - otherwise just copy the source record value.
-                let new_value = match mappings.iter().find(|m| m.column() == header) {
-                    Some(mapping) => {
-                        let new_value = map_field(lua_ctx, mapping, original.clone())?;
-
-                        log::trace!("Mapping row {row}, column {column} from [{from}] to [{to}]",
-                            column = header,
-                            row = record.position().expect("no row position").line(),
-                            from = String::from_utf8_lossy(&original),
-                            to = String::from_utf8_lossy(&new_value.to_vec()));
-
-                        new_value
-                    },
-                    None => original.clone(),
-                };
-
-                new_record.push_field(&new_value);
-            }
-
-            Ok(new_record)
         },
-        None => Ok(record),
+        None => record,
+    };
+
+    if let Some(new_columns) = source_file.new_columns() {
+        lua_ctx.globals().set("record", lua_record(lua_ctx, &transformed, &header_record)?)?;
+
+        for column in new_columns {
+            let new_value: Bytes = eval_typed_lua(&lua_ctx, column.from(), column.as_a())?.into();
+
+            log::trace!("Mapping row {row}, column {column} from [new] to [{to}]",
+                column = column.column(),
+                row = line,
+                to = String::from_utf8_lossy(&new_value.to_vec()));
+
+            transformed.push_field(&new_value);
+        }
     }
+
+    Ok(transformed)
+}
+
+///
+/// Use Lua to generate a new column on the incoming file.
+///
+fn eval_typed_lua(lua_ctx: &rlua::Context, lua: &str, as_a: DataType) -> Result<String, JetwashError> {
+    let mapped = match as_a {
+        DataType::Unknown => panic!("Can't eval if data-type is Unknown"),
+        DataType::Boolean => bool_to_string(eval(lua_ctx, lua)?),
+        DataType::Datetime => datetime_to_string(eval(lua_ctx, lua)?),
+        DataType::Decimal => decimal_to_string(eval::<LuaDecimal>(lua_ctx, lua)?.0),
+        DataType::Integer => int_to_string(eval(lua_ctx, lua)?),
+        DataType::String => eval(lua_ctx, lua)?,
+        DataType::Uuid => eval(lua_ctx, lua)?,
+    };
+    Ok(mapped)
+}
+
+fn bool_to_string(value: bool) -> String {
+    format!("{}", value)
+}
+
+fn datetime_to_string(value: u64) -> String {
+    let dt = Utc.timestamp(value as i64 / 1000, (value % 1000) as u32 * 1000000);
+    dt.to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+fn decimal_to_string(value: Decimal) -> String {
+    format!("{}", value)
+}
+
+fn int_to_string(value: i64) -> String {
+    format!("{}", value)
 }
 
 ///
@@ -257,10 +328,10 @@ fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Bytes) 
     let value = String::from_utf8_lossy(&original).to_string();
 
     let mapped: String = match mapping {
-        ColumnMapping::Map { from, .. } => {
+        ColumnMapping::Map { from, as_a, .. } => {
             // Perform some Lua to evaluate the mapped value to push into the new record.
             lua_ctx.globals().set("value", value.clone())?;
-            eval(lua_ctx, from)?
+            eval_typed_lua(lua_ctx, from, *as_a)?
         },
 
         ColumnMapping::Dmy( _column ) => {
@@ -467,7 +538,9 @@ fn csv_reader(path: &PathBuf, source_file: &JetwashSourceFile) -> Result<csv::Re
 ///
 /// The analysed schema datatype adjusted for mapped column datatypes in the charter.
 ///
-fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile, header_record: &csv::ByteRecord) -> Vec<DataType> {
+fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile, header_record: &csv::ByteRecord)
+    -> Vec<DataType> {
+
     header_record.iter()
         .enumerate()
         // Use the analysed data-type for this column - unless there's a column mapping in the charter.
@@ -482,18 +555,50 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
                         ColumnMapping::Dmy { .. } => DataType::Datetime,
                         ColumnMapping::Mdy { .. } => DataType::Datetime,
                         ColumnMapping::Ymd { .. } => DataType::Datetime,
-                        ColumnMapping::Trim { .. } => *analysed_schema.get(idx).expect("no analyed type"),
+                        ColumnMapping::Trim { .. } => *analysed_schema.get(idx).expect(&format!("no analyed type for {}", header)),
                     }
                 }),
                 None => None,
             };
 
+            let mapped_type = match mapped_type {
+                Some(mt) => Some(mt),
+                None => match source_file.new_columns() {
+                    Some(new_cols) => {
+                        match new_cols.iter().find(|nc| nc.column() == header) {
+                            Some(new_col) => Some(new_col.as_a()),
+                            None => None,
+                        }
+                    },
+                    None => None,
+                },
+            };
+
             match mapped_type {
                 Some(data_type) => data_type,
-                None => *analysed_schema.get(idx).expect("no analyed type"),
+                None => *analysed_schema.get(idx).expect(&format!("no analyed type for {}", header)),
             }
         })
         .collect::<Vec<DataType>>()
+}
+
+///
+/// Populate a Lua table of strings.
+///
+fn lua_record<'a>(lua_ctx: &rlua::Context<'a>, record: &csv::ByteRecord, header_record: &csv::ByteRecord)
+    -> Result<rlua::Table<'a>, JetwashError> {
+
+    // TODO: Perf. Consider scanning for only referenced columns.
+
+    let lua_record = lua_ctx.create_table()?;
+
+    for (header, value) in header_record.iter().zip(record.iter()) {
+        let l_header: String = String::from_utf8_lossy(header).into();
+        let l_value: String = String::from_utf8_lossy(value).into();
+        lua_record.set(l_header, l_value)?;
+    }
+
+    Ok(lua_record)
 }
 
 ///
@@ -508,15 +613,5 @@ fn eval<'lua, R: FromLuaMulti<'lua>>(lua_ctx: &rlua::Context<'lua>, lua: &str)
             log::error!("Error in Lua script:\n{}\n\n{}", lua, err.to_string());
             Err(err)
         },
-    }
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn test_date() {
-        let re = regex::Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").unwrap();
-        assert!(re.is_match("16/03/2009"));
-
     }
 }

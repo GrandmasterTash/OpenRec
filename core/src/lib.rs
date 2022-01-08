@@ -3,6 +3,7 @@ use std::time::Duration;
 pub mod charter;
 pub mod data_type;
 pub mod error;
+pub mod lua;
 
 ///
 /// Provide a consistent formatting for durations and rates.

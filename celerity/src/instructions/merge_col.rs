@@ -27,7 +27,8 @@ pub fn validate(source: &[String], grid: &mut Grid) -> Result<DataType, MatcherE
     }
 
     if data_type == DataType::Unknown {
-        return Err(MatcherError::NoValidSourceColumns {})
+        return Ok(DataType::String)
+        // return Err(MatcherError::NoValidSourceColumns {})
     }
 
     Ok(data_type)

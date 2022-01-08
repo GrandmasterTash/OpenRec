@@ -335,7 +335,7 @@ fn is_changeset_file(path: &Path) -> bool {
 ///
 /// Retrun the timestamp prefix from the filename.
 ///
-pub fn timestamp<'a>(filename: &'a str) -> Result<&'a str, MatcherError> {
+pub fn timestamp(filename: &'_ str) -> Result<&'_ str, MatcherError> {
     match FILENAME_REGEX.captures(filename) {
         Some(captures) if captures.len() == 3 => Ok(captures.get(1).map(|ts|ts.as_str()).ok_or(MatcherError::InvalidTimestampPrefix{ filename: filename.into() })?),
         Some(_captures) => Err(MatcherError::InvalidTimestampPrefix{ filename: filename.into() }),
@@ -371,7 +371,7 @@ pub fn unix_timestamp(file_timestamp: &str) -> Option<i64> {
 ///
 /// e.g. 20191209_020405000_INV.unmatched.csv -> INV
 ///
-pub fn shortname<'a>(filename: &'a str) -> &'a str {
+pub fn shortname(filename: &'_ str) -> &'_ str {
     match SHORTNAME_REGEX.captures(filename) {
         Some(captures) if captures.len() == 4 => captures.get(2).map_or(filename, |m| m.as_str()),
         Some(_captures) => filename,
@@ -384,7 +384,7 @@ pub fn shortname<'a>(filename: &'a str) -> &'a str {
 ///
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv -> 20191209_020405000_INV.unmatched.csv
 ///
-pub fn filename(pb: &PathBuf) -> String {
+pub fn filename(pb: &Path) -> String {
     match pb.file_name() {
         Some(os_str) => os_str.to_string_lossy().into(),
         None => panic!("{} is not a file/has no filename", pb.to_canoncial_string()),
@@ -415,7 +415,7 @@ pub fn derived(path: &PathBuf) -> PathBuf {
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.csv
 ///    -> $REC_HOME/unmatched/20191209_020405000_INV.csv.modifyng
 ///
-pub fn modifying(path: &PathBuf) -> PathBuf {
+pub fn modifying(path: &Path) -> PathBuf {
 
     if is_data_file(path) || is_unmatched_data_file(path) {
         return path.with_extension(MODIFYING)
@@ -430,7 +430,7 @@ pub fn modifying(path: &PathBuf) -> PathBuf {
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.
 ///    -> $REC_HOME/unmatched/20191209_020405000_INV.unmatched.csv.pre_modified
 ///
-pub fn pre_modified(path: &PathBuf) -> PathBuf {
+pub fn pre_modified(path: &Path) -> PathBuf {
     path.with_extension(PRE_MODIFIED)
 }
 

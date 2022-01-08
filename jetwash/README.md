@@ -3,9 +3,9 @@ A data scrubbing and preparation component used to convert bespoke csv files int
 
 ## TODOs
 - Add an OpenRec_UUID column.
-- Force column data-type - for example an empty column will be interpreted as a string.
+- Allow config to force column data-type - for example an empty column will be interpreted as a string.
 - lookup(get_me_col, where_col, equals_this), trim(), decimal(), datetime(y, m, d, h, m, s, mi) functions provided.
-- section for global Lua functions - to be used in a field converter.
+- Hook-in lua_globals from charter
 
 Happy path flow: -
 INBOX          ORIGINAL       WAITING

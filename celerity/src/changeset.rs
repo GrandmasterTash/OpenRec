@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use anyhow::Context as ErrContext;
 use serde::{Deserialize, Serialize};
+use core::lua::init_context;
 use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instant}};
 use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, utils::{self, csv::{CsvWriters, CsvWriter}}};
 
@@ -138,7 +139,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
         let mut eval_ctx = EvalContext { change_idx: 0, row: 0, file: 0 };
 
         ctx.lua().context(|lua_ctx| {
-            lua::init_context(&lua_ctx, ctx.charter().global_lua())?;
+            init_context(&lua_ctx, ctx.charter().global_lua())?;
 
             // Apply each changeset in order to each record.
             for mut record in grid.iter(ctx) {
@@ -270,7 +271,7 @@ fn record_effected(
     lua_ctx: &rlua::Context,
     schema: &GridSchema) -> Result<bool, MatcherError> {
 
-    let effected = !lua::lua_filter(&[record], &lua_filter, lua_ctx, schema)?.is_empty();
+    let effected = !lua::lua_filter(&[record], lua_filter, lua_ctx, schema)?.is_empty();
 
     log::trace!("record_effected: {} : {:?} : {}", lua_filter, record.as_strings(), effected);
 
