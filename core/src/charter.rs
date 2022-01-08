@@ -48,6 +48,9 @@ pub struct Jetwash {
 #[serde(deny_unknown_fields, rename = "SourceFile")]
 pub struct JetwashSourceFile {
     pattern: String,
+    escape: Option<String>,
+    quote: Option<String>,
+    delimeter: Option<String>,
     headers: Option<Vec<String>>,
     column_mappings: Option<Vec<ColumnMapping>>,
     new_columns: Option<Vec<NewColumn>>,
@@ -103,6 +106,18 @@ impl Jetwash {
 impl JetwashSourceFile {
     pub fn pattern(&self) -> &str {
         &self.pattern
+    }
+
+    pub fn escape(&self) -> &Option<String> {
+        &self.escape
+    }
+
+    pub fn quote(&self) -> &Option<String> {
+        &self.quote
+    }
+
+    pub fn delimeter(&self) -> &Option<String> {
+        &self.delimeter
     }
 
     pub fn headers(&self) -> &Option<Vec<String>> {

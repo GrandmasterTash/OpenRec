@@ -17,10 +17,10 @@ use chrono::{Utc, TimeZone, SecondsFormat};
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
 use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType, lua::{init_context, LuaDecimal}};
 
-// TODO: Allow Esccape, Quote and Delimeter chars to be configured.
 // TODO: Lookups. https://github.com/geoffleyland/lua-csv
 // TODO: Clippy!
 // TODO: Log time for job.
+// TODO: Non-example based tests.
 
 lazy_static! {
     static ref DATES: Vec<Regex> = vec!(
@@ -531,11 +531,28 @@ fn analyse_and_validate(ctx: &Context, jetwash: &Jetwash) -> Result<AnalysisResu
 /// Create a CSV reader configured from the source file options ready to read the file/path specified.
 ///
 fn csv_reader(path: &PathBuf, source_file: &JetwashSourceFile) -> Result<csv::Reader<File>, JetwashError> {
+    let escape = match source_file.escape() {
+        Some(e) => Some(e.as_bytes()[0]),
+        None => None,
+    };
+
+    let quote = match source_file.quote() {
+        Some(q) => q.as_bytes()[0],
+        None => b'"',
+    };
+
+    let delimeter = match source_file.delimeter() {
+        Some(d) => d.as_bytes()[0],
+        None => b',',
+    };
+
     csv::ReaderBuilder::new()
-        // TODO: Allow Esccape, Quote and Delimeter chars to be configured.
         .has_headers(!source_file.headers().is_some())
+        .escape(escape)
+        .quote(quote)
+        .delimiter(delimeter)
         .from_path(path)
-        .map_err(|source| JetwashError::CannotOpenCsv { source, path: path.to_canoncial_string() })
+            .map_err(|source| JetwashError::CannotOpenCsv { source, path: path.to_canoncial_string() })
 }
 
 
