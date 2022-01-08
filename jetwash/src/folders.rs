@@ -14,7 +14,8 @@ pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), JetwashError> {
     let folders = vec!(
         inbox(ctx),
         waiting(ctx),
-        original(ctx));
+        original(ctx),
+        lookups(ctx));
 
     for folder in folders {
         fs::create_dir_all(&folder)
@@ -135,6 +136,10 @@ pub fn waiting(ctx: &Context) -> PathBuf {
 
 pub fn original(ctx: &Context) -> PathBuf {
     Path::new(ctx.base_dir()).join("original/")
+}
+
+pub fn lookups(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("lookups/")
 }
 
 ///

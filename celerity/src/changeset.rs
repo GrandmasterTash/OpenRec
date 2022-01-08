@@ -139,7 +139,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
         let mut eval_ctx = EvalContext { change_idx: 0, row: 0, file: 0 };
 
         ctx.lua().context(|lua_ctx| {
-            init_context(&lua_ctx, ctx.charter().global_lua())?;
+            init_context(&lua_ctx, ctx.charter().global_lua(), &folders::lookups(ctx))?;
 
             // Apply each changeset in order to each record.
             for mut record in grid.iter(ctx) {

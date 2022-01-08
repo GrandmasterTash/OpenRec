@@ -1,8 +1,10 @@
 use regex::Regex;
 use chrono::DateTime;
+use ubyte::ToByteUnit;
 use lazy_static::lazy_static;
-use core::data_type::DataType;
-use crate::error::JetwashError;
+use std::{collections::HashMap, path::PathBuf, time::Instant};
+use crate::{error::JetwashError, Context, folders, csv_reader};
+use core::{data_type::DataType, charter::{JetwashSourceFile, Jetwash}, blue, formatted_duration_rate};
 
 ///
 /// This analysis uses an ordered heirachy to the data-types. Ranging from the 'most specific' to the
@@ -38,13 +40,117 @@ lazy_static! {
 	static ref UUID_REGEX: Regex = Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$").expect("invalid uuid regex");
 }
 
+#[derive(Debug)]
+pub struct AnalysisResult {
+    source_file: JetwashSourceFile,
+    analysed_schema: Vec<DataType>
+}
+
+///
+/// Represents the result of analysing a csv file.
+///
+impl AnalysisResult {
+    pub fn source_file(&self) -> &JetwashSourceFile {
+        &self.source_file
+    }
+
+    pub fn analysed_schema(&self) -> &Vec<DataType> {
+        &self.analysed_schema
+    }
+}
+
+pub type AnalysisResults = HashMap<PathBuf /* inbox-file */, AnalysisResult>;
+
+///
+/// Read each cell in and deduce what each column's data_type should be.
+///
+pub fn analyse_and_validate(ctx: &Context, jetwash: &Jetwash) -> Result<AnalysisResults, JetwashError> {
+
+    let mut any_errors = false;
+    let mut results = AnalysisResults::new();
+
+    for source_file in jetwash.source_files().iter() {
+        // Open a csv reader and iterate each row in the file to validate it's readable.
+        for file in folders::files_in_inbox(ctx, source_file.pattern())? {
+            let started = Instant::now();
+            log::debug!("Scanning file {} ({})", file.path().to_string_lossy(), file.metadata().expect("no metadata").len().bytes());
+
+            // For now, just count all the records in a file and log them.
+            let mut row_count = 0;
+            let mut col_count = 0;
+            let mut err_count = 0;
+
+            // These are the analysed column's data-types.
+            let mut data_types = vec!();
+
+            // The row number to report in any errors is offset by the header row.
+            let row_offset = match source_file.headers().is_some() {
+                true  => 1,
+                false => 0,
+            };
+
+            let mut rdr = csv_reader(&file.path(), source_file)?;
+
+            for result in rdr.byte_records() {
+                row_count += 1;
+
+                match result {
+                    Ok(csv_record) => {
+                        // If this is the first row, initialise all current data-types.
+                        if col_count == 0 {
+                            data_types = vec![DataType::Unknown; csv_record.len()];
+                        }
+
+                        // Analyse the row's actual data and narrow-down what the type is.
+                        if let Err(err) = analyse_types(&mut data_types, &csv_record) {
+                            log::error!("{:?}:{} {}", file.path(), row_count + row_offset, err);
+                            err_count += 1;
+                        }
+
+                        col_count = csv_record.len();
+                    },
+                    Err(err) => {
+                        log::error!("{:?}:{} {}", file.path(), row_count + row_offset, err);
+                        err_count += 1;
+                    },
+                }
+            }
+
+            if err_count > 0 {
+                // If there are any errors rename the file.
+                folders::fail_file(&file)?;
+                any_errors = true;
+
+            } else {
+                // Store the analysis results for this file.
+                results.insert(file.path(), AnalysisResult { source_file: source_file.clone(), analysed_schema: data_types });
+            }
+
+            let (duration, _rate) = formatted_duration_rate(row_count, started.elapsed());
+
+            log::info!("{} records with {} columns scanned from file {} in {}",
+                row_count,
+                col_count,
+                file.file_name().to_string_lossy(),
+                blue(&duration));
+        }
+    }
+
+    // TODO: If there's been any errors, abort the job (IF configured)
+    if any_errors {
+        return Err(JetwashError::AnalysisErrors)
+    }
+
+    Ok(results)
+}
+
 ///
 /// Iterate each column and deduce the cell's type - track the data-type being used for each column.
 ///
 /// The data_types passed in are the current best-guesses for the column data-types. These will be refined if required
 /// based on the current record passed in.
 ///
-pub fn analyse_types(data_types: &mut [DataType], csv_record: &csv::ByteRecord) -> Result<(), JetwashError> {
+fn analyse_types(data_types: &mut [DataType], csv_record: &csv::ByteRecord) -> Result<(), JetwashError> {
 
 	for (col_idx, value) in csv_record.iter().enumerate() {
 		// Ensure the value is a valid UTF8.

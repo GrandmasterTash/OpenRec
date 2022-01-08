@@ -1,35 +1,22 @@
 mod error;
 mod folders;
+mod mapping;
 mod analyser;
 
 use uuid::Uuid;
-use regex::Regex;
 use anyhow::Result;
 use ubyte::ToByteUnit;
-use rlua::FromLuaMulti;
 use error::JetwashError;
 use itertools::Itertools;
-use rust_decimal::Decimal;
-use lazy_static::lazy_static;
+use analyser::AnalysisResults;
 use bytes::{Bytes, BytesMut, BufMut};
 use crate::folders::ToCanoncialString;
-use chrono::{Utc, TimeZone, SecondsFormat};
-use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, collections::HashMap, fs::{File, self}};
-use core::{charter::{Charter, JetwashSourceFile, Jetwash, ColumnMapping}, formatted_duration_rate, blue, data_type::DataType, lua::{init_context, LuaDecimal}};
+use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}};
+use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context};
 
-// TODO: Lookups. https://github.com/geoffleyland/lua-csv
 // TODO: Clippy!
 // TODO: Log time for job.
 // TODO: Non-example based tests.
-
-lazy_static! {
-    static ref DATES: Vec<Regex> = vec!(
-        Regex::new(r"^(\d{1,4})-(\d{1,4})-(\d{1,4})$").expect("bad regex d-m-y"),      // d-m-y
-        Regex::new(r"^(\d{1,4})/(\d{1,4})/(\d{1,4})$").expect("bad regex d/m/y"),      // d/m/y
-        Regex::new(r"^(\d{1,4})\\(\d{1,4})\\(\d{1,4})$").expect(r#"bad regex d\m\y"#), // d\m\y
-        Regex::new(r"^(\d{1,4})\W(\d{1,4})\W(\d{1,4})$").expect("bad regex d m y"),    // d m y
-    );
-}
 
 ///
 /// Created for each match job. Used to pass the main top-level job 'things' around.
@@ -91,27 +78,6 @@ impl Context {
     }
 }
 
-#[derive(Debug)]
-struct AnalysisResult {
-    source_file: JetwashSourceFile,
-    analysed_schema: Vec<DataType>
-}
-
-///
-/// Represents the result of analysing a csv file.
-///
-impl AnalysisResult {
-    pub fn source_file(&self) -> &JetwashSourceFile {
-        &self.source_file
-    }
-
-    pub fn analysed_schema(&self) -> &Vec<DataType> {
-        &self.analysed_schema
-    }
-}
-
-type AnalysisResults = HashMap<PathBuf /* inbox-file */, AnalysisResult>;
-
 ///
 /// Scan and analyse inbox files, then run them through the Jetwash to produce waiting files for celerity.
 ///
@@ -134,7 +100,7 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P) -> Result<(), J
     // Validate and analyse the files.
     if let Some(jetwash) = ctx.charter().jetwash() {
         // Check the file is UTF8, a valid CSV, and analyse each column's data-type.
-        let results = analyse_and_validate(&ctx, jetwash)?;
+        let results = analyser::analyse_and_validate(&ctx, jetwash)?;
 
         // Create sanitised copies of the original files for celerity. Mapping any columns with mapping config.
         for file in results.keys() {
@@ -171,7 +137,7 @@ fn wash_file(ctx: &Context, file: &PathBuf, results: &AnalysisResults) -> Result
 
     // Read each row in, write to new file.
     ctx.lua().context(|lua_ctx| {
-        init_context(&lua_ctx, ctx.charter().global_lua())?;
+        init_context(&lua_ctx, ctx.charter().global_lua(), &folders::lookups(ctx))?;
 
         for record_result in reader.byte_records() {
             let record = record_result // Ensure we can read the record - but ignore it at this point.
@@ -247,7 +213,7 @@ fn transform_record(
             Some(mappings) => {
                 match mappings.iter().find(|m| m.column() == header) {
                     Some(mapping) => {
-                        let new_value = map_field(lua_ctx, mapping, bytes_from_slice(&value))?;
+                        let new_value = mapping::map_field(lua_ctx, mapping, bytes_from_slice(&value))?;
 
                         log::trace!("Mapping row {row}, column {column} from [{from}] to [{to}]",
                             column = header,
@@ -266,10 +232,10 @@ fn transform_record(
 
     // Transform new columns.
     if let Some(new_columns) = source_file.new_columns() {
-        lua_ctx.globals().set("record", lua_record(lua_ctx, &new_record, &header_record)?)?;
+        lua_ctx.globals().set("record", mapping::lua_record(lua_ctx, &new_record, &header_record)?)?;
 
         for column in new_columns {
-            let new_value: Bytes = eval_typed_lua(&lua_ctx, column.from(), column.as_a())?.into();
+            let new_value: Bytes = mapping::eval_typed_lua(&lua_ctx, column.from(), column.as_a())?.into();
 
             log::trace!("Mapping row {row}, column {column} from [new] to [{to}]",
                 column = column.column(),
@@ -287,116 +253,6 @@ fn bytes_from_slice(data: &[u8]) -> Bytes {
     let mut bm = BytesMut::new();
     bm.put(data);
     bm.freeze()
-}
-
-///
-/// Use Lua to generate a new column on the incoming file.
-///
-fn eval_typed_lua(lua_ctx: &rlua::Context, lua: &str, as_a: DataType) -> Result<String, JetwashError> {
-    let mapped = match as_a {
-        DataType::Unknown => panic!("Can't eval if data-type is Unknown"),
-        DataType::Boolean => bool_to_string(eval(lua_ctx, lua)?),
-        DataType::Datetime => datetime_to_string(eval(lua_ctx, lua)?),
-        DataType::Decimal => decimal_to_string(eval::<LuaDecimal>(lua_ctx, lua)?.0),
-        DataType::Integer => int_to_string(eval(lua_ctx, lua)?),
-        DataType::String => eval(lua_ctx, lua)?,
-        DataType::Uuid => eval(lua_ctx, lua)?,
-    };
-    Ok(mapped)
-}
-
-fn bool_to_string(value: bool) -> String {
-    format!("{}", value)
-}
-
-fn datetime_to_string(value: u64) -> String {
-    let dt = Utc.timestamp(value as i64 / 1000, (value % 1000) as u32 * 1000000);
-    dt.to_rfc3339_opts(SecondsFormat::Millis, true)
-}
-
-fn decimal_to_string(value: Decimal) -> String {
-    format!("{}", value)
-}
-
-fn int_to_string(value: i64) -> String {
-    format!("{}", value)
-}
-
-///
-/// Perform a column mapping on the value specified.
-///
-/// Mappings could be raw Lua script or one of a preset help mappings, trim, dmy, etc.
-///
-fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Bytes) -> Result<Bytes, JetwashError> {
-    // Provide the original value to the Lua script as a string variable called 'value'.
-    let value = String::from_utf8_lossy(&original).to_string();
-
-    let mapped: String = match mapping {
-        ColumnMapping::Map { from, as_a, .. } => {
-            // Perform some Lua to evaluate the mapped value to push into the new record.
-            lua_ctx.globals().set("value", value.clone())?;
-            eval_typed_lua(lua_ctx, from, *as_a)?
-        },
-
-        ColumnMapping::Dmy( _column ) => {
-            // If there's a value, try to parse as d/m/y, then d-m-y, then d\m\y, then d m y.
-            match date_captures(&value) {
-                Some(captures) => {
-                    let dt = Utc.ymd(captures.2 as i32, captures.1, captures.0).and_hms_milli(0, 0, 0, 0);
-                    dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-                },
-                None => value,
-            }
-        },
-
-        ColumnMapping::Mdy( _column ) => {
-            // If there's a value, try to parse as m/d/y, then m-d-y, then m\d\y, then m d y.
-            match date_captures(&value) {
-                Some(captures) => {
-                    let dt = Utc.ymd(captures.2 as i32, captures.0, captures.1).and_hms_milli(0, 0, 0, 0);
-                    dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-                },
-                None => value,
-            }
-        },
-
-        ColumnMapping::Ymd( _column ) => {
-            // If there's a value, try to parse as y/m/d, then y-m-d, then y/m/d, then y m d.
-            match date_captures(&value) {
-                Some(captures) => {
-                    let dt = Utc.ymd(captures.0 as i32, captures.1, captures.0).and_hms_milli(0, 0, 0, 0);
-                    dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-                },
-                None => value,
-            }
-        },
-
-        ColumnMapping::Trim( _column ) => value.trim().to_string(),
-    };
-
-    Ok(mapped.into())
-}
-
-///
-/// Iterate the date pattern combinations and if we get a match, return the three component/captures
-///
-fn date_captures(value: &str) -> Option<(u32, u32, u32)> {
-    for pattern in &*DATES {
-        match pattern.captures(&value) {
-            Some(captures) if captures.len() == 4 => {
-                if let Ok(n1) = captures.get(1).expect("capture 1 missing").as_str().parse::<u32>() {
-                    if let Ok(n2) = captures.get(2).expect("capture 2 missing").as_str().parse::<u32>() {
-                        if let Ok(n3) = captures.get(3).expect("capture 3 missing").as_str().parse::<u32>() {
-                            return Some((n1, n2, n3))
-                        }
-                    }
-                }
-            },
-            Some(_capture) => {},
-            None => {},
-        }
-    }
-    None
 }
 
 ///
@@ -442,89 +298,6 @@ fn init_job(charter: PathBuf, base_dir: PathBuf) -> Result<Context, JetwashError
     log::info!("  Base dir: {}", ctx.base_dir().to_canoncial_string());
 
     Ok(ctx)
-}
-
-///
-/// Read each cell in and deduce what each column's data_type should be.
-///
-fn analyse_and_validate(ctx: &Context, jetwash: &Jetwash) -> Result<AnalysisResults, JetwashError> {
-
-    let mut any_errors = false;
-    let mut results = AnalysisResults::new();
-
-    for source_file in jetwash.source_files().iter() {
-        // Open a csv reader and iterate each row in the file to validate it's readable.
-        for file in folders::files_in_inbox(ctx, source_file.pattern())? {
-            let started = Instant::now();
-            log::debug!("Scanning file {} ({})", file.path().to_string_lossy(), file.metadata().expect("no metadata").len().bytes());
-
-            // For now, just count all the records in a file and log them.
-            let mut row_count = 0;
-            let mut col_count = 0;
-            let mut err_count = 0;
-
-            // These are the analysed column's data-types.
-            let mut data_types = vec!();
-
-            // The row number to report in any errors is offset by the header row.
-            let row_offset = match source_file.headers().is_some() {
-                true  => 1,
-                false => 0,
-            };
-
-            let mut rdr = csv_reader(&file.path(), source_file)?;
-
-            for result in rdr.byte_records() {
-                row_count += 1;
-
-                match result {
-                    Ok(csv_record) => {
-                        // If this is the first row, initialise all current data-types.
-                        if col_count == 0 {
-                            data_types = vec![DataType::Unknown; csv_record.len()];
-                        }
-
-                        // Analyse the row's actual data and narrow-down what the type is.
-                        if let Err(err) = analyser::analyse_types(&mut data_types, &csv_record) {
-                            log::error!("{:?}:{} {}", file.path(), row_count + row_offset, err);
-                            err_count += 1;
-                        }
-
-                        col_count = csv_record.len();
-                    },
-                    Err(err) => {
-                        log::error!("{:?}:{} {}", file.path(), row_count + row_offset, err);
-                        err_count += 1;
-                    },
-                }
-            }
-
-            if err_count > 0 {
-                // If there are any errors rename the file.
-                folders::fail_file(&file)?;
-                any_errors = true;
-
-            } else {
-                // Store the analysis results for this file.
-                results.insert(file.path(), AnalysisResult { source_file: source_file.clone(), analysed_schema: data_types });
-            }
-
-            let (duration, _rate) = formatted_duration_rate(row_count, started.elapsed());
-
-            log::info!("{} records with {} columns scanned from file {} in {}",
-                row_count,
-                col_count,
-                file.file_name().to_string_lossy(),
-                blue(&duration));
-        }
-    }
-
-    // TODO: If there's been any errors, abort the job (IF configured)
-    if any_errors {
-        return Err(JetwashError::AnalysisErrors)
-    }
-
-    Ok(results)
 }
 
 ///
@@ -613,40 +386,3 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
         })
         .collect::<Vec<DataType>>()
 }
-
-///
-/// Populate a Lua table of strings.
-///
-fn lua_record<'a>(lua_ctx: &rlua::Context<'a>, record: &csv::ByteRecord, header_record: &csv::ByteRecord)
-    -> Result<rlua::Table<'a>, JetwashError> {
-
-    // TODO: Perf. Consider scanning for only referenced columns.
-
-    let lua_record = lua_ctx.create_table()?;
-
-    for (header, value) in header_record.iter().zip(record.iter()) {
-        let l_header: String = String::from_utf8_lossy(header).into();
-        let l_value: String = String::from_utf8_lossy(value).into();
-        lua_record.set(l_header, l_value)?;
-    }
-
-    Ok(lua_record)
-}
-
-///
-/// Run the lua script provided. Reporting the failing script if it errors.
-///
-fn eval<'lua, R: FromLuaMulti<'lua>>(lua_ctx: &rlua::Context<'lua>, lua: &str)
-    -> Result<R, rlua::Error> {
-
-    match lua_ctx.load(lua).eval::<R>() {
-        Ok(result) => Ok(result),
-        Err(err) => {
-            log::error!("Error in Lua script:\n{}\n\n{}", lua, err.to_string());
-            Err(err)
-        },
-    }
-}
-
-
-// TODO: Break this bad-boy up a bit.

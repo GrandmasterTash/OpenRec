@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use chrono::{Utc, TimeZone};
 use rlua::{FromLuaMulti, Number};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
@@ -5,7 +7,7 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 ///
 /// Plug-in global Rust functions that can be called from Lua script.
 ///
-pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>) -> Result<(), rlua::Error> {
+pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>, lookup_path: &Path) -> Result<(), rlua::Error> {
     let globals = lua_ctx.globals();
 
     // Create a decimal() function to convert a Lua number to a Rust Decimal data-type.
@@ -23,6 +25,20 @@ pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>) -> Res
     })?;
 
     globals.set("date_only", date_only)?;
+
+    // Create a lookup(field, filename, filter_field, filter_string) function to find a value from another csv.
+    let lookup_path = lookup_path.to_string_lossy().to_string();
+    let lookup = lua_ctx.create_function(move |_, search: (
+        /* find_field: */ String,
+        /* file_name:  */ String,
+        /* where_field: */ String,
+        /* where_value: */ String)| {
+        // Ok(lookup(&search.0, &search.1, &search.2, &search.3, lookup_path.clone())?)
+        Ok(lookup(&search.0, &search.1, &search.2, &search.3, &lookup_path)
+            .map_err(|err| rlua::Error::external(format!("{}", err)))?)
+    })?;
+
+    globals.set("lookup", lookup)?;
 
     // Run any global scripts.
     if let Some(global_lua) = global_lua {
@@ -67,4 +83,54 @@ impl rlua::UserData for LuaDecimal {
         methods.add_meta_method(rlua::MetaMethod::ToString, |_, this, _: ()| { Ok(this.0.to_string()) });
         // Arithmetic operations between a Decimal and other types can go here...
     }
+}
+
+///
+/// Find a value from another csv file - or empty string if no match.
+///
+fn lookup(what_field: &str, file_name: &str, where_field: &str, is: &str, lookup_path: &str)
+    -> Result<String, csv::Error> {
+
+    // TODO: Perf. Once working consider creating a reader cache, with last 5 entries cached in memory - consider function memoization.
+    let path = Path::new(lookup_path).join(file_name);
+    if !path.exists() {
+        panic!("Lookup file {} does not exist", path.to_string_lossy());
+    }
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(path)
+        .unwrap_or_else(|err| panic!("Failed to open {} : {}", lookup_path, err));
+
+    // Get the column position of the where_field header.
+    let where_col = match reader.headers()?.iter().position(|h| h == where_field) {
+        Some(col) => col,
+        None => panic!("Lookup 'where' field {} was not in the file {}", where_field, file_name),
+    };
+
+    // Get the column position of the what_field header.
+    let what_col = match reader.headers()?.iter().position(|h| h == what_field) {
+        Some(col) => col,
+        None => panic!("Lookup 'what' field {} was not in the file {}", what_field, file_name),
+    };
+
+    for record in reader.records() {
+        let record = record?;
+
+        // Find a record where the where_field value == the is clause.
+        match record.get(where_col) {
+            Some(value) => {
+                if value == is {
+                    // Return the what_field.
+                    match record.get(what_col) {
+                        Some(what) => return Ok(what.to_string()),
+                        None => return Ok(String::default()),
+                    }
+                }
+            },
+            None => continue,
+        }
+    }
+
+    return Ok(String::default())
 }

@@ -258,6 +258,10 @@ pub fn archive(ctx: &Context) -> PathBuf {
     Path::new(ctx.base_dir()).join("archive/celerity")
 }
 
+pub fn lookups(ctx: &Context) -> PathBuf {
+    Path::new(ctx.base_dir()).join("lookups/")
+}
+
 pub fn debug_path(ctx: &Context) -> PathBuf {
     Path::new(ctx.base_dir()).join("debug/")
 }

@@ -44,6 +44,7 @@ Each charter will operate in it's own folder structure. These folders should be 
   |   ├── archive
   |   |   ├── jetwash
   |   |   └── celerity
+  |   ├── lookups
   |   ├── waiting
   |   ├── unmatched
   |   ├── matching

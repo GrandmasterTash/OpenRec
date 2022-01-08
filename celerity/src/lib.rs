@@ -305,6 +305,7 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
     // Wrap the schema and charter in arcs to share amongst threads.
     let schema = Arc::new(grid.schema().clone());
     let charter = Arc::new(ctx.charter());
+    let lookup_path = folders::lookups(ctx);
 
     pool.install::<_, Result<(), MatcherError>>(|| {
         // Derive each file in a parallel iterator.
@@ -312,7 +313,7 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
             .par_iter_mut()
             .enumerate()
             .map(|(file_idx, (reader, writer))| {
-                derive_file(file_idx, reader, writer, schema.clone(), charter.clone(), projection_cols.clone())
+                derive_file(file_idx, reader, writer, schema.clone(), charter.clone(), projection_cols.clone(), &lookup_path)
             })
             .collect::<Result<Vec<Metrics>, MatcherError>>()?
             .into_iter() // Result IntoIterator takes the R not the E
@@ -358,7 +359,8 @@ fn derive_file(
     writer: &mut CsvWriter,
     schema: Arc<GridSchema>,
     charter: Arc<&Charter>,
-    avail_cols: HashMap<usize, Vec<Column>>) -> Result<HashMap<usize, Duration>, MatcherError> {
+    avail_cols: HashMap<usize, Vec<Column>>,
+    lookup_path: &Path) -> Result<HashMap<usize, Duration>, MatcherError> {
 
     // Track accumulated time in each project and merge instruction.
     let mut metrics: HashMap<usize, Duration> = HashMap::new();
@@ -369,7 +371,7 @@ fn derive_file(
     let lua = rlua::Lua::new();
 
     lua.context(|lua_ctx| {
-        init_context(&lua_ctx, charter.global_lua())?;
+        init_context(&lua_ctx, charter.global_lua(), lookup_path)?;
         for csv_record in reader.byte_records() {
             let mut record = Record::new(file_idx, schema.clone(), csv_record?, csv::ByteRecord::new());
 

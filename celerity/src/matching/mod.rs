@@ -335,7 +335,7 @@ fn eval_contraints(
 
     // Create a Lua context to evaluate Constraint rules in.
     ctx.lua().context(|lua_ctx| {
-        init_context(&lua_ctx, ctx.charter().global_lua())?;
+        init_context(&lua_ctx, ctx.charter().global_lua(), &folders::lookups(ctx))?;
         lua::create_aggregate_fns(&lua_ctx)?;
 
         // Iterate groups one at a time, loading all the group's records into memory.
