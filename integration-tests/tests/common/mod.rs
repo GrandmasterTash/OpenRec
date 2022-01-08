@@ -45,21 +45,19 @@ pub fn init_test<P: AsRef<str>>(folder: P) -> PathBuf {
 
     use_fixed_timestamp();
     use_fixed_job_id();
+    // use_predictable_record_uuids();
     let base_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(folder.as_ref());
 
     // Delete everything in base_dir.
-    remove(&base_dir)
-        .expect(&format!("Cannot remove base_dir {}", base_dir.to_string_lossy()));
+    remove(&base_dir).expect(&format!("Cannot remove base_dir {}", base_dir.to_string_lossy()));
 
-    // Create a waiting folder to put the test data files.
-    let waiting = base_dir.join("waiting/");
-    std::fs::create_dir_all(&waiting)
-        .expect("Cannot create a waiting folder");
+    // Create an inbox folder to put the test data files in.
+    let waiting = base_dir.join("inbox/");
+    std::fs::create_dir_all(&waiting).expect("Cannot create a inbox folder");
 
     // Create an unmatched folder - some tests start with existing unmatched files.
     let unmatched = base_dir.join("unmatched/");
-    std::fs::create_dir_all(&unmatched)
-        .expect("Cannot create a unmatched folder");
+    std::fs::create_dir_all(&unmatched).expect("Cannot create a unmatched folder");
 
     base_dir
 }
@@ -76,13 +74,12 @@ pub fn init_test<P: AsRef<str>>(folder: P) -> PathBuf {
 pub fn init_test_from_examples(folder: &str, data_files: &Vec<PathBuf>) -> PathBuf {
     let base_dir = init_test(folder);
 
-    // Create a waiting folder to put the test data files.
-    let waiting = base_dir.join("waiting/");
-    std::fs::create_dir_all(&waiting)
-        .expect("Cannot create a waiting folder");
+    // Create a inbox folder to put the test data files.
+    let inbox = base_dir.join("inbox/");
+    std::fs::create_dir_all(&inbox).expect("Cannot create a inbox folder");
 
     // Copy the test data files into a temporary folder.
-    copy_items(&data_files, &waiting, &CopyOptions::new())
+    copy_items(&data_files, &inbox, &CopyOptions::new())
         .expect(&format!("Cannot copy test data {:?} into {}", data_files, base_dir.to_string_lossy()));
 
     base_dir
@@ -94,10 +91,10 @@ pub fn init_test_from_examples(folder: &str, data_files: &Vec<PathBuf>) -> PathB
 pub fn copy_example_data_file(filename: &str, base_dir: &PathBuf) -> PathBuf {
     let data_file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../examples/data/{}", filename));
 
-    let waiting = base_dir.join("waiting/");
+    let inbox = base_dir.join("inbox/");
 
     // Copy the test data files into a temporary folder.
-    copy_items(&vec!(data_file.clone()), &waiting, &CopyOptions::new())
+    copy_items(&vec!(data_file.clone()), &inbox, &CopyOptions::new())
         .expect(&format!("Cannot copy test data file {:?} into {}", filename, base_dir.to_string_lossy()));
 
     data_file
@@ -144,6 +141,15 @@ pub fn assert_matched_contents(matched: PathBuf, expected: Value) {
 ///
 pub fn assert_file_contents(path: &PathBuf, expected: &str) {
     assert_eq!(std::fs::read_to_string(path).unwrap(), expected);
+}
+
+pub fn assert_n_files_in(expected_count: usize, folder: &str, base_dir: &Path) {
+    let actual_count = get_dir_content(base_dir.join(folder)).expect(&format!("Unable to count files in {}", folder)).files.len();
+    assert_eq!(actual_count, expected_count, "Expected {} files in {} but there were {}", expected_count, folder, actual_count);
+}
+
+pub fn get_match_job_file(base_dir: &PathBuf) -> PathBuf {
+    Path::new(base_dir).join("matched").join(format!("{}_matched.json", FIXED_TS))
 }
 
 ///
@@ -234,6 +240,13 @@ fn use_fixed_timestamp() {
 fn use_fixed_job_id() {
     std::env::set_var("OPENREC_FIXED_JOB_ID", FIXED_JOB_ID);
 }
+
+// ///
+// /// Ensure predictable record uuids are used.
+// ///
+// fn use_predictable_record_uuids() {
+//     std::env::set_var("OPENREC_PREDICTABLE_RECORD_UUIDS", "1");
+// }
 
 ///
 /// Return all the filenames in the folder specified.

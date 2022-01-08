@@ -11,6 +11,14 @@ description: |
 version: 1
 debug: true
 
+jetwash:
+  source_files:
+   - pattern: ^01-invoices\.csv$
+     column_mappings:
+      - ymd: Invoice Date
+   - pattern: ^01-payments\.csv$
+     column_mappings:
+      - dmy: Payment Date
 
 matching:
   # TODO: Explain how the pattern works and how it allows unmatched files as well.

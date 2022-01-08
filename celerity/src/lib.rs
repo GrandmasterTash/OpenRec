@@ -170,11 +170,16 @@ fn init_job<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<Context, MatcherE
     let base_dir_pb = base_dir.as_ref().to_path_buf().canonicalize()?;
     let ctx = Context::new(Charter::load(&charter_pb)?, charter_pb, base_dir_pb);
 
-    log::info!("Starting match job:\nJob ID: {job_id}\nCharter: {charter} (v{version})\nBase Dir: {base_dir}",
-        job_id = ctx.job_id(),
-        charter = ctx.charter().name(),
-        version = ctx.charter().version(),
-        base_dir = ctx.base_dir().to_canoncial_string());
+    // log::info!("Starting match job:\nJob ID: {job_id}\nCharter: {charter} (v{version})\nBase Dir: {base_dir}",
+    //     job_id = ctx.job_id(),
+    //     charter = ctx.charter().name(),
+    //     version = ctx.charter().version(),
+    //     base_dir = ctx.base_dir().to_canoncial_string());
+
+    log::info!("Starting match job:");
+    log::info!("    Job ID: {}", ctx.job_id());
+    log::info!("   Charter: {} (v{})", ctx.charter().name(), ctx.charter().version());
+    log::info!("  Base dir: {}", ctx.base_dir().to_canoncial_string());
 
     Ok(ctx)
 }

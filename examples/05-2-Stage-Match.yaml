@@ -35,6 +35,10 @@ debug: true
 # TYP3   250.00   ------ 1643110400000 -------------
 # TYP4   250.00   ------ ------------- 1643110400000
 
+jetwash:
+  source_files:
+   - pattern: ^05-2-stage\.csv$
+
 matching:
   # Disable field prefixes. Without this, all the fields would be prefixed with '2-stage.' for
   # example '2-stage.Amount_1'. Instead, by suppressing them we can use 'Amount_1' instead.

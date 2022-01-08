@@ -20,6 +20,12 @@ version: 1
 # have the name format yyyymmdd_hhmmssmmm_XXXXXX.unmatched.csv. These files contain previously
 # unmatched data and are moved back into the matching folder during subsequent match jobs.
 debug: true
+
+jetwash:
+  source_files:
+   - pattern: ^07-invoices\.csv$
+   - pattern: ^07-payments.*\.csv$
+
 matching:
   source_files:
     - pattern: .*07-invoices.*\.csv

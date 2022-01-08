@@ -19,6 +19,11 @@ description: |
 version: 1
 debug: true
 
+jetwash:
+  source_files:
+   - pattern: ^03-invoices\.csv$
+   - pattern: ^03-payments\.csv$
+
 matching:
   source_files:
     - pattern: .*03-invoices.*\.csv

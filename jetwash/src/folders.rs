@@ -135,7 +135,7 @@ pub fn waiting(ctx: &Context) -> PathBuf {
 }
 
 pub fn original(ctx: &Context) -> PathBuf {
-    Path::new(ctx.base_dir()).join("original/")
+    Path::new(ctx.base_dir()).join("archive/jetwash")
 }
 
 pub fn lookups(ctx: &Context) -> PathBuf {

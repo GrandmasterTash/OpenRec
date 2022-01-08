@@ -91,7 +91,7 @@ pub fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Byt
             // If there's a value, try to parse as y/m/d, then y-m-d, then y/m/d, then y m d.
             match date_captures(&value) {
                 Some(captures) => {
-                    let dt = Utc.ymd(captures.0 as i32, captures.1, captures.0).and_hms_milli(0, 0, 0, 0);
+                    let dt = Utc.ymd(captures.0 as i32, captures.1, captures.2).and_hms_milli(0, 0, 0, 0);
                     dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
                 },
                 None => value,

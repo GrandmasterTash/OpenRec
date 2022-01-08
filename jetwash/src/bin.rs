@@ -5,13 +5,13 @@ pub fn main() -> Result<()> {
 
     let options = App::new("jetwash")
         .version("1.0")
-        .about("TODO: Some info here") // TODO: Cmdline help
-        .arg(Arg::with_name("CHARTER")
-            .help("The charter yaml file")
+        .about("Jetwash is a CSV file pre-processor to scrub and transform data before it is passed to Celerity for matching.")
+        .arg(Arg::with_name("charter_path")
+            .help("The full path to the charter yaml file containing the instructions for jetwash")
             .required(true)
             .takes_value(true))
-        .arg(Arg::with_name("BASE_DIR")
-            .help("The base directory where data files will be processed")
+        .arg(Arg::with_name("control_dir")
+            .help("The base directory where data files will be processed. This should be distinct from any other control's directory")
             .required(true)
             .takes_value(true))
         .get_matches();
@@ -22,8 +22,9 @@ pub fn main() -> Result<()> {
     log::info!("{}", BANNER);
 
     jetwash::run_charter(
-        options.value_of("CHARTER").expect("no charter specified"),
-        options.value_of("BASE_DIR").expect("no base dir specififed").into())?;
+        options.value_of("charter_path").expect("no charter specified"),
+        options.value_of("control_dir").expect("no base dir specififed"),
+        None)?;
 
     Ok(())
 }
@@ -36,5 +37,5 @@ const BANNER: &str = r#"
 /  |  ||   [_  |  |  |  `  '  ||  _  |/  \ ||  |  |
 \  `  ||     | |  |   \      / |  |  |\    ||  |  |
  \____j|_____| |__|    \_/\_/  |__|__| \___||__|__|
- OpenRec: Data Cleanser
+ OpenRec: Data Importer & Cleanser
 "#;

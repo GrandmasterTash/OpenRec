@@ -10,6 +10,12 @@ description: |
 version: 1
 debug: false
 
+jetwash:
+  source_files:
+   - pattern: ^04-invoices\.csv$
+   - pattern: ^04-payments\.csv$
+   - pattern: ^04-receipts\.csv$
+
 matching:
   source_files:
     - pattern: .*04-invoices.*\.csv

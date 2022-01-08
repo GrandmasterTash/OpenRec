@@ -6,6 +6,13 @@ description: |
 version: 1
 debug: true
 
+jetwash:
+  source_files:
+   - pattern: ^02-invoices\.csv$
+   - pattern: ^02-payments\.csv$
+
+   # TODO: Demonstrate trim with Jetwash
+
 matching:
   source_files:
     - pattern: .*02-invoices.*\.csv

@@ -11,12 +11,10 @@ use itertools::Itertools;
 use analyser::AnalysisResults;
 use bytes::{Bytes, BytesMut, BufMut};
 use crate::folders::ToCanoncialString;
-use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}};
-use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context};
+use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}, sync::atomic::{AtomicUsize, Ordering}};
+use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context, blue, formatted_duration_rate};
 
 // TODO: Clippy!
-// TODO: Log time for job.
-// TODO: Non-example based tests.
 
 ///
 /// Created for each match job. Used to pass the main top-level job 'things' around.
@@ -29,10 +27,11 @@ pub struct Context {
     base_dir: PathBuf,     // The root of the working folder for data (see the folders module).
     timestamp: String,     // A unique timestamp to prefix any generated files with for this job.
     lua: rlua::Lua,        // Lua engine state.
+    uuid_provider: UuidProvider, // Generate record uuids.
 }
 
 impl Context {
-    pub fn new(charter: Charter, charter_path: PathBuf, base_dir: PathBuf) -> Self {
+    pub fn new(charter: Charter, charter_path: PathBuf, base_dir: PathBuf, uuid_seed: Option<usize>) -> Self {
         let job_id = match std::env::var("OPENREC_FIXED_JOB_ID") {
             Ok(job_id) => uuid::Uuid::from_str(&job_id).expect("Test JOB_ID has invalid format"),
             Err(_) => uuid::Uuid::new_v4(),
@@ -46,6 +45,7 @@ impl Context {
             base_dir,
             timestamp: folders::new_timestamp(),
             lua: rlua::Lua::new(),
+            uuid_provider: UuidProvider::new(uuid_seed),
         }
     }
 
@@ -76,17 +76,24 @@ impl Context {
     pub fn lua(&self) -> &rlua::Lua {
         &self.lua
     }
+
+    pub fn uuid_provider(&self) -> &UuidProvider {
+        &self.uuid_provider
+    }
 }
 
 ///
 /// Scan and analyse inbox files, then run them through the Jetwash to produce waiting files for celerity.
 ///
-pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P) -> Result<(), JetwashError> {
+/// The uuid_seed is only used for tests to give records a predictable uuid.
+///
+pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P, uuid_seed: Option<usize>) -> Result<(), JetwashError> {
 
     // Load the charter and create a load job context.
     let ctx = init_job(
         charter_path.as_ref().to_path_buf().canonicalize()?,
-        base_dir.as_ref().to_path_buf().canonicalize()?)?;
+        base_dir.as_ref().to_path_buf().canonicalize()?,
+        uuid_seed)?;
 
     // Create inbox, archive and waiting folders (if required).
     folders::ensure_dirs_exist(&ctx)?;
@@ -103,10 +110,12 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P) -> Result<(), J
         let results = analyser::analyse_and_validate(&ctx, jetwash)?;
 
         // Create sanitised copies of the original files for celerity. Mapping any columns with mapping config.
-        for file in results.keys() {
+        for file in results.keys().sorted() {
             wash_file(&ctx, file, &results)?;
         }
     }
+
+    log::info!("Completed jetwash job {} in {}", ctx.job_id(), blue(&formatted_duration_rate(1, ctx.started().elapsed()).0));
 
     Ok(())
 }
@@ -143,7 +152,7 @@ fn wash_file(ctx: &Context, file: &PathBuf, results: &AnalysisResults) -> Result
             let record = record_result // Ensure we can read the record - but ignore it at this point.
                 .map_err(|source| JetwashError::CannotParseCsvRow { source, path: new_file.to_canoncial_string() })?;
 
-            let record = transform_record(&lua_ctx, result.source_file(), &header_record, &record)?; // TODO: Track lua eval context for errors....
+            let record = transform_record(ctx, &lua_ctx, result.source_file(), &header_record, &record)?; // TODO: Track lua eval context for errors....
 
             writer.write_byte_record(&record).map_err(|source| JetwashError::CannotWriteCsvRow {source, path: new_file.to_canoncial_string() })?;
         }
@@ -194,6 +203,7 @@ fn header_record(source_file: &JetwashSourceFile, reader: &mut csv::Reader<File>
 /// Perform any column Lua script transformations on the data.
 ///
 fn transform_record(
+    ctx: &Context,
     lua_ctx: &rlua::Context,
     source_file: &JetwashSourceFile,
     header_record: &csv::ByteRecord,
@@ -203,7 +213,7 @@ fn transform_record(
 
     let mut new_record = csv::ByteRecord::new();
     new_record.push_field(b"0"); // OpenRecStatus - 0 = unmatched
-    new_record.push_field(uuid::Uuid::new_v4().to_hyphenated().to_string().as_bytes()); // OpenRecId.
+    new_record.push_field(ctx.uuid_provider().next_record_id().to_hyphenated().to_string().as_bytes()); // OpenRecId.
 
     // Copy each existing field into the new record - applying a mapping if there is one.
     for (header, value) in header_record.iter().skip(2 /* hardcoded headers */).zip(record.iter()) {
@@ -286,11 +296,12 @@ fn abort_if_previous_failures(ctx: &Context) -> Result<(), JetwashError> {
 ///
 /// Parse and load the charter configuration, return a job Context.
 ///
-fn init_job(charter: PathBuf, base_dir: PathBuf) -> Result<Context, JetwashError> {
+fn init_job(charter: PathBuf, base_dir: PathBuf, uuid_seed: Option<usize>) -> Result<Context, JetwashError> {
     let ctx = Context::new(
         Charter::load(&charter)?,
         charter,
-        base_dir);
+        base_dir,
+        uuid_seed);
 
     log::info!("Starting jetwash job:");
     log::info!("    Job ID: {}", ctx.job_id());
@@ -380,9 +391,43 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
                 // Otherwise, use the analysed type for the header.
                 match mapped_type {
                     Some(data_type) => data_type,
-                    None => *analysed_schema.get(idx).expect(&format!("no analyed type for {}", header)),
+                    None => *analysed_schema.get(idx).unwrap_or_else(|| panic!("no analyed type for {}", header)),
                 }
             }
         })
         .collect::<Vec<DataType>>()
+}
+
+///
+/// The record UUID provider returns a secure random v4 uuid in normal mode.
+///
+/// If a test setting is set, it will generated predictable ids to allow tests to make assertions.
+///
+pub struct UuidProvider { counter: Option<AtomicUsize> }
+
+impl UuidProvider {
+    fn new(uuid_seed: Option<usize>) -> Self {
+        let counter = match uuid_seed {
+            Some(arg) => {
+                Some(AtomicUsize::new(arg))
+            },
+            None => None,
+        };
+
+        Self { counter }
+    }
+
+    ///
+    /// Get a secure random v4 uuid - if we're running tests, we'll use a counter to return predicable id's.
+    ///
+    fn next_record_id(&self) -> uuid::Uuid {
+
+        match &self.counter {
+            Some(counter) => {
+                let next = counter.fetch_add(1, Ordering::SeqCst);
+                uuid::Builder::from_u128(next as u128).build()
+            },
+            None => uuid::Uuid::new_v4(),
+        }
+    }
 }

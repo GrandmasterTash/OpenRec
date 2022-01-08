@@ -116,6 +116,13 @@ pub fn analyse_and_validate(ctx: &Context, jetwash: &Jetwash) -> Result<Analysis
                 }
             }
 
+			// Convert Unknowns to strings.
+			for col_idx in 0..data_types.len() {
+				if data_types[col_idx] == DataType::Unknown {
+					data_types[col_idx] = DataType::String;
+				}
+			}
+
             if err_count > 0 {
                 // If there are any errors rename the file.
                 folders::fail_file(&file)?;
@@ -168,13 +175,6 @@ fn analyse_types(data_types: &mut [DataType], csv_record: &csv::ByteRecord) -> R
 					break;
 				}
 			}
-		}
-	}
-
-	// Convert Unknowns to strings.
-	for col_idx in 0..data_types.len() {
-		if data_types[col_idx] == DataType::Unknown {
-			data_types[col_idx] = DataType::String;
 		}
 	}
 

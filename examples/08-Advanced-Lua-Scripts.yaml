@@ -5,6 +5,7 @@ description: |
 version: 1637208553000
 debug: false
 
+# TODO: Demonstrate lua mapping and new columns with jetwash.
 
 # TODO: Show how to project a date - stripping the time portion. ie. group on a date but ignore the exact time.
 
