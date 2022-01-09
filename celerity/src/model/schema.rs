@@ -268,9 +268,6 @@ impl FileSchema {
             let data_type = match type_record.get(idx) {
                 Some(raw_type) => {
                     let parsed = raw_type.into();
-                    if parsed == DataType::Unknown {
-                        return Err(MatcherError::UnknownDataTypeInColumn { column: idx as isize })
-                    }
                     parsed
                 },
                 None => return Err(MatcherError::NoSchemaTypeForColumn { column: idx }),

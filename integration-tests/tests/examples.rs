@@ -15,20 +15,22 @@ fn test_01_basic_match_from_examples() {
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(2, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(2, "archive/celerity", &base_dir);
-    common::assert_n_files_in(0, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
 
     // Check the output files.
     let matched = common::get_match_job_file(&base_dir);
@@ -73,20 +75,22 @@ fn test_02_projected_columns_from_examples() {
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(2, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(2, "archive/celerity", &base_dir);
-    common::assert_n_files_in(0, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
 
     // Check the output files.
     let matched = common::get_match_job_file(&base_dir);
@@ -134,20 +138,22 @@ fn test_03_net_with_tolerance_match_from_examples() {
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(2, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(2, "archive/celerity", &base_dir);
-    common::assert_n_files_in(0, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
 
     // Check the output files.
     let matched = common::get_match_job_file(&base_dir);
@@ -194,20 +200,22 @@ fn test_04_3_way_match_from_examples() {
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(3, "waiting", &base_dir);
-    common::assert_n_files_in(3, "archive/jetwash", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (3, "waiting"),
+        (3, "archive/jetwash")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
-    common::assert_n_files_in(3, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(3, "archive/celerity", &base_dir);
-    common::assert_n_files_in(0, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (3, "archive/jetwash"),
+        (3, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
 
     // Check the output files.
     let matched = common::get_match_job_file(&base_dir);
@@ -256,20 +264,22 @@ fn test_05_2_stage_match_from_examples() {
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(1, "waiting", &base_dir);
-    common::assert_n_files_in(1, "archive/jetwash", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (1, "waiting"),
+        (1, "archive/jetwash")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
-    common::assert_n_files_in(1, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(1, "archive/celerity", &base_dir);
-    common::assert_n_files_in(0, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (1, "archive/jetwash"),
+        (1, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
 
     // Check the output files.
     let matched = common::get_match_job_file(&base_dir);
@@ -314,20 +324,22 @@ fn test_07_unmatched_data_from_examples() {
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(2, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
-    common::assert_n_files_in(2, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(2, "archive/celerity", &base_dir);
-    common::assert_n_files_in(2, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir); // TODO: Can we use a nicer api for these folder asserts?
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (2, "unmatched"),
+        (1, "matched")));
 
     // Check the matched file contains the correct groupings.
     let matched = common::get_match_job_file(&base_dir);
@@ -380,40 +392,32 @@ fn test_07_unmatched_data_from_examples() {
 
     // Now copy payments-b in and run the match charter again.
     data_files.push(common::copy_example_data_file("07-payments-b.csv", &base_dir));
-    common::assert_n_files_in(1, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (1, "inbox"),
+        (0, "waiting")));
 
     // Run the data-import.
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
 
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(1, "waiting", &base_dir);
-    common::assert_n_files_in(3, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(2, "archive/celerity", &base_dir);
-    common::assert_n_files_in(2, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (1, "waiting"),
+        (3, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (2, "unmatched"),
+        (1, "matched")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the files have been processed into the correct folders.
-    common::assert_n_files_in(0, "inbox", &base_dir);
-    common::assert_n_files_in(0, "waiting", &base_dir);
-    common::assert_n_files_in(3, "archive/jetwash", &base_dir);
-    common::assert_n_files_in(3, "archive/celerity", &base_dir);
-    common::assert_n_files_in(0, "unmatched", &base_dir);
-    common::assert_n_files_in(1, "matched", &base_dir); // 2 in real life - but we've fixed the TS.
-
-    /*
-    // TODO: Make this assert use this style api.
     common::assert_files_in_folders(&base_dir, vec!(
         (0, "inbox"),
         (0, "waiting"),
         (3, "archive/jetwash"),
         (3, "archive/celerity"),
         (0, "unmatched"),
-        (1, "matched")));
-    */
+        (1, "matched"))); // 2 in real life - but we've fixed the TS.
 
     // Check the matched file contains the correct groupings.
     let matched = common::get_match_job_file(&base_dir);

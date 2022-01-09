@@ -14,6 +14,8 @@ use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}, sync::atomic::{AtomicUsize, Ordering}};
 use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context, blue, formatted_duration_rate};
 
+
+// TODO: Logging - log files moved into waiting - reduce analyser spam
 // TODO: Clippy!
 
 ///
@@ -104,6 +106,9 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P, uuid_seed: Opti
     // Any .inprogress files in waiting should log a warn and be removed.
     remove_incomplete_files(&ctx)?;
 
+    // Changeset files should be moved from the inbox to the waiting folder.
+    folders::progress_changesets(&ctx)?;
+
     // Validate and analyse the files.
     if let Some(jetwash) = ctx.charter().jetwash() {
         // Check the file is UTF8, a valid CSV, and analyse each column's data-type.
@@ -163,7 +168,7 @@ fn wash_file(ctx: &Context, file: &PathBuf, results: &AnalysisResults) -> Result
     writer.flush()?;
 
     // Move the original file now.
-    folders::move_to_original(&ctx, file)?;
+    folders::move_to_archive(&ctx, file)?;
 
     // Rename xxx.csv.inprogress to xxx.csv
     let new_file = folders::complete_new_file(&new_file)?;
@@ -360,7 +365,7 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
             } else {
                 let idx = idx - 2; // Two hardcoded columns to offset by.
 
-                // If theere's a column mapping for this header, use the as_a type.
+                // If there's a column mapping for this header, use the as_a type.
                 let mapped_type = match source_file.column_mappings() {
                     Some(mappings) => mappings.iter().find(|mapping| mapping.column() == header).map(|cm| {
                         match cm {
@@ -388,10 +393,11 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
                     },
                 };
 
-                // Otherwise, use the analysed type for the header.
                 match mapped_type {
                     Some(data_type) => data_type,
-                    None => *analysed_schema.get(idx).unwrap_or_else(|| panic!("no analyed type for {}", header)),
+                    // Otherwise, use the analysed type for the header - or Unknown if the file is empty?
+                    // None => *analysed_schema.get(idx).unwrap_or_else(|| panic!("no analyed type for {}", header)),
+                    None => *analysed_schema.get(idx).unwrap_or(&DataType::Unknown),
                 }
             }
         })

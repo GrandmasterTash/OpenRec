@@ -78,7 +78,7 @@ impl Grid {
             let mut last_schema_idx = None;
 
             for file in folders::files_in_matching(ctx, source_file.pattern())? {
-                let (count, file_size, last) = load_file(&file, source_file, &mut grid_schema, last_schema_idx)?;
+                let (count, file_size, last) = load_file(ctx, &file, source_file, &mut grid_schema, last_schema_idx)?;
                 last_schema_idx = last;
                 total_count += count;
                 data_size += file_size;
@@ -128,7 +128,7 @@ impl Grid {
 /// Parse each csv row in the file to ensure it's parseable. Count the rows and ensure no two files loaded from the same pattern,
 /// have different column schemas.
 ///
-fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mut GridSchema, last_schema_idx: Option<usize>)
+fn load_file(ctx: &Context, file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mut GridSchema, last_schema_idx: Option<usize>)
     -> Result<(usize /* record count */, usize /* file size bytes */, Option<usize> /* last_schema_idx */), MatcherError> {
 
     let started = Instant::now();
@@ -147,13 +147,6 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
     let schema = FileSchema::new(source_file.field_prefix(), &mut rdr)
         .map_err(|source| MatcherError::BadSourceFile { path: file.path().to_canoncial_string(), description: source.to_string() })?;
 
-    // Use an existing schema from the grid, if there is one, otherwise add this one.
-    let schema_idx = grid_schema.add_file_schema(schema.clone())?;
-    let last_schema_idx = validate_schema(grid_schema, schema_idx, &last_schema_idx, &schema, source_file.pattern())?;
-
-    // Register the data file with the grid.
-    let _file_idx = grid_schema.add_file(DataFile::new(file, schema_idx));
-
     // Validate each record can be parsed okay.
     for result in rdr.byte_records() {
         let _csv_record = result // Ensure we can read the record - but ignore it at this point.
@@ -161,6 +154,22 @@ fn load_file(file: &DirEntry, source_file: &MatchingSourceFile, grid_schema: &mu
 
         count += 1;
     }
+
+    // If there's no data ignore the file and archive it.
+    let last_schema_idx = if count == 0 {
+        // Progress the file to archive immediately - there's noting in it.
+        folders::progress_to_archive_now(ctx, file)?;
+        last_schema_idx
+
+    // If there's data register the schema in the grid.
+    } else {
+        // Use an existing schema from the grid, if there is one, otherwise add this one.
+        let schema_idx = grid_schema.add_file_schema(schema.clone())?;
+        let last_schema_idx = validate_schema(grid_schema, schema_idx, &last_schema_idx, &schema, source_file.pattern())?;
+        // Register the data file with the grid.
+        let _file_idx = grid_schema.add_file(DataFile::new(file, schema_idx));
+        last_schema_idx
+    };
 
     let (duration, _rate) = formatted_duration_rate(count, started.elapsed());
 

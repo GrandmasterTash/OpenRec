@@ -33,7 +33,8 @@ impl From<&str> for DataType {
             "IN" => DataType::Integer,
             "ST" => DataType::String,
             "ID" => DataType::Uuid,
-            _    => DataType::Unknown
+            "??" => DataType::Unknown,
+            eh @ _ => panic!("REALLY unknown data-type '{}'", eh)
         }
     }
 }
@@ -41,7 +42,7 @@ impl From<&str> for DataType {
 impl From<&DataType> for &str {
     fn from(dt: &DataType) -> Self {
         match dt {
-            DataType::Unknown  => "ER",
+            DataType::Unknown  => "??",
             DataType::Boolean  => "BO",
             DataType::Datetime => "DT",
             DataType::Decimal  => "DE",

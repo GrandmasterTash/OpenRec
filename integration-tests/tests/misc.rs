@@ -9,6 +9,7 @@ fn test_no_data_files() {
     let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Run the match.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the output files.
@@ -44,18 +45,33 @@ fn test_empty_data_file() {
     let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Create an empty invoice and empty payment file.
-    common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-invoices.csv",
-r#""OpenRecStatus","Reference","TotalAmount","Currency","Date"
-"IN","ST","DE","ST","DT"
+    common::write_file(&base_dir.join("inbox/"), "02-invoices.csv",
+r#""Reference","TotalAmount","Currency","Date"
 "#);
 
-    common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-payments.csv",
-r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
-"IN","ST","ST","DE","DT","DE"
-"#);
+    common::write_file(&base_dir.join("inbox/"), "02-payments.csv",
+r#""Reference","Currency","Amount","Date","FXRate""#);
 
-    // Run the match.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (2, "inbox"),
+        (0, "waiting")));
+
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
+
     celerity::run_charter(&charter, &base_dir).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
 
     // Check the output files.
     let matched = common::assert_matched_ok(&vec!(), &base_dir);
@@ -70,9 +86,7 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
                 "version": 1
             },
             "job_id": FIXED_JOB_ID,
-            "files": [
-                "20211129_043300000_02-invoices.csv",
-                "20211129_043300000_02-payments.csv"]
+            "files": []
         },
         {
             "groups": []
@@ -86,29 +100,29 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
 
 
 #[test]
-fn test_okay_when_not_all_files_present() {
+fn test_unmatched_okay_when_not_all_files_present() {
 
     let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Writer some payments.
-    common::write_file(&base_dir.join("waiting/"), "20211129_043300000_02-payments.csv",
-r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
-"IN","ST","ST","DE","DT","DE"
-"0","PAY001XXINV001XX","USD","1000.0000","2021-11-25T04:36:08.000Z","0.75"
-"0","PAY002XXINV002XX","EUR","400.9900","2021-10-21T11:16:08.000Z","0.844"
-"0","PAY003XXINV002XX","EUR","50.0000","2021-10-22T15:02:48.000Z","0.846"
-"0","PAY004XXINV003XX","USD","1234.56","2022-03-20T22:22:48.000Z","0.715"
+    common::write_file(&base_dir.join("inbox/"), "02-payments.csv",
+r#""Reference","Currency","Amount","Date","FXRate"
+"PAY001XXINV001XX","USD","1000.0000","2021-11-25T04:36:08.000Z","0.75"
+"PAY002XXINV002XX","EUR","400.9900","2021-10-21T11:16:08.000Z","0.844"
+"PAY003XXINV002XX","EUR","50.0000","2021-10-22T15:02:48.000Z","0.846"
+"PAY004XXINV003XX","USD","1234.56","2022-03-20T22:22:48.000Z","0.715"
 "#);
 
     // Create a charter that merges and projects both invoice and payment columns.
     let charter = common::example_charter("02-Projected-Columns.yaml");
 
     // Run the charter without any payment files.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check we have unmatch invoices.
     let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 1);
-    assert_eq!(unmatched[0].file_name().unwrap().to_string_lossy(), "20211129_043300000_02-payments.unmatched.csv");
+    assert_eq!(unmatched[0].file_name().unwrap().to_string_lossy(), "20211201_053700000_02-payments.unmatched.csv");
 
     // Check the matched file contains the correct groupings.
     common::assert_matched_contents(matched, json!(
@@ -120,7 +134,7 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
                 "version": 1
             },
             "job_id": FIXED_JOB_ID,
-            "files": [ "20211129_043300000_02-payments.csv" ]
+            "files": [ "20211201_053700000_02-payments.csv" ]
         },
         {
             "groups": []
@@ -129,7 +143,7 @@ r#""OpenRecStatus","Reference","Currency","Amount","Date","FXRate"
             "changesets": [],
             "unmatched": [
                 {
-                    "file": "20211129_043300000_02-payments.unmatched.csv",
+                    "file": "20211201_053700000_02-payments.unmatched.csv",
                     "rows": 4
                 }
             ]
@@ -144,17 +158,19 @@ fn test_no_charter_instructions() {
     let base_dir = common::init_test(format!("tests/{}", function!()));
 
     // Write 2 transactions to match with each other.
-    common::write_file(&base_dir.join("waiting/"), "20211219_082900000_transactions.csv",
-r#""OpenRecStatus","TransId","Date","Amount","Type"
-"IN","IN","DT","DE","ST"
-"0","0001","2021-12-19T08:29:00.000Z","100.00","T1"
-"0","0002","2021-12-19T08:29:00.000Z","100.00","T2"
+    common::write_file(&base_dir.join("inbox/"), "transactions.csv",
+r#""TransId","Date","Amount","Type"
+"0001","2021-12-19T08:29:00.000Z","100.00","T1"
+"0002","2021-12-19T08:29:00.000Z","100.00","T2"
 "#);
 
     // Write a charter file without any instructions.
     let charter = common::write_file(&base_dir, "charter.yaml",
 r#"name: changeset test
 version: 1
+jetwash:
+  source_files:
+    - pattern: .*.csv
 matching:
   use_field_prefixes: false
   source_files:
@@ -162,11 +178,12 @@ matching:
 "#);
 
     // Run the match.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
     celerity::run_charter(&charter, &base_dir).unwrap();
 
     // Check the output files.
     let (matched, unmatched) = common::assert_unmatched_ok(&vec!(), &base_dir, 1);
-    assert_eq!(unmatched[0].file_name().unwrap().to_string_lossy(), "20211219_082900000_transactions.unmatched.csv");
+    assert_eq!(unmatched[0].file_name().unwrap().to_string_lossy(), "20211201_053700000_transactions.unmatched.csv");
 
     // Check the matched file contains the correct groupings.
     common::assert_matched_contents(matched, json!(
@@ -178,7 +195,7 @@ matching:
                 "version": 1
             },
             "job_id": FIXED_JOB_ID,
-            "files": [ "20211219_082900000_transactions.csv" ]
+            "files": [ "20211201_053700000_transactions.csv" ]
         },
         {
             "groups": []
@@ -187,7 +204,7 @@ matching:
             "changesets": [],
             "unmatched": [
                 {
-                    "file": "20211219_082900000_transactions.unmatched.csv",
+                    "file": "20211201_053700000_transactions.unmatched.csv",
                     "rows": 2
                 }
             ]

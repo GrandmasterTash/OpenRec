@@ -50,7 +50,22 @@ pub enum JetwashError {
 
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+
+    #[error(transparent)]
+    GeneralError(#[from] anyhow::Error),
 }
+
+///
+/// File and line number details for errors.
+///
+macro_rules! here {
+    () => {
+        concat!(" ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
+pub(crate) use here;    // https://stackoverflow.com/questions/26731243/how-do-i-use-a-macro-across-module-files
+
 
 ///
 /// This allows us to return JetwashErrors inside Lua contexts and have them wrapped

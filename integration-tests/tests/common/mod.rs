@@ -52,8 +52,12 @@ pub fn init_test<P: AsRef<str>>(folder: P) -> PathBuf {
     remove(&base_dir).expect(&format!("Cannot remove base_dir {}", base_dir.to_string_lossy()));
 
     // Create an inbox folder to put the test data files in.
-    let waiting = base_dir.join("inbox/");
-    std::fs::create_dir_all(&waiting).expect("Cannot create a inbox folder");
+    let inbox = base_dir.join("inbox/");
+    std::fs::create_dir_all(&inbox).expect("Cannot create a inbox folder");
+
+    // Create an waiting folder - some tests skip Jetwash.
+    let waiting = base_dir.join("waiting/");
+    std::fs::create_dir_all(&waiting).expect("Cannot create a waiting folder");
 
     // Create an unmatched folder - some tests start with existing unmatched files.
     let unmatched = base_dir.join("unmatched/");
@@ -141,6 +145,16 @@ pub fn assert_matched_contents(matched: PathBuf, expected: Value) {
 ///
 pub fn assert_file_contents(path: &PathBuf, expected: &str) {
     assert_eq!(std::fs::read_to_string(path).unwrap(), expected);
+}
+
+///
+/// Check the folders contain the number of files specified.
+pub fn assert_files_in_folders(base_dir: &PathBuf, expected: Vec<(usize, &str)>) {
+
+    for (expected_count, folder) in expected {
+        assert_n_files_in(expected_count, folder, base_dir);
+    }
+
 }
 
 pub fn assert_n_files_in(expected_count: usize, folder: &str, base_dir: &Path) {

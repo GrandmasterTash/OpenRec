@@ -1,7 +1,49 @@
 use chrono::Utc;
 use regex::Regex;
-use crate::{error::JetwashError, Context};
+use lazy_static::lazy_static;
+use anyhow::Context as ErrContext;
+use crate::{error::{JetwashError, here}, Context};
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}};
+
+lazy_static! {
+    static ref CHANGESET_REGEX: Regex = Regex::new(r"^(\d{8}_\d{9})_changeset\.json$").expect("bad regex for CHANGESET_REGEX");
+}
+
+///
+/// Rename a folder or file - captures the paths to log if fails.
+///
+pub fn rename<F, T>(from: F, to: T) -> Result<(), JetwashError>
+where
+    F: AsRef<Path>,
+    T: AsRef<Path>
+{
+    let f_str = from.as_ref().to_canoncial_string();
+    let t_str = to.as_ref().to_canoncial_string();
+
+    log::debug!("Moving/renaming {} -> {}", f_str, t_str);
+
+    Ok(fs::rename(from, to)
+        .with_context(|| format!("Cannot rename {} to {}{}", f_str, t_str, here!()))?)
+}
+
+///
+/// Copy a file - captures the paths to log if fails.
+///
+pub fn copy<F, T>(from: F, to: T) -> Result<(), JetwashError>
+where
+    F: AsRef<Path>,
+    T: AsRef<Path>
+{
+    let f_str = from.as_ref().to_canoncial_string();
+    let t_str = to.as_ref().to_canoncial_string();
+
+    log::debug!("Copying {} -> {}", f_str, t_str);
+
+    fs::copy(from, to)
+        .with_context(|| format!("Cannot copy {} to {}{}", f_str, t_str, here!()))?;
+
+    Ok(())
+}
 
 ///
 /// Ensure the folders exist to process files for this reconcilliation.
@@ -14,7 +56,7 @@ pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), JetwashError> {
     let folders = vec!(
         inbox(ctx),
         waiting(ctx),
-        original(ctx),
+        archive(ctx),
         lookups(ctx));
 
     for folder in folders {
@@ -22,6 +64,24 @@ pub fn ensure_dirs_exist(ctx: &Context) -> Result<(), JetwashError> {
             .map_err(|source| JetwashError::CannotCreateDir { source, path: folder.to_canoncial_string() } )?;
     }
 
+    Ok(())
+}
+
+///
+/// Changeset files should already be timestamp prefixed, Jetwash just moves them into the waiting
+/// folder for celerity - no processing is done on them although they are archived.
+///
+pub fn progress_changesets(ctx: &Context) -> Result<(), JetwashError> {
+    for entry in (inbox(ctx).read_dir()?).flatten() { // Result is an iterator, so flatten if only interested in Ok values.
+        if is_changeset_file(&entry.path()) {
+            // Copy to the archive folder.
+            copy(entry.path(), archive(ctx).join(entry.file_name()))?;
+
+            // Move to the celerity waiting folder.
+            let dest = waiting(ctx).join(entry.file_name());
+            rename(entry.path(), dest)?
+        }
+    }
     Ok(())
 }
 
@@ -85,13 +145,13 @@ pub fn incomplete_in_waiting(ctx: &Context) -> Result<Vec<DirEntry>, JetwashErro
 }
 
 ///
-/// Move the original source file to the original folder. It is given a timestamp as an extension. e.g.
+/// Move the original source file to the original folder. It is given a timestamp as a prefix. e.g.
 ///
-/// invoices.csv -> invoices.csv.20211229_113200000
+/// invoices.csv -> 20211229_113200000_invoices.csv
 ///
-pub fn move_to_original(ctx: &Context, path: &PathBuf) -> Result<(), JetwashError> {
-    let mut destination = original(ctx);
-    destination.push(format!("{}.{}", path.file_name().expect("filename missing from original file").to_string_lossy(), ctx.ts()));
+pub fn move_to_archive(ctx: &Context, path: &PathBuf) -> Result<(), JetwashError> {
+    let mut destination = archive(ctx);
+    destination.push(format!("{}_{}", ctx.ts(), path.file_name().expect("filename missing from original file").to_string_lossy()));
 
     log::debug!("Moving {:?} to {:?}", path, destination);
 
@@ -134,12 +194,20 @@ pub fn waiting(ctx: &Context) -> PathBuf {
     Path::new(ctx.base_dir()).join("waiting/")
 }
 
-pub fn original(ctx: &Context) -> PathBuf {
+pub fn archive(ctx: &Context) -> PathBuf {
     Path::new(ctx.base_dir()).join("archive/jetwash")
 }
 
 pub fn lookups(ctx: &Context) -> PathBuf {
     Path::new(ctx.base_dir()).join("lookups/")
+}
+
+///
+/// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
+/// a '.changeset.json' suffix.
+///
+fn is_changeset_file(path: &Path) -> bool {
+    path.is_file() && CHANGESET_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
 ///

@@ -301,8 +301,6 @@ pub fn unsorted_index(ctx: &Context) -> PathBuf {
 /// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
 /// a '.csv' suffix.
 ///
-/// Logs a warning if we couldn't get a file's metadata and returns false.
-///
 fn is_data_file(path: &Path) -> bool {
     path.is_file() && FILENAME_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
@@ -310,8 +308,6 @@ fn is_data_file(path: &Path) -> bool {
 ///
 /// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
 /// a '.unmatched.csv' suffix.
-///
-/// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
 fn is_unmatched_data_file(path: &Path) -> bool {
     path.is_file() && UNMATCHED_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
@@ -321,16 +317,12 @@ fn is_unmatched_data_file(path: &Path) -> bool {
 /// Returns true if the file starts with a datetime prefix in the form 'YYYYMMDD_HHmmSSsss_' and ends with
 /// a '.derived.csv' suffix.
 ///
-/// Logs a warning if we couldn't get a file's metadata and returns false.
-///
 fn is_derived_file(path: &Path) -> bool {
     path.is_file() && DERIVED_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
 }
 
 ///
 /// Returns true if the file matches the changeset filename pattern.
-///
-/// Logs a warning if we couldn't get a file's metadata and returns false.
 ///
 fn is_changeset_file(path: &Path) -> bool {
     path.is_file() && CHANGESET_REGEX.is_match(&path.file_name().unwrap_or_default().to_string_lossy())
