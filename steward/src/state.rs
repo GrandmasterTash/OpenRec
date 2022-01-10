@@ -1,6 +1,8 @@
-use std::{time::{Duration, Instant}, thread, path::{Path, PathBuf}, sync::Arc};
+use std::{time::{Duration, Instant}, thread::{self, JoinHandle}, path::{Path, PathBuf}, sync::Arc, slice::IterMut, fs};
 
-use crate::register::{Register, self};
+use crossbeam::channel;
+
+use crate::{register::{Register, self}, do_match_job};
 
 #[derive(Clone, Copy)]
 pub enum ControlState {
@@ -9,71 +11,40 @@ pub enum ControlState {
     Suspended,
 }
 
-pub trait Task {
-    fn started(&self) -> Instant;
-    fn done(&self) -> bool;
-    fn description(&self) -> String;
-}
-
-pub struct MatchJob {
-}
-
-impl Task for MatchJob {
-    fn started(&self) -> Instant {
-        todo!()
-    }
-
-    fn done(&self) -> bool {
-        todo!()
-    }
-
-    fn description(&self) -> String {
-        String::from("matching")
-    }
-}
-
-///
-/// Checks a folder for new files creates a monitor for any files it finds.
-///
-pub struct InboxScan {
-    monitored: Vec<FileMonitor>, // Files being monitored.
-}
-
-// impl Task for InboxScan {
-//     fn started(&self) -> Instant {
-//         todo!()
-//     }
-
-//     fn done(&self) -> bool {
-//         todo!()
-//     }
+// pub trait Task {
+//     fn started(&self) -> Instant;
+//     fn done(&self) -> bool;
+//     fn description(&self) -> String;
 // }
 
-///
-/// Watches an inbox file to see if it is still being written to.
-///
-pub struct FileMonitor {
-    started: Instant,
-    path: PathBuf,
-    last_size: usize,
-    last_probed: Instant,
-}
+// pub struct MatchJob {
+// }
 
-// impl Task for FileMonitor {
+// impl Task for MatchJob {
 //     fn started(&self) -> Instant {
 //         todo!()
 //     }
 
 //     fn done(&self) -> bool {
 //         todo!()
+//     }
+
+//     fn description(&self) -> String {
+//         String::from("matching")
 //     }
 // }
 
 pub struct Control {
     state: ControlState,
     inner: register::Control,
-    tasks: Vec<Box<dyn Task>>,
-    processing: Option<Box<dyn Task>>,
+    job: Option<JoinHandle<()>>, // The handle to a thread running a match job.
+    callback: Option<channel::Receiver<bool>>, // The job thread will call back to the main thread when it's done.
+    queued: bool,                // Start another job after the current has finished.
+    inbox_monitors: Vec<String>  // Filenames of files we know are in the inbox.
+}
+
+pub struct State {
+    controls: Vec<Control>
 }
 
 impl Control {
@@ -85,14 +56,103 @@ impl Control {
         self.state
     }
 
-    pub fn processing(&self) -> &Option<Box<dyn Task>> {
-        &self.processing
+    pub fn suspend(&mut self) {
+        self.state = ControlState::Suspended;
+    }
+
+    pub fn is_running(&self) -> bool {
+        match self.state {
+            ControlState::Started   => true,
+            ControlState::Stopped   => false,
+            ControlState::Suspended => false,
+        }
+    }
+
+    pub fn charter(&self) -> &Path {
+        self.inner.charter()
+    }
+
+    pub fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    pub fn job(&self) -> &Option<JoinHandle<()>> {
+        &self.job
+    }
+
+    pub fn callback(&self) -> &Option<channel::Receiver<bool>> {
+        &self.callback
+    }
+
+    ///
+    /// Check the control's inbox and return any NEW files since our last check.
+    ///
+    pub fn scan_inbox(&mut self) -> Vec<String> {
+
+        // Create the inbox if required.
+        let inbox = self.inner.root().join("inbox");
+        if !inbox.exists() {
+            match fs::create_dir_all(&inbox) {
+                Ok(_) => {},
+                Err(err) => {
+                    self.state = ControlState::Suspended;
+                    log::error!("Unable to create in for control {id} at {inbox:?} : {err}",
+                        id = self.id(),
+                        inbox = inbox,
+                        err = err);
+                    return vec!()
+                },
+            }
+        }
+
+        // Get all the files in the inbox.
+        let contents = match fs_extra::dir::get_dir_content(&inbox) {
+            Ok(con) => con,
+            Err(err) => {
+                self.state = ControlState::Suspended;
+                log::error!("Unable to read inbox for control {id} : {err}",
+                    id = self.id(),
+                    err = err);
+                return vec!()
+            },
+        };
+
+        let contents = contents.files
+            .iter()
+            .filter(|f| !f.ends_with(".inprogress"))
+            .cloned()
+            .collect::<Vec<String>>();
+
+        let new_contents = contents
+            .iter()
+            .filter(|f| !self.inbox_monitors.contains(f))
+            .cloned()
+            .collect::<Vec<String>>();
+
+        self.inbox_monitors = contents;
+        new_contents
+    }
+
+    pub fn queue_job(&mut self) {
+        match self.job() {
+            Some(_) => self.queued = true, // Queue the job.
+            None => {
+                let (s, r) = channel::unbounded();
+                let control_id = self.id().to_string();
+                let charter = self.charter().to_path_buf();
+                let root = self.root().to_path_buf();
+                self.callback = Some(r);
+                self.job = Some(std::thread::spawn(|| do_match_job(control_id, charter, root, s)))
+            },
+        }
+    }
+
+    pub fn job_done(&mut self) {
+        self.callback = None;
+        self.job = None;
     }
 }
 
-pub struct State {
-    controls: Vec<Control>
-}
 
 impl State {
     pub fn new(register: &Register) -> Self {
@@ -104,15 +164,17 @@ impl State {
                     state: if c.disabled() {
                             ControlState::Stopped
                         } else {
-                            // TEMP: for testing.
-                            if crate::random(100, 10) {
-                                ControlState::Suspended
-                            } else {
+                            // // TEMP: for testing.
+                            // if crate::random(100, 10) {
+                            //     ControlState::Suspended
+                            // } else {
                                 ControlState::Started
-                            }
+                            // }
                         },
-                    tasks: vec!(),
-                    processing: None,
+                    job: None,
+                    callback: None,
+                    queued: false,
+                    inbox_monitors: vec!(),
                 }
             })
             .collect();
@@ -122,5 +184,9 @@ impl State {
 
     pub fn controls(&self) -> &[Control] {
         &self.controls
+    }
+
+    pub fn controls_mut(&mut self) -> IterMut<'_, Control> {
+        self.controls.iter_mut()
     }
 }

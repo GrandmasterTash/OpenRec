@@ -21,7 +21,7 @@ pub struct Control {
 
 impl Control {
     // TEMP: Temporary - just to test the UI layout.
-    fn random(idx: usize) -> Self {
+    fn _random(idx: usize) -> Self {
         Self {
             id: format!("Control {}", idx),
             charter: PathBuf::from(format!("./tmp/control_{}.yml", idx)),
@@ -33,15 +33,15 @@ impl Control {
 
 impl Register {
     pub fn load(path: &Path) -> Result<Self, anyhow::Error> {
-        Ok(Self {
-            controls: (1..151).map(|idx| Control::random(idx)).collect()
-        })
+        // Ok(Self {
+        //     controls: (1..151).map(|idx| Control::random(idx)).collect()
+        // })
 
-        // let rdr = BufReader::new(std::fs::File::open(&path)
-        //     .with_context(|| format!("attempting to open register {}", path.to_string_lossy()))?);
+        let rdr = BufReader::new(std::fs::File::open(&path)
+            .with_context(|| format!("attempting to open register {}", path.to_string_lossy()))?);
 
-        // Ok(serde_yaml::from_reader(rdr)
-        //     .with_context(|| format!("parsing register {}", path.to_string_lossy()))?)
+        Ok(serde_yaml::from_reader(rdr)
+            .with_context(|| format!("parsing register {}", path.to_string_lossy()))?)
     }
 
     pub fn controls(&self) -> &[Control] {

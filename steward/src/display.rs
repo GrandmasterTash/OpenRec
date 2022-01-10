@@ -1,10 +1,17 @@
-use std::fmt::Display;
+use std::{fmt::Display, time::Instant};
 use crate::state::{ControlState, State, Control};
 use termion::{cursor::Goto, color::{self, Fg}, terminal_size, clear};
 
 const CONTROL_WIDTH: u16 = 60;
 
+pub fn init() {
+    println!("{}{}{}", termion::clear::All, Goto(1, 1), BANNER);
+}
+
+// TODO: Work on the flicker.
+
 pub fn display(state: &State, mut terminal_size: (u16, u16)) {
+
     // If the terminal has been resized then clear it.
     terminal_size = clear_if_resized(terminal_size);
 
@@ -41,6 +48,24 @@ pub fn display(state: &State, mut terminal_size: (u16, u16)) {
     }
 }
 
+///
+/// Allows status messages to be queued and displayed for at-least a brief period of time.
+///
+pub struct MessageQueue {
+    current: Option<(Instant, String)>,
+    shown_at: Option<Instant>,
+    msgs: Vec<(Instant, String)>
+}
+
+
+// TODO: Hook this into the MessageQueue above.
+pub fn show_msg(msg: String) {
+    println!("{pink}{pos}{msg}{reset}",
+        pos = Goto(40, 1),
+        msg = msg,
+        pink = termion::color::Fg(termion::color::Rgb(255,182,193)),
+        reset = termion::color::Fg(termion::color::Reset));
+}
 
 
 ///
@@ -52,7 +77,7 @@ fn clear_if_resized(prev_terminal_size: (u16, u16)) -> (u16, u16) {
     let terminal_size = terminal_size().unwrap();
 
     if terminal_size != prev_terminal_size {
-        print!("{}", clear::All);
+        println!("{}{}{}", termion::clear::All, Goto(1, 1), BANNER);
     }
 
     terminal_size
@@ -62,12 +87,12 @@ impl Display for Control {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (colour, status) = match self.state() {
             ControlState::Started => {
-                match self.processing() {
+                match self.job() {
                     Some(_task) => (color::Rgb(255, 255, 255), "Running - matching"),
                     None => (color::Rgb(200, 200, 200), "Running - idle"),
                 }
             },
-            ControlState::Stopped => (color::Rgb(100, 100, 100), "Stopped"),
+            ControlState::Stopped => (color::Rgb(100, 100, 100), "Stopped - disabled"),
             ControlState::Suspended => (color::Rgb(255, 69, 0), "Suspended - Errors"),
         };
 
@@ -83,3 +108,13 @@ impl Display for Control {
             reset = Fg(color::Reset))
     }
 }
+
+
+const BANNER: &str = r#" _____ _                             _
+/  ___| |                           | |
+\ `--.| |_ _____      ____ _ _ __ __| |
+ `--. \ __/ _ \ \ /\ / / _` | '__/ _` |
+/\__/ / ||  __/\ V  V / (_| | | | (_| |
+\____/ \__\___| \_/\_/ \__,_|_|  \__,_|
+ OpenRec: Match Job Orchistrator
+"#;

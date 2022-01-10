@@ -4,16 +4,17 @@ mod mapping;
 mod analyser;
 
 use uuid::Uuid;
-use anyhow::Result;
 use ubyte::ToByteUnit;
 use error::JetwashError;
 use itertools::Itertools;
 use analyser::AnalysisResults;
 use bytes::{Bytes, BytesMut, BufMut};
 use crate::folders::ToCanoncialString;
+use anyhow::{Result, Context as ErrContext};
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}, sync::atomic::{AtomicUsize, Ordering}};
 use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context, blue, formatted_duration_rate};
 
+// TODO: If charter doesn't exist - log the path that's failing.
 // TODO: Logging - log files moved into waiting - reduce analyser spam
 // TODO: Ensure the output file ends in .csv (even if original didn't).
 // TODO: Clippy!
@@ -93,8 +94,8 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P, uuid_seed: Opti
 
     // Load the charter and create a load job context.
     let ctx = init_job(
-        charter_path.as_ref().to_path_buf().canonicalize()?,
-        base_dir.as_ref().to_path_buf().canonicalize()?,
+        charter_path.as_ref().to_path_buf().canonicalize().with_context(|| format!("charter path {:?}", charter_path.as_ref()))?,
+        base_dir.as_ref().to_path_buf().canonicalize().with_context(|| format!("base dir {:?}", base_dir.as_ref()))?,
         uuid_seed)?;
 
     // Create inbox, archive and waiting folders (if required).

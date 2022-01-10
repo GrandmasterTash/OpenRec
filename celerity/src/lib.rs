@@ -8,18 +8,19 @@ mod changeset;
 mod instructions;
 
 use uuid::Uuid;
-use anyhow::Result;
 use error::MatcherError;
 use itertools::Itertools;
 use changeset::ChangeSet;
 use utils::csv::CsvWriters;
 use model::schema::GridSchema;
 use folders::ToCanoncialString;
+use anyhow::{Result, Context as ErrContext};
 use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
 use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate, lua::init_context};
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
+// TODO: Disable colors from logs and jetwash. Investigate if this is ansi_term - maybe termion is okay?
 // TODO: Flesh-out examples.
 // TODO: Check code coverage.
 // TODO: General file-level comments need adding.
@@ -167,8 +168,8 @@ pub fn run_charter<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<()> {
 /// Parse and load the charter configuration, return a job Context.
 ///
 fn init_job<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<Context, MatcherError> {
-    let charter_pb = charter.as_ref().to_path_buf().canonicalize()?;
-    let base_dir_pb = base_dir.as_ref().to_path_buf().canonicalize()?;
+    let charter_pb = charter.as_ref().to_path_buf().canonicalize().with_context(|| format!("charter path {:?}", charter.as_ref()))?;
+    let base_dir_pb = base_dir.as_ref().to_path_buf().canonicalize().with_context(|| format!("base dir {:?}", base_dir.as_ref()))?;
     let ctx = Context::new(Charter::load(&charter_pb)?, charter_pb, base_dir_pb);
 
     log::info!("Starting match job:");

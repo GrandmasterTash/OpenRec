@@ -23,5 +23,6 @@ pub fn formatted_duration_rate(amount: usize, elapsed: Duration) -> (String, Str
 /// Highlight some log output with ansi colour codes.
 ///
 pub fn blue(msg: &str) -> ansi_term::ANSIGenericString<'_, str> {
-    ansi_term::Colour::RGB(70, 130, 180).paint(msg)
+    msg.into()
+    // ansi_term::Colour::RGB(70, 130, 180).paint(msg)
 }
