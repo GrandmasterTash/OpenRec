@@ -4,4 +4,5 @@ members = [
     "generator",
     "jetwash",
     "celerity",
-    "integration-tests"]
+    "integration-tests",
+    "steward"]

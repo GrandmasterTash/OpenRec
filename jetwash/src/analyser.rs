@@ -143,7 +143,7 @@ pub fn analyse_and_validate(ctx: &Context, jetwash: &Jetwash) -> Result<Analysis
         }
     }
 
-    // TODO: If there's been any errors, abort the job (IF configured)
+    // If there's been any errors, abort the job (IF configured)
     if any_errors {
         return Err(JetwashError::AnalysisErrors)
     }

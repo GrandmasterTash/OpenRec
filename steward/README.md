@@ -8,3 +8,4 @@ TODO: Write Grafana dashboards.
 TODO: Package as docker image.
 TODO: Console output shows control status.
 TODO: Recover unpublished outbox files on start-up (i.e. make it safe to kill sentinal).
+TODO: Consider a 'watch tree ./tmp -h' - style progress meter showing files and sizes.

@@ -28,7 +28,6 @@ fn main() {
     let matches = App::new("CSV Data Generator")
         .version("1.0")
         .about(ABOUT)
-        // TODO: Allow output folder to be specified - and allow an env var to apply a default.
         .arg(Arg::with_name("INVOICE_SCHEMA")
             .help("The schema string for the invoice file.")
             .required(false)

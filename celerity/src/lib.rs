@@ -7,21 +7,22 @@ mod matching;
 mod changeset;
 mod instructions;
 
-use folders::ToCanoncialString;
-use utils::csv::CsvWriters;
 use uuid::Uuid;
 use anyhow::Result;
 use error::MatcherError;
 use itertools::Itertools;
 use changeset::ChangeSet;
+use utils::csv::CsvWriters;
 use model::schema::GridSchema;
-use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate, lua::init_context};
+use folders::ToCanoncialString;
 use rayon::iter::{IntoParallelRefMutIterator, IndexedParallelIterator, ParallelIterator};
+use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate, lua::init_context};
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
 // TODO: Flesh-out examples.
-// TODO: Check code coverage. Need error tests.
+// TODO: Check code coverage.
+// TODO: General file-level comments need adding.
 
 ///
 /// These are the linear state transitions of a match Job.

@@ -14,8 +14,8 @@ use crate::folders::ToCanoncialString;
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}, sync::atomic::{AtomicUsize, Ordering}};
 use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context, blue, formatted_duration_rate};
 
-
 // TODO: Logging - log files moved into waiting - reduce analyser spam
+// TODO: Ensure the output file ends in .csv (even if original didn't).
 // TODO: Clippy!
 
 ///

@@ -166,6 +166,7 @@ fn load_file(ctx: &Context, file: &DirEntry, source_file: &MatchingSourceFile, g
         // Use an existing schema from the grid, if there is one, otherwise add this one.
         let schema_idx = grid_schema.add_file_schema(schema.clone())?;
         let last_schema_idx = validate_schema(grid_schema, schema_idx, &last_schema_idx, &schema, source_file.pattern())?;
+
         // Register the data file with the grid.
         let _file_idx = grid_schema.add_file(DataFile::new(file, schema_idx));
         last_schema_idx

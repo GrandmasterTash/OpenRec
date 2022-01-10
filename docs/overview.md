@@ -1,10 +1,20 @@
 # What is a OpenRec?
 
+TODO: Briefer summary. You put files in, you get unmatched data coming out (and metrics). Build your own system around that!
+
+Combines Rust, Lua and Yaml ......
+TODO: Document the feed-back cycle, i.e. data -> match -> unmatched -> changeset + data -> match ... etc
+TODO: Diagram of above with OpenRec boundaries shown
+
 OpenRec is a reconciliation matching engine written in the Rust language. It can be used to group and match data presented to it in csv format using easy-to-configure rules. OpenRec comprises a number of modules which are intended to be used as libraries and services within your own enterprise-wide solution.
 
 The motivation for this project was simply personal, I wished to solve the problem of writing a matching engine in a way that wouldn't consume system (memory) resources. As a result you should take note: OpenRec is a matching engine, not a full solution.
 
 ## OpenRec High-Level Features
+
+TODO: Remove schema rows from some examples below....
+
+TODO: Split into emphasised headings.
 
 - **Schema-less** - OpenRec will analyse incoming data at runtime to deduce each column's data-type. The only time you'll need to know a column's data-type is when using it in matching rule. Anything not involved in a rule is dynamically typed.
 - **Fast** - OpenRec is written in [Rust](https://www.rust-lang.org/) an as such is very efficient. Typically matching 1-2 million transactions a minute (subject to specific hardware and configuration).
