@@ -1,5 +1,6 @@
 use chrono::Local;
 use crossbeam::channel;
+use fs_extra::dir::get_dir_content;
 use crate::{register::{Register, self}, do_match_job};
 use std::{thread::JoinHandle, path::Path, slice::IterMut, fs, time::{Instant, Duration}, collections::VecDeque};
 
@@ -178,6 +179,37 @@ impl Control {
         self.callback = None;
         self.job = None;
     }
+
+    pub fn inbox_len(&self) -> usize {
+        let inbox = self.inner.root().join("inbox");
+        if inbox.exists() {
+            if let Ok(contents) = get_dir_content(inbox) {
+                return contents.dir_size as usize
+            }
+        }
+        0
+    }
+
+    pub fn outbox_len(&self) -> usize {
+        // TODO: Remove supe code.
+        let outbox = self.inner.root().join("outbox");
+        if outbox.exists() {
+            if let Ok(contents) = get_dir_content(outbox) {
+                return contents.dir_size as usize
+            }
+        }
+        0
+    }
+
+    pub fn root_len(&self) -> usize {
+        let dir = self.inner.root();
+        if dir.exists() {
+            if let Ok(contents) = get_dir_content(dir) {
+                return contents.dir_size as usize
+            }
+        }
+        0
+    }
 }
 
 
@@ -235,7 +267,7 @@ impl JobResult {
         }
     }
 
-    pub fn success(&self) -> bool {
+    pub fn _success(&self) -> bool {
         self.success
     }
 

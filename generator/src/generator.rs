@@ -24,7 +24,7 @@ pub mod prelude {
     pub const CURRENCY: &str = "Currency";
     pub const FX_RATE: &str = "FXRate";
     pub const INVOICE_REF: &str = "InvoiceRef";
-    pub const OPENREC_STATUS: &str = "OpenRecStatus";
+    // pub const OPENREC_STATUS: &str = "OpenRecStatus";
     pub const PAYMENT_DATE: &str = "PaymentDate";
     pub const PAYMENT_REF: &str = "PaymentRef";
     pub const RECEIPT_DATE: &str = "ReceiptDate";
@@ -65,7 +65,7 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     let pay_schema = Schema::new(&pay_schema, &mut rng, &mut fixed_pay_columns());
     let rec_schema = Schema::new(&rec_schema, &mut rng, &mut fixed_rec_columns());
 
-    let prefix = Utc::now().format("%Y%m%d_%H%M%S%3f_").to_string();
+    let prefix = "";//Utc::now().format("%Y%m%d_%H%M%S%3f_").to_string();
     let inv_path = format!("./tmp/{}invoices.csv", prefix);
     let pay_path = format!("./tmp/{}payments.csv", prefix);
     let rec_path = format!("./tmp/{}receipts.csv", prefix);
@@ -81,15 +81,15 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     // Output the column headers to both files.
     let mut inv_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(inv_path)?;
     inv_wtr.write_record(inv_schema.header_vec())?;
-    inv_wtr.write_record(inv_schema.schema_vec())?;
+    // inv_wtr.write_record(inv_schema.schema_vec())?;
 
     let mut pay_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(pay_path)?;
     pay_wtr.write_record(pay_schema.header_vec())?;
-    pay_wtr.write_record(pay_schema.schema_vec())?;
+    // pay_wtr.write_record(pay_schema.schema_vec())?;
 
     let mut rec_wtr = csv::WriterBuilder::new().quote_style(QuoteStyle::Always).from_path(rec_path)?;
     rec_wtr.write_record(rec_schema.header_vec())?;
-    rec_wtr.write_record(rec_schema.schema_vec())?;
+    // rec_wtr.write_record(rec_schema.schema_vec())?;
 
     // Initialise some counters.
     let (mut invoices, mut receipts, mut payments) = (0, 0, 0);
@@ -138,7 +138,7 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
 ///
 fn fixed_inv_columns() -> Vec<Column> {
     vec!(
-        Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
+        // Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, INVOICE_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
@@ -155,7 +155,7 @@ fn fixed_inv_columns() -> Vec<Column> {
 ///
 fn fixed_pay_columns() -> Vec<Column> {
     vec!(
-        Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
+        // Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, PAYMENT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
@@ -171,7 +171,7 @@ fn fixed_pay_columns() -> Vec<Column> {
 ///
 fn fixed_rec_columns() -> Vec<Column> {
     vec!(
-        Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
+        // Column::new(DataType::INTEGER, OPENREC_STATUS.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, RECORD_TYPE.into(), ColumnMeta::default()),
         Column::new(DataType::STRING, REFERENCE.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
         Column::new(DataType::STRING, RECEIPT_REF.into(), ColumnMeta::new_reference(vec!((3, SegmentType::ALPHA), (5, SegmentType::NUMERIC)))),
@@ -253,7 +253,7 @@ pub fn generate_row(schema: &Schema, foreign_key: &str, record_type: &str, rng: 
             match col.header() {
                 RECORD_TYPE    => record_type.to_string(),
                 REFERENCE      => foreign_key.to_string(),
-                OPENREC_STATUS => "0".into(),
+                // OPENREC_STATUS => "0".into(),
                 _ => match col.data_type() {
                     DataType::UNKNOWN  => panic!("Unknown data type encountered for column {}", col.header()),
                     DataType::BOOLEAN  => generate_boolean(rng),

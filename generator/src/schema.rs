@@ -48,12 +48,12 @@ impl Schema {
             .collect::<Vec<&str>>()
     }
 
-    pub fn schema_vec(&self) -> Vec<&str> {
-        self.columns
-        .iter()
-        .map(|c| c.data_type().into())
-        .collect::<Vec<&str>>()
-    }
+    // pub fn schema_vec(&self) -> Vec<&str> {
+    //     self.columns
+    //     .iter()
+    //     .map(|c| c.data_type().into())
+    //     .collect::<Vec<&str>>()
+    // }
 }
 
 

@@ -19,7 +19,7 @@ pub fn main() -> Result<()> {
     dotenv::dotenv().ok();
     let _ = env_logger::try_init();
 
-    log::info!("{}", BANNER);
+    // log::info!("{}", BANNER);
 
     celerity::run_charter(
         options.value_of("charter_path").expect("no charter specified"),
@@ -28,11 +28,11 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-const BANNER: &str = r#"
-  ____     _           _ _
- / ___|___| | ___ _ __(_) |_ _   _
-| |   / _ \ |/ _ \ '__| | __| | | |
-| |__|  __/ |  __/ |  | | |_| |_| |
- \____\___|_|\___|_|  |_|\__|\__, |
- OpenRec: Matching Engine    |___/
-"#;
+// const BANNER: &str = r#"
+//   ____     _           _ _
+//  / ___|___| | ___ _ __(_) |_ _   _
+// | |   / _ \ |/ _ \ '__| | __| | | |
+// | |__|  __/ |  __/ |  | | |_| |_| |
+//  \____\___|_|\___|_|  |_|\__|\__, |
+//  OpenRec: Matching Engine    |___/
+// "#;

@@ -19,7 +19,7 @@ pub fn main() -> Result<()> {
     dotenv::dotenv().ok();
     let _ = env_logger::try_init();
 
-    log::info!("{}", BANNER);
+    // log::info!("{}", BANNER);
 
     jetwash::run_charter(
         options.value_of("charter_path").expect("no charter specified"),
@@ -29,13 +29,13 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-const BANNER: &str = r#"
-  ____    ___ ______  __    __   ____  _____ __ __
- |    |  /  _]      ||  |__|  | /    |/ ___/|  |  |
- |__  | /  [_|      ||  |  |  ||  o  (   \_ |  |  |
- __|  ||    _]_|  |_||  |  |  ||     |\__  ||  _  |
-/  |  ||   [_  |  |  |  `  '  ||  _  |/  \ ||  |  |
-\  `  ||     | |  |   \      / |  |  |\    ||  |  |
- \____j|_____| |__|    \_/\_/  |__|__| \___||__|__|
- OpenRec: Data Importer & Cleanser
-"#;
+// const BANNER: &str = r#"
+//   ____    ___ ______  __    __   ____  _____ __ __
+//  |    |  /  _]      ||  |__|  | /    |/ ___/|  |  |
+//  |__  | /  [_|      ||  |  |  ||  o  (   \_ |  |  |
+//  __|  ||    _]_|  |_||  |  |  ||     |\__  ||  _  |
+// /  |  ||   [_  |  |  |  `  '  ||  _  |/  \ ||  |  |
+// \  `  ||     | |  |   \      / |  |  |\    ||  |  |
+//  \____j|_____| |__|    \_/\_/  |__|__| \___||__|__|
+//  OpenRec: Data Importer & Cleanser
+// "#;

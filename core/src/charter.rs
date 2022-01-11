@@ -18,9 +18,6 @@ pub struct Charter {
 
     #[serde(default = "default_memory_limit")]
     memory_limit: usize, // The maximum number of bytes allowed for grouping and sorting data.
-
-    #[serde(default = "default_group_limit")]
-    group_limit: usize, // The maximum number of records in a single group.
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +26,10 @@ pub struct Matching {
     source_files: Vec<MatchingSourceFile>,
     use_field_prefixes: Option<bool>,
     instructions: Option<Vec<Instruction>>,
+
+    #[serde(default = "default_group_limit")]
+    group_limit: usize, // The maximum number of records in a single group.
+    // TODO: Rename group_size_limit
 }
 
 #[derive(Debug, Deserialize)]
@@ -191,7 +192,7 @@ impl Charter {
     }
 
     pub fn group_limit(&self) -> usize {
-        self.group_limit
+        self.matching.group_limit
     }
 
     pub fn source_files(&self) -> &[MatchingSourceFile] {

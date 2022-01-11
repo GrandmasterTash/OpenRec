@@ -32,6 +32,4 @@ fs_extra = "1.2.0"
 crossbeam = "0.8.1"
 chrono = { version = "0.4.19", features = ["serde"] }
 humantime = "2.1"
-
-# TODO: Just for dev
-rand = "0.8.4"
+bytesize = "1.1.0"
