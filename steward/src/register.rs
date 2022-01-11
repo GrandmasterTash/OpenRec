@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use anyhow::{Context, Result};
+use core::charter::Charter;
 use std::{path::{PathBuf, Path}, io::BufReader};
 
 #[derive(Debug, Deserialize)]
@@ -11,37 +12,42 @@ pub struct Register {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Control {
-    id: String,
+    #[serde(default)]
+    name: String,
     charter: PathBuf,
     root: PathBuf,
 
     #[serde(default)]
-    disabled: bool
-}
+    disabled: bool,
 
-impl Control {
-    // TEMP: Temporary - just to test the UI layout.
-    fn _random(idx: usize) -> Self {
-        Self {
-            id: format!("Control {}", idx),
-            charter: PathBuf::from(format!("./tmp/control_{}.yml", idx)),
-            root: PathBuf::from(format!("./tmp/control{}/root/", idx)),
-            disabled: crate::random(100, 20),
-        }
-    }
+    #[serde(skip)]
+    parsed: bool,
 }
 
 impl Register {
     pub fn load(path: &Path) -> Result<Self, anyhow::Error> {
-        // Ok(Self {
-        //     controls: (1..151).map(|idx| Control::random(idx)).collect()
-        // })
-
         let rdr = BufReader::new(std::fs::File::open(&path)
             .with_context(|| format!("attempting to open register {}", path.to_string_lossy()))?);
 
-        Ok(serde_yaml::from_reader(rdr)
-            .with_context(|| format!("parsing register {}", path.to_string_lossy()))?)
+        let mut register: Self = serde_yaml::from_reader(rdr)
+            .with_context(|| format!("parsing register {}", path.to_string_lossy()))?;
+
+        // Attempt to parse each charter to get the control's name.
+        for control in &mut register.controls {
+            match Charter::load(control.charter()) {
+                Ok(charter) => {
+                    control.set_name(charter.name().to_string());
+                    control.parsed = true;
+                },
+                Err(_) => {
+                    // TODO: Log this error to steward.log.
+                    control.set_name(control.charter().to_string_lossy().to_string());
+                    control.parsed = false;
+                },
+            }
+        }
+
+        Ok(register)
     }
 
     pub fn controls(&self) -> &[Control] {
@@ -50,8 +56,12 @@ impl Register {
 }
 
 impl Control {
-    pub fn id(&self) -> &str {
-        &self.id
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn set_name(&mut self, name: String) {
+        self.name = name;
     }
 
     pub fn charter(&self) -> &Path {
@@ -64,5 +74,9 @@ impl Control {
 
     pub fn disabled(&self) -> bool {
         self.disabled
+    }
+
+    pub fn parsed(&self) -> bool {
+        self.parsed
     }
 }

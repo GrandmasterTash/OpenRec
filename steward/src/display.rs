@@ -1,6 +1,7 @@
-use std::{fmt::Display, time::Instant};
+use std::time::Duration;
+
 use crate::state::{ControlState, State, Control};
-use termion::{cursor::Goto, color::{self, Fg}, terminal_size, clear};
+use termion::{cursor::Goto, color::{self, Fg}, terminal_size};
 
 const CONTROL_WIDTH: u16 = 60;
 
@@ -10,13 +11,14 @@ pub fn init() {
 
 // TODO: Work on the flicker.
 
-pub fn display(state: &State, mut terminal_size: (u16, u16)) {
+pub fn display(state: &mut State, mut terminal_size: (u16, u16)) {
 
     // If the terminal has been resized then clear it.
     terminal_size = clear_if_resized(terminal_size);
 
     // How many columns can we display?
-    let cols = terminal_size.0 / CONTROL_WIDTH;
+    // let cols = terminal_size.0 / CONTROL_WIDTH;
+    let cols = 1; // Single column for now.
 
     // How many controls per column?
     let rows = terminal_size.1 - 10;
@@ -24,41 +26,40 @@ pub fn display(state: &State, mut terminal_size: (u16, u16)) {
     // Maximum that will fit
     let max = (cols * rows) as usize;
 
+    // Get the widest control name enforce a screen-related limit.
+    let widest = state.controls().iter().map(|c|c.name().len()).max().unwrap_or(20);
+
     // Display headers for each column.
     for col in 0..cols {
-        println!("{pos}{heading}{id:20} {status:18} {inbox:>6} {outbox:>6}{reset}",
+        println!("{pos}{heading}{name:0widest$}   {status:18}   {duration:>9}   {inbox:>6}   {outbox:>6}   {usage:>10}   {messages}{reset}",
             pos = Goto(col * CONTROL_WIDTH, 9),
             heading = Fg(color::Rgb(240, 230, 140)),
-            id = "CONTROL",
+            widest = widest,
+            name = "CONTROL",
             status = "STATUS",
+            duration = "DURATION",
             inbox = "INBOX",
             outbox = "OUTBOX",
+            usage = "DISK USAGE",
+            messages = "MESSAGES",
             reset = Fg(color::Reset));
     }
 
     // Display controls across the available columns.
-    for (idx, control) in state.controls().iter().take(max).enumerate() {
+    for (idx, control) in state.controls_mut().take(max).enumerate() {
         // Fill columns down, then across.
-        let col = ((idx as u16) / rows) * CONTROL_WIDTH;
-        let row = 10 + ((idx as u16 + rows /* - 1 */) % rows);
+        // let col = ((idx as u16) / rows) * CONTROL_WIDTH;
+        // let row = 10 + ((idx as u16 + rows /* - 1 */) % rows);
+        let col = 1;
+        let row = idx as u16 + 10;
 
         println!("{pos}{control}",
             pos = Goto(col, row),
-            control = control);
+            control = format(control, widest, terminal_size.0));
     }
 }
 
-///
-/// Allows status messages to be queued and displayed for at-least a brief period of time.
-///
-pub struct MessageQueue {
-    current: Option<(Instant, String)>,
-    shown_at: Option<Instant>,
-    msgs: Vec<(Instant, String)>
-}
 
-
-// TODO: Hook this into the MessageQueue above.
 pub fn show_msg(msg: String) {
     println!("{pink}{pos}{msg}{reset}",
         pos = Goto(40, 1),
@@ -83,32 +84,37 @@ fn clear_if_resized(prev_terminal_size: (u16, u16)) -> (u16, u16) {
     terminal_size
 }
 
-impl Display for Control {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (colour, status) = match self.state() {
-            ControlState::Started => {
-                match self.job() {
-                    Some(_task) => (color::Rgb(255, 255, 255), "Running - matching"),
-                    None => (color::Rgb(200, 200, 200), "Running - idle"),
-                }
-            },
-            ControlState::Stopped => (color::Rgb(100, 100, 100), "Stopped - disabled"),
-            ControlState::Suspended => (color::Rgb(255, 69, 0), "Suspended - Errors"),
-        };
+fn format(control: &mut Control, widest: usize, terminal_width: u16) -> String {
+    let (colour, status) = match control.state() {
+        ControlState::StartedIdle => (color::Rgb(200, 200, 200), "Running - idle"),
+        ControlState::StartedMatching => (color::Rgb(255, 255, 255), "Running - matching"),
+        ControlState::Stopped => (color::Rgb(100, 100, 100), "Stopped - disabled"),
+        ControlState::Suspended => (color::Rgb(255, 69, 0), "Suspended - Errors"),
+    };
 
-        let inbox = "123MB";
-        let outbox = "123MB";
+    let inbox = "123MB";
+    let outbox = "123MB";
 
-        write!(f, "{colour}{id:20} {status:18} {inbox:>6} {outbox:>6}{reset}",
-            id = self.id(),
-            status = status,
-            inbox = inbox,
-            outbox = outbox,
-            colour = Fg(colour),
-            reset = Fg(color::Reset))
-    }
+    // Truncate duration to seconds and format for humons.
+    let duration = humantime::format_duration(Duration::from_secs(control.duration().as_secs())).to_string();
+    let message = control.next_message().unwrap_or_default();
+
+    // Blank out any residual message.
+    let fill = " ".repeat(terminal_width as usize - (widest + message.len() + (6 * 3) + 18 + 9 + 6 + 6 + 10));
+
+    format!("{name:0widest$}   {colour}{status:18}{reset}   {duration:>9}   {inbox:>6}   {outbox:>6}   {usage:>10}   {messages}{fill}",
+        widest = widest,
+        name = control.name(),
+        status = status,
+        duration = duration,
+        inbox = inbox,
+        outbox = outbox,
+        usage = "-",
+        messages = message,
+        fill = fill,
+        colour = Fg(colour),
+        reset = Fg(color::Reset))
 }
-
 
 const BANNER: &str = r#" _____ _                             _
 /  ___| |                           | |

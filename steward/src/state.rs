@@ -1,55 +1,39 @@
-use std::{time::{Duration, Instant}, thread::{self, JoinHandle}, path::{Path, PathBuf}, sync::Arc, slice::IterMut, fs};
-
+use chrono::Local;
 use crossbeam::channel;
-
 use crate::{register::{Register, self}, do_match_job};
+use std::{thread::JoinHandle, path::Path, slice::IterMut, fs, time::{Instant, Duration}, collections::VecDeque};
 
 #[derive(Clone, Copy)]
 pub enum ControlState {
-    Started,
+    StartedIdle,
+    StartedMatching,
     Stopped,
     Suspended,
 }
 
-// pub trait Task {
-//     fn started(&self) -> Instant;
-//     fn done(&self) -> bool;
-//     fn description(&self) -> String;
-// }
-
-// pub struct MatchJob {
-// }
-
-// impl Task for MatchJob {
-//     fn started(&self) -> Instant {
-//         todo!()
-//     }
-
-//     fn done(&self) -> bool {
-//         todo!()
-//     }
-
-//     fn description(&self) -> String {
-//         String::from("matching")
-//     }
-// }
-
 pub struct Control {
     state: ControlState,
-    inner: register::Control,
-    job: Option<JoinHandle<()>>, // The handle to a thread running a match job.
-    callback: Option<channel::Receiver<bool>>, // The job thread will call back to the main thread when it's done.
-    queued: bool,                // Start another job after the current has finished.
-    inbox_monitors: Vec<String>  // Filenames of files we know are in the inbox.
+    state_changed: Instant,                // When did the state get state to it's current value.
+    inner: register::Control,              // The parsed config from the register file.
+    job: Option<JoinHandle<()>>,           // The handle to a thread running a match job.
+    callback: Option<channel::Receiver<JobResult>>, // The job thread will call back to the main thread when it's done.
+    queued: bool,                          // Start another job after the current has finished.
+    inbox_files: Vec<String>,              // Filenames of files we know are in the inbox.
+    messages: VecDeque<(Instant, String)>, // A queue of messages to display for the control.
 }
 
 pub struct State {
     controls: Vec<Control>
 }
 
+pub struct JobResult {
+    success: bool,
+    message: Option<String>,
+}
+
 impl Control {
-    pub fn id(&self) -> &str {
-        self.inner.id()
+    pub fn name(&self) -> &str {
+        self.inner.name()
     }
 
     pub fn state(&self) -> ControlState {
@@ -57,15 +41,23 @@ impl Control {
     }
 
     pub fn suspend(&mut self) {
+        self.state_changed = Instant::now();
         self.state = ControlState::Suspended;
     }
 
     pub fn is_running(&self) -> bool {
         match self.state {
-            ControlState::Started   => true,
-            ControlState::Stopped   => false,
-            ControlState::Suspended => false,
+            ControlState::StartedIdle     => true,
+            ControlState::StartedMatching => true,
+            ControlState::Stopped         => false,
+            ControlState::Suspended       => false,
         }
+    }
+
+    // pub fn duration(&self) -> chrono::Duration {
+    pub fn duration(&self) -> Duration {
+        // chrono::Duration::from_std(self.state_changed.elapsed()).expect("bad duration")
+        self.state_changed.elapsed()
     }
 
     pub fn charter(&self) -> &Path {
@@ -80,8 +72,32 @@ impl Control {
         &self.job
     }
 
-    pub fn callback(&self) -> &Option<channel::Receiver<bool>> {
+    pub fn callback(&self) -> &Option<channel::Receiver<JobResult>> {
         &self.callback
+    }
+
+    pub fn queue_message(&mut self, msg: String) {
+        self.messages.push_back((Instant::now(), msg));
+    }
+
+    ///
+    /// If the current head of the message queue is older then 5s then pop and return the next
+    /// message in the queue.
+    ///
+    pub fn next_message(&mut self) -> Option<String> {
+        if !self.messages.is_empty() {
+            if (self.messages.len() > 1)
+                && (self.messages[0].0.elapsed() > Duration::from_secs(5)) {
+
+                self.messages.pop_front();
+            }
+
+            if let Some((when, msg)) = self.messages.iter().next() {
+                let when = Local::now() - chrono::Duration::from_std(when.elapsed()).expect("bad duration");
+                return Some(format!("[{}] {}", when.format("%a %T"), msg)) // e.g. SUN 12:45:12
+            }
+        }
+        None
     }
 
     ///
@@ -96,8 +112,9 @@ impl Control {
                 Ok(_) => {},
                 Err(err) => {
                     self.state = ControlState::Suspended;
-                    log::error!("Unable to create in for control {id} at {inbox:?} : {err}",
-                        id = self.id(),
+                    self.queue_message(format!("Unable to create inbox {:?}", inbox));
+                    log::error!("Unable to create inbox for control {name} at {inbox:?} : {err}",
+                        name = self.name(),
                         inbox = inbox,
                         err = err);
                     return vec!()
@@ -110,8 +127,9 @@ impl Control {
             Ok(con) => con,
             Err(err) => {
                 self.state = ControlState::Suspended;
-                log::error!("Unable to read inbox for control {id} : {err}",
-                    id = self.id(),
+                self.queue_message(format!("Unable to read inbox {:?}", inbox));
+                log::error!("Unable to read inbox for control {name} : {err}",
+                    name = self.name(),
                     err = err);
                 return vec!()
             },
@@ -125,29 +143,38 @@ impl Control {
 
         let new_contents = contents
             .iter()
-            .filter(|f| !self.inbox_monitors.contains(f))
+            .filter(|f| !self.inbox_files.contains(f))
             .cloned()
             .collect::<Vec<String>>();
 
-        self.inbox_monitors = contents;
+        self.inbox_files = contents;
         new_contents
     }
 
+    ///
+    /// Create a thread to spawn a matching job - or flip a flag if there's already a job in progress.
+    ///
     pub fn queue_job(&mut self) {
         match self.job() {
             Some(_) => self.queued = true, // Queue the job.
             None => {
                 let (s, r) = channel::unbounded();
-                let control_id = self.id().to_string();
+                let control_name = self.name().to_string();
                 let charter = self.charter().to_path_buf();
                 let root = self.root().to_path_buf();
+                self.state = ControlState::StartedMatching;
                 self.callback = Some(r);
-                self.job = Some(std::thread::spawn(|| do_match_job(control_id, charter, root, s)))
+                self.job = Some(std::thread::spawn(|| do_match_job(control_name, charter, root, s)))
             },
         }
     }
 
+    ///
+    /// Mark the control as idle - after a job has completed.
+    ///
     pub fn job_done(&mut self) {
+        self.state_changed = Instant::now();
+        self.state = ControlState::StartedIdle;
         self.callback = None;
         self.job = None;
     }
@@ -161,20 +188,21 @@ impl State {
             .map(|c| {
                 Control {
                     inner: c.clone(),
-                    state: if c.disabled() {
+                    state: if c.disabled() || !c.parsed() {
                             ControlState::Stopped
                         } else {
-                            // // TEMP: for testing.
-                            // if crate::random(100, 10) {
-                            //     ControlState::Suspended
-                            // } else {
-                                ControlState::Started
-                            // }
+                            ControlState::StartedIdle
                         },
+                    state_changed: Instant::now(),
                     job: None,
                     callback: None,
                     queued: false,
-                    inbox_monitors: vec!(),
+                    inbox_files: vec!(),
+                    messages: if c.parsed() {
+                        VecDeque::new()
+                    } else {
+                        VecDeque::from([(Instant::now(), "Charter failed to parse".into())])
+                    },
                 }
             })
             .collect();
@@ -188,5 +216,34 @@ impl State {
 
     pub fn controls_mut(&mut self) -> IterMut<'_, Control> {
         self.controls.iter_mut()
+    }
+}
+
+
+impl JobResult {
+    pub fn new_success() -> Self {
+        Self {
+            success: true,
+            message: None
+        }
+    }
+
+    pub fn new_failure(msg: String) -> Self {
+        Self {
+            success: false,
+            message: Some(msg),
+        }
+    }
+
+    pub fn success(&self) -> bool {
+        self.success
+    }
+
+    pub fn failure(&self) -> bool {
+        !self.success
+    }
+
+    pub fn message(&self) -> &Option<String> {
+        &self.message
     }
 }
