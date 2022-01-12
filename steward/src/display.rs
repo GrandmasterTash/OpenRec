@@ -1,28 +1,33 @@
+use termion::clear;
 use std::io::Write;
+use crate::AppState;
+use termion::color::Bg;
 use std::{time::Duration, io::StdoutLock};
 use crate::state::{ControlState, State, Control};
 use termion::{cursor::Goto, color::{self, Fg}, terminal_size, raw::RawTerminal};
-
-const BANNER_HEIGHT: u16 = 10;
 
 // Column headers for the display.
 const CONTROL: &str = "CONTROL";
 const STATUS: &str = "STATUS";
 const DURATION: &str = "DURATION";
+const UNMATCHED: &str = "UNMATCHED";
 const INBOX: &str = "INBOX";
 const OUTBOX: &str = "OUTBOX";
 const DISK_USAGE: &str = "DISK USAGE";
 const MESSAGES: &str = "MESSAGES";
 
-const COLUMNS: [&str; 7] = [
+const COLUMNS: [&str; 8] = [
     CONTROL,
     STATUS,
     DURATION,
+    UNMATCHED,
     INBOX,
     OUTBOX,
     DISK_USAGE,
     MESSAGES
 ];
+
+const BANNER_HEIGHT: u16 = 10; // Includes a padding row.
 
 pub fn init(stdout: &mut RawTerminal<StdoutLock>) {
     write!(stdout, "{}{}", termion::clear::All, termion::cursor::Hide).unwrap();
@@ -36,12 +41,13 @@ pub fn init(stdout: &mut RawTerminal<StdoutLock>) {
     writeln!(stdout, r#"{}       |_| Steward: Match Job Orchistrator"#, Goto(1, 8)).unwrap();
 }
 
-// TODO: Work on the flicker.
-
-pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, mut terminal_size: (u16, u16)/* , selected: Option<usize> */) -> (u16, u16) {
+pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_state: &AppState, mut terminal_size: (u16, u16)/* , selected: Option<usize> */) -> (u16, u16) {
 
     // If the terminal has been resized then clear it.
     terminal_size = clear_if_resized(terminal_size, stdout);
+
+    // Render the banner stats.
+    display_stats(stdout, state, app_state);
 
     // How many controls per column?
     let rows = terminal_size.1 - BANNER_HEIGHT;
@@ -54,6 +60,7 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, mut term
         CONTROL.len(),
         STATUS.len(),
         DURATION.len(),
+        UNMATCHED.len(),
         INBOX.len(),
         OUTBOX.len(),
         DISK_USAGE.len(),
@@ -85,61 +92,106 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, mut term
                 widths[idx] = caption.len();
             }
         }
-
-        // TODO: Truncate the last column width to fit in the screen.
     }
 
     // Display headers for each column.
-    write!(stdout, "{pos}{heading}{name:0w_name$}   {status:0w_status$}   {duration:>0w_duration$}   {inbox:>0w_inbox$}   {outbox:>0w_outbox$}   {usage:>0w_usage$}   {messages:0w_messages$}{reset}",
+    write!(stdout, "{pos}{heading}{name:0w_name$}   {status:0w_status$}   {duration:>0w_duration$}   {unmatched:>0w_unmatched$}   {inbox:>0w_inbox$}   {outbox:>0w_outbox$}   {usage:>0w_usage$}   {messages:0w_messages$}{reset}",
         pos = Goto(2, BANNER_HEIGHT),
         heading = Fg(color::Rgb(240, 230, 140)),
         reset = Fg(color::Reset),
         w_name = widths[0],     name = "CONTROL",
         w_status = widths[1],   status = "STATUS",
         w_duration = widths[2], duration = "DURATION",
-        w_inbox = widths[3],    inbox = "INBOX",
-        w_outbox = widths[4],   outbox = "OUTBOX",
-        w_usage = widths[5],    usage = "DISK USAGE",
-        w_messages = widths[6], messages = "MESSAGES")
+        w_unmatched = widths[3], unmatched = "UNMATCHED",
+        w_inbox = widths[4],    inbox = "INBOX",
+        w_outbox = widths[5],   outbox = "OUTBOX",
+        w_usage = widths[6],    usage = "DISK USAGE",
+        w_messages = widths[7], messages = "MESSAGES")
         .expect("cant write stdout");
 
     // Display controls across the available columns.
     for (idx, captions) in control_captions.iter().enumerate() {
         let row = idx as u16 + BANNER_HEIGHT + 1;
-        // let (l_anchor, r_anchor) = anchors(idx, selected);
 
-        write!(stdout, "{pos}{name:0w_name$}   {state_colour}{state:0w_state$}{reset}   {duration:>0w_duration$}   {inbox:>0w_inbox$}   {outbox:>0w_outbox$}   {usage:>0w_usage$}   {messages:0w_messages$}",
+        write!(stdout, "{pos}{name:0w_name$}   {state_colour}{state:0w_state$}{reset}   {duration:>0w_duration$}   {unmatched:>0w_unmatched$}   {inbox:>0w_inbox$}   {outbox:>0w_outbox$}   {usage:>0w_usage$}   {messages:0w_messages$}{clear}",
             pos = Goto(2, row),
             state_colour = Fg(state_colours[idx]),
             reset = Fg(color::Reset),
-            // l_anchor = l_anchor,
-            // r_anchor = r_anchor,
+            clear = clear::UntilNewline,
             w_name = widths[0],     name = captions[0],
             w_state = widths[1],    state = captions[1],
             w_duration = widths[2], duration = captions[2],
-            w_inbox = widths[3],    inbox = captions[3],
-            w_outbox = widths[4],   outbox = captions[4],
-            w_usage = widths[5],    usage = captions[5],
-            w_messages = widths[6], messages = captions[6])
+            w_unmatched = widths[3], unmatched = captions[3],
+            w_inbox = widths[4],    inbox = captions[4],
+            w_outbox = widths[5],   outbox = captions[5],
+            w_usage = widths[6],    usage = captions[6],
+            w_messages = widths[7], messages = captions[7])
             .expect("cant write stdout");
     }
+
+    // Display keyboard shortcuts in the footer.
+    display_shortcuts(stdout, terminal_size);
 
     terminal_size
 }
 
+fn display_shortcuts(stdout: &mut RawTerminal<StdoutLock>, terminal_size: (u16, u16)) {
+    write!(stdout, "{pos}{style}[Q]uit | [R]efresh (re-load register){reset}",
+        pos = Goto(1, terminal_size.1),
+        style = Fg(color::Rgb(100, 149, 237)),
+        reset = Fg(color::Reset))
+        .expect("cant write shortcuts");
+}
+
 ///
-/// Get the selection highlight arrows if the current row is selected.
+/// Display overall stats in the header region.
 ///
-// fn anchors(current: usize, selected: Option<usize>) -> (&'static str, &'static str) {
-//     let is_selected = match selected {
-//         Some(sel) => current == sel,
-//         None => false,
-//     };
-//     match is_selected {
-//         true  => (">", "<"),
-//         false => ("", ""),
-//     }
-// }
+fn display_stats(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_state: &AppState) {
+
+    let suspended = state.controls().iter().filter(|cn| cn.state() == ControlState::Suspended).count();
+    let status = match app_state {
+        AppState::Running     => {
+            if suspended > 0 {
+                format!("{style} BAD {reset}{clear}", style = Bg(color::Rgb(255, 69, 0)), reset = Bg(color::Reset), clear = clear::UntilNewline)
+            } else {
+                format!("{style} GOOD {reset}{clear}", style = Bg(color::Rgb(85, 107, 47)), reset = Bg(color::Reset), clear = clear::UntilNewline)
+            }
+        },
+        AppState::Reloading   => format!("Refreshing Controls"),
+        AppState::Terminating => format!("Terminating..."),
+    };
+
+    write!(stdout, "{pos}Running  : {running}/{total}",
+        pos = Goto(45, 2),
+        running = state.controls().iter().filter(|cn| cn.is_running()).count(),
+        total = state.controls().len(),
+    ).expect("cant write running header");
+
+    write!(stdout, "{pos}Stopped  : {stopped}",
+        pos = Goto(45, 3),
+        stopped = state.controls().iter().filter(|cn| cn.state() == ControlState::Stopped).count(),
+    ).expect("cant write stopped header");
+
+    write!(stdout, "{pos}Suspended: {suspended}",
+        pos = Goto(45, 4),
+        suspended = suspended,
+    ).expect("cant write suspended header");
+
+    write!(stdout, "{pos}Status    : {status}",
+        pos = Goto(65, 2),
+        status = status,
+    ).expect("cant write status header");
+
+    write!(stdout, "{pos}Disk Usage: {usage}",
+        pos = Goto(65, 3),
+        usage = bytesize::to_string(state.controls().iter().map(|cn| cn.root_len()).sum::<usize>() as u64, false),
+    ).expect("cant write status header");
+
+    write!(stdout, "{pos}Register  : {register}",
+        pos = Goto(65, 4),
+        register = state.register()
+    ).expect("cant write register header");
+}
 
 ///
 /// Get all the captions from the control to display in column order - without any formatting.
@@ -159,6 +211,9 @@ fn captions(control: &mut Control) -> [String; COLUMNS.len()] {
 
         // Duration.
         humantime::format_duration(Duration::from_secs(control.duration().as_secs())).to_string(),
+
+        // Umatched record count.
+        format!("{}", control.unmatched()),
 
         // Inbox.
         if control.inbox_len() == 0 {
@@ -201,12 +256,6 @@ fn clear_if_resized(prev_terminal_size: (u16, u16), stdout: &mut RawTerminal<Std
     terminal_size
 }
 
-// const BANNER: &str = r#" _____                 ______
-// |  _  |                | ___ \
-// | | | |_ __   ___ _ __ | |_/ /___  ___
-// | | | | '_ \ / _ \ '_ \|    // _ \/ __|
-// \ \_/ / |_) |  __/ | | | |\ \  __/ (__
-//  \___/| .__/ \___|_| |_\_| \_\___|\___|
-//       | |
-//       |_| Steward: Match Job Orchistrator
-// "#;
+pub fn _debug(msg: String) {
+    println!("{}{}", Goto(40, 1), msg);
+}

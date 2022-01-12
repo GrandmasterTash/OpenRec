@@ -183,7 +183,7 @@ pub fn lua_record<'a>(
             DataType::Decimal  => lua_record.set(col.header(), record.get_decimal(col.header())?.map(LuaDecimal))?,
             DataType::Integer  => lua_record.set(col.header(), record.get_int(col.header())?)?,
             DataType::String   => lua_record.set(col.header(), record.get_string(col.header())?)?,
-            DataType::Uuid     => lua_record.set(col.header(), record.get_uuid(col.header())?.map(|i|i.to_string()))?,
+            DataType::Uuid     => lua_record.set(col.header(), record.get_uuid(col.header())?.map(|i|i.to_hyphenated().to_string()))?,
         }
     }
 

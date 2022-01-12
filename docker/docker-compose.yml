@@ -1,0 +1,62 @@
+version: '3.7'
+
+volumes:
+  prometheus_data: {}
+  # grafana_data: {}
+
+networks:
+  openrec_net:
+
+services:
+  openrec:
+    # TODO: Build with context, etc...
+    image: openrec:latest
+    container_name: openrec
+    # Run with this command:-
+    # docker-compose run openrec /steward
+    user: "${UID}:${GID}"
+    volumes:
+     - ./etc:/etc/openrec/
+     - ./data:/data
+    links:
+     - pushgateway:pushgateway
+    depends_on:
+     - pushgateway
+     - prometheus
+    networks:
+      - openrec_net
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.32.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - 9090:9090
+    links:
+     - pushgateway:pushgateway
+    depends_on:
+     - pushgateway
+    networks:
+      - openrec_net
+    restart: unless-stopped
+
+  pushgateway:
+    image: prom/pushgateway:v1.4.2
+    container_name: pushgateway
+    restart: unless-stopped
+    expose:
+      - 9091
+    ports:
+      - "9091:9091"
+    networks:
+      - openrec_net
+    labels:
+      org.label-schema.group: "monitoring"

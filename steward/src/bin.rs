@@ -1,25 +1,22 @@
-use clap::App;
+use clap::{App, Arg};
 use anyhow::Result;
 
 pub fn main() -> Result<()> {
 
-    let _options = App::new("seward")
+    let options = App::new("steward")
         .version("1.0")
-        .about("Stweard is a match job orchistrator for OpenRec and manages one or more control charters. Refer to the README.md for more details.")
-        // .arg(Arg::with_name("charter_path")
-        //     .help("The full path to the charter yaml file containing the instructions for matching")
-        //     .required(true)
-        //     .takes_value(true))
-        // .arg(Arg::with_name("control_dir")
-        //     .help("The base directory where data files will be processed. This should be distinct from any other control's directory")
-        //     .required(true)
-        //     .takes_value(true))
+        .about("Steward is a match job orchistrator for OpenRec and manages one or more control. Refer to the README.md for more details.")
+        .arg(Arg::with_name("register_path")
+            .help("The full path to the register yaml file containing all the controls to manage,")
+            .required(true)
+            .default_value("/etc/openrec/register.yml")
+            .takes_value(true))
         .get_matches();
 
     dotenv::dotenv().ok();
     let _ = env_logger::try_init();
 
-    steward::main_loop("./tmp/register.yml")?;
+    steward::main_loop(options.value_of("register_path").expect("no registry specified"))?;
 
     Ok(())
 }

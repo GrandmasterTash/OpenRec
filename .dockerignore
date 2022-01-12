@@ -1,0 +1,7 @@
+data/
+tmp/
+target/
+celerity/tmp
+generator/tmp
+jetwash/tmp
+steward/tmp

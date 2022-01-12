@@ -20,6 +20,7 @@ use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate, lua::
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
+// TODO: Change generator to group by ref not date. It's not a good example to set....
 // TODO: Disable colors from logs and jetwash. Investigate if this is ansi_term - maybe termion is okay?
 // TODO: Flesh-out examples.
 // TODO: Check code coverage.

@@ -1,0 +1,3 @@
+controls:
+ - charter: /etc/openrec/01-Basic-Match.yaml
+   root: /data/basic/

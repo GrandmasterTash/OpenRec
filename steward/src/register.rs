@@ -1,6 +1,6 @@
 use serde::Deserialize;
-use anyhow::{Context, Result};
 use core::charter::Charter;
+use anyhow::{Context, Result};
 use std::{path::{PathBuf, Path}, io::BufReader};
 
 #[derive(Debug, Deserialize)]

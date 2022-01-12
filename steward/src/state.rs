@@ -1,10 +1,10 @@
 use chrono::Local;
 use crossbeam::channel;
 use fs_extra::dir::get_dir_content;
-use crate::{register::{Register, self}, do_match_job};
-use std::{thread::JoinHandle, path::Path, slice::IterMut, fs, time::{Instant, Duration}, collections::VecDeque};
+use crate::{register::{Register, self}, do_match_job, find_latest_match_file, unmatched_count};
+use std::{thread::JoinHandle, path::{Path, PathBuf}, slice::IterMut, fs, time::{Instant, Duration}, collections::VecDeque};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum ControlState {
     StartedIdle,
     StartedMatching,
@@ -20,10 +20,13 @@ pub struct Control {
     callback: Option<channel::Receiver<JobResult>>, // The job thread will call back to the main thread when it's done.
     queued: bool,                          // Start another job after the current has finished.
     inbox_files: Vec<String>,              // Filenames of files we know are in the inbox.
+    unmatched: usize,                      // The current unmatched record count.
+    latest_report: Option<PathBuf>,        // The latest match report file.
     messages: VecDeque<(Instant, String)>, // A queue of messages to display for the control.
 }
 
 pub struct State {
+    register: String,
     controls: Vec<Control>
 }
 
@@ -33,12 +36,42 @@ pub struct JobResult {
 }
 
 impl Control {
+    fn new(c: &register::Control) -> Self {
+        let latest_match_file = find_latest_match_file(c.root());
+
+        Self {
+            inner: c.clone(),
+            state: if c.disabled() || !c.parsed() {
+                    ControlState::Stopped
+                } else {
+                    ControlState::StartedIdle
+                },
+            state_changed: Instant::now(),
+            job: None,
+            callback: None,
+            queued: false,
+            unmatched: unmatched_count(&latest_match_file),
+            latest_report: latest_match_file,
+            inbox_files: vec!(),
+            messages: if c.parsed() {
+                VecDeque::new()
+            } else {
+                VecDeque::from([(Instant::now(), "Charter failed to parse".into())])
+            },
+        }
+    }
+
     pub fn name(&self) -> &str {
         self.inner.name()
     }
 
     pub fn state(&self) -> ControlState {
         self.state
+    }
+
+    pub fn stop(&mut self) {
+        self.state_changed = Instant::now();
+        self.state = ControlState::Stopped;
     }
 
     pub fn suspend(&mut self) {
@@ -55,10 +88,16 @@ impl Control {
         }
     }
 
-    // pub fn duration(&self) -> chrono::Duration {
     pub fn duration(&self) -> Duration {
-        // chrono::Duration::from_std(self.state_changed.elapsed()).expect("bad duration")
         self.state_changed.elapsed()
+    }
+
+    pub fn unmatched(&self) -> usize {
+        self.unmatched
+    }
+
+    pub fn set_unmatched(&mut self, unmatched: usize) {
+        self.unmatched = unmatched;
     }
 
     pub fn charter(&self) -> &Path {
@@ -67,6 +106,14 @@ impl Control {
 
     pub fn root(&self) -> &Path {
         self.inner.root()
+    }
+
+    pub fn latest_report(&self) -> &Option<PathBuf> {
+        &self.latest_report
+    }
+
+    pub fn set_latest_report(&mut self, latest_report: PathBuf) {
+        self.latest_report = Some(latest_report);
     }
 
     pub fn job(&self) -> &Option<JoinHandle<()>> {
@@ -82,13 +129,13 @@ impl Control {
     }
 
     ///
-    /// If the current head of the message queue is older then 5s then pop and return the next
+    /// If the current head of the message queue is older then a few seconds then pop and return the next
     /// message in the queue.
     ///
     pub fn next_message(&mut self) -> Option<String> {
         if !self.messages.is_empty() {
             if (self.messages.len() > 1)
-                && (self.messages[0].0.elapsed() > Duration::from_secs(5)) {
+                && (self.messages[0].0.elapsed() > Duration::from_secs(2)) {
 
                 self.messages.pop_front();
             }
@@ -212,34 +259,18 @@ impl Control {
     }
 }
 
-
 impl State {
-    pub fn new(register: &Register) -> Self {
+    pub fn new(register: &Register, filename: String) -> Self {
         let controls = register.controls()
             .iter()
-            .map(|c| {
-                Control {
-                    inner: c.clone(),
-                    state: if c.disabled() || !c.parsed() {
-                            ControlState::Stopped
-                        } else {
-                            ControlState::StartedIdle
-                        },
-                    state_changed: Instant::now(),
-                    job: None,
-                    callback: None,
-                    queued: false,
-                    inbox_files: vec!(),
-                    messages: if c.parsed() {
-                        VecDeque::new()
-                    } else {
-                        VecDeque::from([(Instant::now(), "Charter failed to parse".into())])
-                    },
-                }
-            })
+            .map(|c| Control::new(c))
             .collect();
 
-        Self { controls }
+        Self { controls, register: filename }
+    }
+
+    pub fn register(&self) -> &str {
+        &self.register
     }
 
     pub fn controls(&self) -> &[Control] {
