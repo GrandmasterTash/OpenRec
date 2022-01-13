@@ -5,7 +5,7 @@ pub fn main() -> Result<()> {
 
     let options = App::new("steward")
         .version("1.0")
-        .about("Steward is a match job orchistrator for OpenRec and manages one or more control. Refer to the README.md for more details.")
+        .about("Steward is a match job orchistrator for OpenRec and manages one or more controls. Refer to the README.md for more details.")
         .arg(Arg::with_name("register_path")
             .help("The full path to the register yaml file containing all the controls to manage,")
             .required(true)

@@ -57,7 +57,7 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
 
     // Get the widest content in each column - use the captions as the starting width for each column.
     let mut widths: [usize; COLUMNS.len()] = [
-        CONTROL.len(),
+        CONTROL.len(), // TODO: Limit as long paths use too much room
         STATUS.len(),
         DURATION.len(),
         UNMATCHED.len(),

@@ -162,31 +162,12 @@ fn check_inbox(control: &mut Control) {
 ///
 fn do_match_job(control_id: String, charter: PathBuf, root: PathBuf, sender: channel::Sender<JobResult>) {
 
-    let ts = Utc::now().format("%Y%m%d").to_string();
-    let mut logs = root.clone();
-    logs.push("logs/");
-    std::fs::create_dir_all(&logs).expect("cant create logs");
-
     // JETWASH
-    let output = Command::new(format!("{}jetwash", std::env::var("JETWASH_HOME").unwrap_or("/".into())))
+    let output = Command::new(format!("{}jetwash", std::env::var("JETWASH_HOME").unwrap_or("./".into())))
         .arg(&charter)
         .arg(&root)
         .output()
-        .expect("failed to execute jetwash");
-
-        // TODO: This aint working in docker so have the bins themselves log to the appropriate place and change
-        // above to use .status() not .output()/
-    let mut log_file = fs::OpenOptions::new()
-        .write(true)
-        .append(true)
-        .create(true)
-        .open(logs.join(format!("jetwash_{}.log", ts)))
-        .expect("Cannot create jetwash log");
-
-    if let Err(e) = log_file.write(&output.stderr) {
-    // if let Err(e) = log_file.write(&output.stdout) {
-        eprintln!("Couldn't write to file: {}", e);// TODO: Display on screen. Or write to own log.
-    }
+        .expect("failed to execute jetwash"); // TODO: Don't unwrap - suspend control
 
     if !output.status.success() {
         // Notify the main thread this control has failed.
@@ -195,26 +176,16 @@ fn do_match_job(control_id: String, charter: PathBuf, root: PathBuf, sender: cha
     }
 
     // CELERITY
-    let output = Command::new(format!("{}celerity", std::env::var("CELERITY_HOME").unwrap_or("/".into())))
+    let output = Command::new(format!("{}celerity", std::env::var("CELERITY_HOME").unwrap_or("./".into())))
         .arg(charter)
         .arg(&root)
         .output()
-        .expect("failed to execute celerity");
-
-    let mut log_file = fs::OpenOptions::new()
-        .write(true)
-        .append(true)
-        .create(true)
-        .open(logs.join(format!("celerity_{}.log", ts)))
-        .expect("Cannot create celerity log");
-
-    if let Err(e) = log_file.write(&output.stderr) {
-        eprintln!("Couldn't write to file: {}", e);
-    }
+        .expect("failed to execute celerity"); // TODO: Don't unwrap - suspend control
 
     // Notify the main thread this control has finished.
     if output.status.success() {
         let _ignore = sender.send(JobResult::new_success());
+
     } else {
         let _ignore = sender.send(JobResult::new_failure(format!("{} - Celerity status: {}", control_id, output.status)));
     }

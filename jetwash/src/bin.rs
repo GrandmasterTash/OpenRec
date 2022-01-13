@@ -1,5 +1,13 @@
+use chrono::Utc;
 use anyhow::Result;
 use clap::{App, Arg};
+use log::LevelFilter;
+use std::{path::Path, fs};
+use log4rs::{append::{console::ConsoleAppender, file::FileAppender}, Config, config::{Appender, Root}, encode::pattern::PatternEncoder, Handle};
+
+// Ref: https://docs.rs/log4rs/latest/log4rs/encode/pattern/index.html
+const CONSOLE_PATTERN: &str = "[{d(%Y-%m-%d %H:%M:%S%.3f)} {h({l:<5})}] {m}{n}";
+const FILE_PATTERN: &str = "[{d(%Y-%m-%d %H:%M:%S%.3f)} {l:<5}] {m}{n}";
 
 pub fn main() -> Result<()> {
 
@@ -17,25 +25,51 @@ pub fn main() -> Result<()> {
         .get_matches();
 
     dotenv::dotenv().ok();
-    let _ = env_logger::try_init();
 
-    // log::info!("{}", BANNER);
+    let charter_path = Path::new(options.value_of("charter_path").expect("no charter specified"));
+    let base_path = Path::new(options.value_of("control_dir").expect("no control dir specififed"));
+    let _handle = init_logging(&base_path);
 
-    jetwash::run_charter(
-        options.value_of("charter_path").expect("no charter specified"),
-        options.value_of("control_dir").expect("no base dir specififed"),
-        None)?;
+    jetwash::run_charter(charter_path, base_path, None)?;
 
     Ok(())
 }
 
-// const BANNER: &str = r#"
-//   ____    ___ ______  __    __   ____  _____ __ __
-//  |    |  /  _]      ||  |__|  | /    |/ ___/|  |  |
-//  |__  | /  [_|      ||  |  |  ||  o  (   \_ |  |  |
-//  __|  ||    _]_|  |_||  |  |  ||     |\__  ||  _  |
-// /  |  ||   [_  |  |  |  `  '  ||  _  |/  \ ||  |  |
-// \  `  ||     | |  |   \      / |  |  |\    ||  |  |
-//  \____j|_____| |__|    \_/\_/  |__|__| \___||__|__|
-//  OpenRec: Data Importer & Cleanser
-// "#;
+fn init_logging(base_path: &Path) -> Handle {
+
+    // Set the log filter level.
+    let log_filter = match std::env::var("RUST_LOG") {
+        Ok(env_log) if env_log.to_lowercase().starts_with("trace") => LevelFilter::Trace,
+        Ok(env_log) if env_log.to_lowercase().starts_with("debug") => LevelFilter::Debug,
+        Ok(env_log) if env_log.to_lowercase().starts_with("warn")  => LevelFilter::Warn,
+        Ok(env_log) if env_log.to_lowercase().starts_with("error") => LevelFilter::Error,
+        Ok(env_log) if env_log.to_lowercase().starts_with("off")   => LevelFilter::Off,
+        Ok(_)  => LevelFilter::Info,
+        Err(_) => LevelFilter::Info,
+    };
+
+    // Create the logs folder.
+    let log_path = base_path.join("logs/");
+    fs::create_dir_all(&log_path).expect(&format!("cannot create log folder {}", log_path.to_string_lossy()));
+
+    // Initialise logging.
+    let stdout = ConsoleAppender::builder()
+        .encoder(Box::new(PatternEncoder::new(CONSOLE_PATTERN)))
+        .build();
+
+    let log_file = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new(FILE_PATTERN)))
+        .build(&log_path.join(format!("{}_jetwash.log", Utc::now().format("%Y%m%d").to_string())))
+        .expect(&format!("cannot create log file appended to {}", log_path.to_string_lossy()));
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("file", Box::new(log_file)))
+        .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        .build(Root::builder()
+            .appender("file")
+            .appender("stdout")
+            .build(log_filter))
+        .unwrap();
+
+    log4rs::init_config(config).unwrap()
+}

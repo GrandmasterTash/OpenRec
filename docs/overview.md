@@ -518,3 +518,4 @@ TODO: in own file.
 - pgroups (proposed groups)
 - Jetwash data filter.
 - WASM = engine in the browser?
+- Headless mode for Steward

@@ -2,7 +2,6 @@ version: '3.7'
 
 volumes:
   prometheus_data: {}
-  # grafana_data: {}
 
 networks:
   openrec_net:
@@ -12,12 +11,12 @@ services:
     # TODO: Build with context, etc...
     image: openrec:latest
     container_name: openrec
-    # Run with this command:-
-    # docker-compose run openrec /steward
     user: "${UID}:${GID}"
     volumes:
      - ./etc:/etc/openrec/
      - ./data:/data
+    # environment:
+    #  - RUST_LOG=trace
     links:
      - pushgateway:pushgateway
     depends_on:
