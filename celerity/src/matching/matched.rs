@@ -117,7 +117,7 @@ impl MatchedHandler {
         {
             "unmatched": summerise_unmatched(unmatched),
             "changesets": summerise_changesets(changesets),
-            "umatched_records": unmatched.unmatched_files().iter().map(|f|f.rows()).sum::<usize>(),
+            "unmatched_records": unmatched.unmatched_files().iter().map(|f|f.rows()).sum::<usize>(),
             "matched_records": self.records,
             "matched_groups": self.groups,
             "duration_ms": (duration.as_secs() * 1000) + duration.subsec_millis() as u64,

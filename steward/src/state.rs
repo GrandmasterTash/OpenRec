@@ -1,8 +1,15 @@
+use regex::Regex;
 use chrono::Local;
 use crossbeam::channel;
+use lazy_static::lazy_static;
 use fs_extra::dir::get_dir_content;
-use crate::{register::{Register, self}, do_match_job, find_latest_match_file, unmatched_count};
-use std::{thread::JoinHandle, path::{Path, PathBuf}, slice::IterMut, fs, time::{Instant, Duration}, collections::VecDeque};
+use prometheus::{Registry, Histogram, Opts, HistogramOpts, IntGauge, labels};
+use crate::{register::{Register, self}, do_match_job, find_latest_match_file};
+use std::{thread::JoinHandle, path::{Path, PathBuf}, slice::IterMut, fs, time::{Instant, Duration}, collections::VecDeque, io::BufReader};
+
+lazy_static! {
+    pub static ref MATCH_JOB_FILENAME_REGEX: Regex = Regex::new(r".*(\d{8}_\d{9})_matched\.json$").expect("bad regex for FILENAME_REGEX");
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ControlState {
@@ -20,9 +27,9 @@ pub struct Control {
     callback: Option<channel::Receiver<JobResult>>, // The job thread will call back to the main thread when it's done.
     queued: bool,                          // Start another job after the current has finished.
     inbox_files: Vec<String>,              // Filenames of files we know are in the inbox.
-    unmatched: usize,                      // The current unmatched record count.
     latest_report: Option<PathBuf>,        // The latest match report file.
     messages: VecDeque<(Instant, String)>, // A queue of messages to display for the control.
+    metrics: ControlMetrics,
 }
 
 pub struct State {
@@ -33,6 +40,18 @@ pub struct State {
 pub struct JobResult {
     success: bool,
     message: Option<String>,
+}
+
+pub struct ControlMetrics {
+    registry: Registry,
+    unmatched_txs: Box<IntGauge>,
+    matched_txs: Box<IntGauge>,
+    matched_groups: Box<IntGauge>,
+    disk_usage_bytes: Box<IntGauge>,
+    inbox_usage_bytes: Box<IntGauge>,
+    outbox_usage_bytes: Box<IntGauge>,
+    jetwash_duration: Box<Histogram>,
+    celerity_duration: Box<Histogram>,
 }
 
 impl Control {
@@ -50,14 +69,14 @@ impl Control {
             job: None,
             callback: None,
             queued: false,
-            unmatched: unmatched_count(&latest_match_file),
-            latest_report: latest_match_file,
+            latest_report: latest_match_file.clone(),
             inbox_files: vec!(),
             messages: if c.parsed() {
                 VecDeque::new()
             } else {
                 VecDeque::from([(Instant::now(), "Charter failed to parse".into())])
             },
+            metrics: ControlMetrics::new(c.name(), &latest_match_file),
         }
     }
 
@@ -92,12 +111,23 @@ impl Control {
         self.state_changed.elapsed()
     }
 
-    pub fn unmatched(&self) -> usize {
-        self.unmatched
+    pub fn update_metrics(&mut self) -> &Registry {
+        // The job_done handler will keep the matched/unmatched counts up to date.
+
+        // Use the disk scrape fns below to do this.
+        self.metrics.inbox_usage_bytes.set(self.inbox_len() as i64);
+        self.metrics.outbox_usage_bytes.set(self.outbox_len() as i64);
+        self.metrics.disk_usage_bytes.set(self.root_len() as i64);
+
+        // TODO: Hook into the process::command code in lib for this.
+        // jetwash_duration: Box<Histogram>,
+        // celerity_duration: Box<Histogram>,
+
+        &self.metrics.registry
     }
 
-    pub fn set_unmatched(&mut self, unmatched: usize) {
-        self.unmatched = unmatched;
+    pub fn unmatched(&self) -> usize {
+        self.metrics.unmatched_txs.get() as usize
     }
 
     pub fn charter(&self) -> &Path {
@@ -113,7 +143,14 @@ impl Control {
     }
 
     pub fn set_latest_report(&mut self, latest_report: PathBuf) {
-        self.latest_report = Some(latest_report);
+        self.latest_report = Some(latest_report.clone());
+
+        // Set the metrics from this match report now.
+        if let Some(footer) = get_json_report_footer(&latest_report) {
+             self.metrics.unmatched_txs.set(footer["unmatched_records"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
+             self.metrics.matched_txs.set(footer["matched_records"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
+             self.metrics.matched_groups.set(footer["matched_groups"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
+        }
     }
 
     pub fn job(&self) -> &Option<JoinHandle<()>> {
@@ -238,7 +275,6 @@ impl Control {
     }
 
     pub fn outbox_len(&self) -> usize {
-        // TODO: Remove supe code.
         let outbox = self.inner.root().join("outbox");
         if outbox.exists() {
             if let Ok(contents) = get_dir_content(outbox) {
@@ -263,7 +299,7 @@ impl State {
     pub fn new(register: &Register, filename: String) -> Self {
         let controls = register.controls()
             .iter()
-            .map(|c| Control::new(c))
+            .map(|c| Control::new(c)) // TODO: Box the controls?
             .collect();
 
         Self { controls, register: filename }
@@ -309,4 +345,56 @@ impl JobResult {
     pub fn message(&self) -> &Option<String> {
         &self.message
     }
+}
+
+impl ControlMetrics {
+    pub fn new(control_name: &str, latest_match_file: &Option<PathBuf>) -> Self {
+        let me = Self {
+            registry: Registry::new_custom(Some("control".into()), Some(labels! { "control_name".into() => control_name.into(), })).expect("bad registry"),
+            unmatched_txs: Box::new(IntGauge::with_opts(Opts::new("unmatched_txs", "the number of unmatched records this control currently has")).expect("bad opts")),
+            matched_txs: Box::new(IntGauge::with_opts(Opts::new("matched_txs", "the number of matched records this control currently has")).expect("bad opts")),
+            disk_usage_bytes: Box::new(IntGauge::with_opts(Opts::new("disk_usage_bytes", "the total disk usage for this control in bytes")).expect("bad opts")),
+            inbox_usage_bytes: Box::new(IntGauge::with_opts(Opts::new("inbox_size_bytes", "the inbox folder disk usage for this control in bytes")).expect("bad opts")),
+            outbox_usage_bytes: Box::new(IntGauge::with_opts(Opts::new("outbox_size_bytes", "the outbox folder disk usage for this control in bytes")).expect("bad opts")),
+            matched_groups: Box::new(IntGauge::with_opts(Opts::new("matched_groups", "the number of matched groups this control currently has")).expect("bad opts")),
+            jetwash_duration: Box::new(Histogram::with_opts(HistogramOpts::new("jetwash_duration", "the duration of the jetwash phase of a match job")).expect("bad opts")),
+            celerity_duration: Box::new(Histogram::with_opts(HistogramOpts::new("celerity_duration", "the duration of the celerity phase of a match job")).expect("bad opts")),
+        };
+
+        me.registry.register(me.unmatched_txs.clone()).expect("bad metric");
+        me.registry.register(me.matched_txs.clone()).expect("bad metric");
+        me.registry.register(me.disk_usage_bytes.clone()).expect("bad metric");
+        me.registry.register(me.inbox_usage_bytes.clone()).expect("bad metric");
+        me.registry.register(me.outbox_usage_bytes.clone()).expect("bad metric");
+        me.registry.register(me.matched_groups.clone()).expect("bad metric");
+        me.registry.register(me.jetwash_duration.clone()).expect("bad metric");
+        me.registry.register(me.celerity_duration.clone()).expect("bad metric");
+
+        // Get the latest match report statistics if available.
+        if let Some(match_report) = latest_match_file {
+            if let Some(footer) = get_json_report_footer(&match_report) {
+                me.unmatched_txs.set(footer["unmatched_records"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
+                me.matched_txs.set(footer["matched_records"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
+                me.matched_groups.set(footer["matched_groups"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
+            }
+        }
+
+        me
+    }
+}
+
+///
+/// Return the footer section of the match report.
+///
+fn get_json_report_footer(matched_json: &Path) -> Option<serde_json::Value> {
+    if let Ok(file) = fs::File::open(matched_json) {
+        let reader = BufReader::new(file);
+        if let Ok(json) = serde_json::from_reader::<_, serde_json::Value>(reader) {
+            if let Some(details) = json.get(2) {
+                return Some(details.to_owned())
+            }
+        }
+    }
+
+    None
 }

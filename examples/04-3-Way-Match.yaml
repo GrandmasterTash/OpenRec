@@ -44,8 +44,9 @@ matching:
       # We will be grouping on the settlement date, but to do so need to remove the time portion of the field.
       # If we don't, then every trade would need to have the exact time to form the same group.
       # Fortuanately, Celerity provides a helper function called date_only. This accepts a unix millisecond
-      # timestamp (which is what Datetime columns are in the Lua script) and strips the time portion, setting
-      # the hours, minutes, seconds and milliseconds to 0.
+      # timestamp (which is what Datetime columns are in the Lua script) and truncates the time portion, setting
+      # the hours, minutes, seconds and milliseconds to 0. e.g. 2022-01-13T07:05:13.123Z -> 2022-01-13T00:00:00.000Z
+      # TODO: Consider renaming date_only() -> midnight()
     - project:
         column: SETTLEMENT_DATE
         as_a: Datetime

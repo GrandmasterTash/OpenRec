@@ -11,12 +11,19 @@ pub fn main() -> Result<()> {
             .required(true)
             .default_value("/etc/openrec/register.yml")
             .takes_value(true))
+        .arg(Arg::with_name("pushgateway_address")
+            .help("The address to a prometheus pushgateway instance used to publish metrics to, eg. 'localhost:9091'")
+            .required(false)
+            .takes_value(true))
         .get_matches();
 
     dotenv::dotenv().ok();
     let _ = env_logger::try_init();
 
-    steward::main_loop(options.value_of("register_path").expect("no registry specified"))?;
+    steward::main_loop(
+        options.value_of("register_path").expect("no registry specified"),
+        options.value_of("pushgateway_address")
+    )?;
 
     Ok(())
 }

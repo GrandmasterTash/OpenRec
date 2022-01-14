@@ -47,7 +47,7 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
     terminal_size = clear_if_resized(terminal_size, stdout);
 
     // Render the banner stats.
-    display_stats(stdout, state, app_state);
+    display_overview(stdout, state, app_state);
 
     // How many controls per column?
     let rows = terminal_size.1 - BANNER_HEIGHT;
@@ -146,7 +146,10 @@ fn display_shortcuts(stdout: &mut RawTerminal<StdoutLock>, terminal_size: (u16, 
 ///
 /// Display overall stats in the header region.
 ///
-fn display_stats(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_state: &AppState) {
+fn display_overview(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_state: &AppState) {
+
+    // TODO: Show full register path
+    // TODO: Show pushgateway address or 'None'
 
     let suspended = state.controls().iter().filter(|cn| cn.state() == ControlState::Suspended).count();
     let status = match app_state {
@@ -212,7 +215,7 @@ fn captions(control: &mut Control) -> [String; COLUMNS.len()] {
         // Duration.
         humantime::format_duration(Duration::from_secs(control.duration().as_secs())).to_string(),
 
-        // Umatched record count.
+        // Unmatched record count.
         format!("{}", control.unmatched()),
 
         // Inbox.
@@ -256,6 +259,10 @@ fn clear_if_resized(prev_terminal_size: (u16, u16), stdout: &mut RawTerminal<Std
     terminal_size
 }
 
-pub fn _debug(msg: String) {
-    println!("{}{}", Goto(40, 1), msg);
+pub fn error(msg: String) {
+    println!("{pos}{style}{msg}{reset}",
+        pos = Goto(1, 1),
+        style = Fg(color::Rgb(255, 0 , 0)),
+        reset = Fg(color::Reset),
+        msg = msg);
 }

@@ -24,7 +24,6 @@ services:
      - prometheus
     networks:
       - openrec_net
-    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v2.32.0

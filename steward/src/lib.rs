@@ -1,29 +1,28 @@
 mod state;
 mod display;
-mod metrics; // TODO: Use cfg build option.
+mod metrics;
 mod register;
 
 use chrono::Utc;
-use metrics::CONTROL_GAUGE;
-use regex::Regex;
 use anyhow::Result;
 use crossbeam::channel;
 use register::Register;
 use itertools::Itertools;
-use lazy_static::lazy_static;
-use std::io::{Write, stdout, Read, BufReader};
 use fs_extra::dir::get_dir_content;
+use std::io::{Write, stdout, Read, BufReader};
 use termion::{terminal_size, raw::IntoRawMode};
-use state::{State, JobResult, ControlState, Control};
+use state::{State, JobResult, ControlState, Control, MATCH_JOB_FILENAME_REGEX};
 use std::{time::Duration, thread, path::{Path, PathBuf}, process::Command, fs};
 
 // TODO: Prometheus export. https://github.com/tikv/rust-prometheus/blob/master/examples/example_push.rs
 // TODO: Semaphore to limit concurrent match jobs. num_cpus by default - or use memory tickets?
 // TODO: Document the above .inprogress inclusion. Ensure Jetwash NEVER processes .inprogress inbox files - regardless of regex.
 // BUG: Adding data during a job doesn't trigger a follow-up job.
-// TODO: Global panic handler? to clear screen and restore terminal nicely? Ideally no panics!!!
 // TODO: Add a nice error message when registry not found. as it's probably the first thing anyone will see!
 // TODO: Unparseable charter should = suspend not stopped state.
+// TODO: Document bins must be in the same folder unless the HOME env vars are set.
+// TODO: F to force app to terminate - ex, if a match job is 'hung'
+// TODO: Start-up - validate we can find jetwash and celerity binaries.
 
 #[derive(PartialEq)]
 pub enum AppState  {
@@ -32,7 +31,7 @@ pub enum AppState  {
     Terminating,
 }
 
-pub fn main_loop<P: AsRef<Path>>(register_path: P) -> Result<()> {
+pub fn main_loop<P: AsRef<Path>>(register_path: P, pushgateway: Option<&str>) -> Result<()> {
 
     // Parse and load the register of controls into a state model.
     let mut state = load_state(register_path.as_ref())?;
@@ -108,23 +107,7 @@ pub fn main_loop<P: AsRef<Path>>(register_path: P) -> Result<()> {
             },
         }
 
-        // TODO: Push this all into metrics::update and only call every 5s.
-        // CONTROL_GAUGE.set(state.controls().len() as i64);
-
-        // let metric_families = prometheus::gather();
-
-        // prometheus::push_metrics(
-        //     "example_push",
-        //     prometheus::labels! {"instance".to_owned() => "HAL-9000".to_owned(),},
-        //     "localhost:9091",
-        //     metric_families,
-        //     None,
-        //     // Some(prometheus::BasicAuthentication {
-        //     //     username: "user".to_owned(),
-        //     //     password: "pass".to_owned(),
-        //     // }),
-        // )
-        // .unwrap(); // show error msgs but don't flop
+        metrics::push(pushgateway, &mut state);
 
         // Shush for a bit.
         thread::sleep(Duration::from_millis(500));
@@ -167,7 +150,7 @@ fn do_match_job(control_id: String, charter: PathBuf, root: PathBuf, sender: cha
         .arg(&charter)
         .arg(&root)
         .output()
-        .expect("failed to execute jetwash"); // TODO: Don't unwrap - suspend control
+        .expect("failed to execute jetwash"); // TODO: Don't unwrap - suspend control and display msg.
 
     if !output.status.success() {
         // Notify the main thread this control has failed.
@@ -180,7 +163,7 @@ fn do_match_job(control_id: String, charter: PathBuf, root: PathBuf, sender: cha
         .arg(charter)
         .arg(&root)
         .output()
-        .expect("failed to execute celerity"); // TODO: Don't unwrap - suspend control
+        .expect("failed to execute celerity"); // TODO: Don't unwrap - suspend control and display msg.
 
     // Notify the main thread this control has finished.
     if output.status.success() {
@@ -229,9 +212,6 @@ fn handle_job_done(control: &mut Control) {
                         fs::copy(&path, out_dir.join(filename)).unwrap(); // TODO: Don't unwrap, log message and suspend control.
                     }
 
-                    // Update the un-matched statistics from the .json.
-                    control.set_unmatched(unmatched_count(&Some(latest.clone())));
-
                     // Update the latest match report in the control.
                     control.set_latest_report(latest);
                 }
@@ -242,17 +222,13 @@ fn handle_job_done(control: &mut Control) {
     }
 }
 
-lazy_static! {
-    static ref FILENAME_REGEX: Regex = Regex::new(r".*(\d{8}_\d{9})_matched\.json$").expect("bad regex for FILENAME_REGEX");
-}
-
 ///
 /// Looks for the latest match job report file in the folder structure provided.
 ///
 pub fn find_latest_match_file(root: &Path) -> Option<PathBuf> {
 
     let latest = match get_dir_content(root.join("matched")) {
-        Ok(dir) => dir.files.iter().filter(|f| FILENAME_REGEX.is_match(f)).sorted().max().cloned(),
+        Ok(dir) => dir.files.iter().filter(|f| MATCH_JOB_FILENAME_REGEX.is_match(f)).sorted().max().cloned(),
         Err(_) => return None,
     };
 
@@ -264,26 +240,6 @@ pub fn find_latest_match_file(root: &Path) -> Option<PathBuf> {
     }
 
     None
-}
-
-///
-/// If there's a match report, attempt to parse the unmatched count from it's summary.
-///
-/// Returns zero if unable.
-///
-pub fn unmatched_count(latest_match_file: &Option<PathBuf>) -> usize {
-
-    if let Some(path) = latest_match_file {
-        let file = fs::File::open(path).unwrap(); // TODO: Don't unwrap, log message and suspend control. so return err
-        let reader = BufReader::new(file);
-        let json: serde_json::Value = serde_json::from_reader(reader).unwrap(); // TODO: Don't unwrap, log message and suspend control.
-        match json.get(2) {
-            Some(json) => return json["umatched_records"].as_u64().map(|u| u as usize).unwrap_or_default(), // TODO: handle field not present.
-            None => return 0,
-        }
-    }
-
-    0
 }
 
 ///
@@ -314,7 +270,7 @@ pub fn timestamp(path: &PathBuf) -> String {
     if let Some(filename) = path.file_name() {
         let filename = filename.to_string_lossy().to_string();
 
-        if let Some(captures) = FILENAME_REGEX.captures(&filename) {
+        if let Some(captures) = MATCH_JOB_FILENAME_REGEX.captures(&filename) {
             if captures.len() == 3 {
                 return captures.get(1).map(|ts|ts.as_str()).unwrap_or("").to_string()
             }
