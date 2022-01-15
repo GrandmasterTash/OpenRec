@@ -22,6 +22,9 @@ pub struct Control {
 
     #[serde(skip)]
     parsed: bool,
+
+    #[serde(skip)]
+    parse_err: Option<String>,
 }
 
 impl Register {
@@ -38,11 +41,12 @@ impl Register {
                 Ok(charter) => {
                     control.set_name(charter.name().to_string());
                     control.parsed = true;
+                    control.parse_err = None;
                 },
-                Err(_) => {
-                    // TODO: Log this error to steward.log.
-                    control.set_name(control.charter().to_string_lossy().to_string());
+                Err(err) => {
+                    control.set_name(control.charter().file_name().unwrap_or_default().to_string_lossy().to_string());
                     control.parsed = false;
+                    control.parse_err = Some(err.to_string());
                 },
             }
         }
@@ -78,5 +82,12 @@ impl Control {
 
     pub fn parsed(&self) -> bool {
         self.parsed
+    }
+
+    pub fn parse_err(&self) -> String {
+        match &self.parse_err {
+            Some(err) => err.to_string(),
+            None => String::default(),
+        }
     }
 }

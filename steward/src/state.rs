@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use fs_extra::dir::get_dir_content;
 use prometheus::{Registry, Histogram, Opts, HistogramOpts, IntGauge, labels};
 use crate::{register::{Register, self}, do_match_job, find_latest_match_file};
-use std::{thread::JoinHandle, path::{Path, PathBuf}, slice::IterMut, fs, time::{Instant, Duration}, collections::VecDeque, io::BufReader};
+use std::{thread::JoinHandle, path::{Path, PathBuf}, slice::IterMut, fs, time::{Instant, Duration}, io::BufReader};
 
 lazy_static! {
     pub static ref MATCH_JOB_FILENAME_REGEX: Regex = Regex::new(r".*(\d{8}_\d{9})_matched\.json$").expect("bad regex for FILENAME_REGEX");
@@ -14,6 +14,7 @@ lazy_static! {
 #[derive(Clone, Copy, PartialEq)]
 pub enum ControlState {
     StartedIdle,
+    StartedQueued,
     StartedMatching,
     Stopped,
     Suspended,
@@ -28,18 +29,19 @@ pub struct Control {
     queued: bool,                          // Start another job after the current has finished.
     inbox_files: Vec<String>,              // Filenames of files we know are in the inbox.
     latest_report: Option<PathBuf>,        // The latest match report file.
-    messages: VecDeque<(Instant, String)>, // A queue of messages to display for the control.
+    message: String,                       // A message to display next to the control.
     metrics: ControlMetrics,
 }
 
 pub struct State {
     register: String,
-    controls: Vec<Control>
+    controls: Vec<Control>,
 }
 
-pub struct JobResult {
-    success: bool,
-    message: Option<String>,
+#[derive(PartialEq)]
+pub enum JobResult {
+    Started,
+    Completed { success: bool, message: Option<String> },
 }
 
 pub struct ControlMetrics {
@@ -58,23 +60,30 @@ impl Control {
     fn new(c: &register::Control) -> Self {
         let latest_match_file = find_latest_match_file(c.root());
 
+        // Suspend un-parseable controls, unless they are already disabled.
+        let state = if c.parsed() && !c.disabled() {
+            ControlState::StartedIdle
+        } else {
+            if c.disabled() {
+                ControlState::Stopped
+            } else {
+                ControlState::Suspended
+            }
+        };
+
         Self {
             inner: c.clone(),
-            state: if c.disabled() || !c.parsed() {
-                    ControlState::Stopped
-                } else {
-                    ControlState::StartedIdle
-                },
+            state,
             state_changed: Instant::now(),
             job: None,
             callback: None,
             queued: false,
             latest_report: latest_match_file.clone(),
             inbox_files: vec!(),
-            messages: if c.parsed() {
-                VecDeque::new()
+            message: if c.parsed() {
+                String::default()
             } else {
-                VecDeque::from([(Instant::now(), "Charter failed to parse".into())])
+                c.parse_err()
             },
             metrics: ControlMetrics::new(c.name(), &latest_match_file),
         }
@@ -88,12 +97,18 @@ impl Control {
         self.state
     }
 
+    pub fn start(&mut self) {
+        self.state_changed = Instant::now();
+        self.state = ControlState::StartedMatching;
+    }
+
     pub fn stop(&mut self) {
         self.state_changed = Instant::now();
         self.state = ControlState::Stopped;
     }
 
-    pub fn suspend(&mut self) {
+    pub fn suspend(&mut self, msg: &str) {
+        self.set_message(msg.into());
         self.state_changed = Instant::now();
         self.state = ControlState::Suspended;
     }
@@ -101,6 +116,7 @@ impl Control {
     pub fn is_running(&self) -> bool {
         match self.state {
             ControlState::StartedIdle     => true,
+            ControlState::StartedQueued   => true,
             ControlState::StartedMatching => true,
             ControlState::Stopped         => false,
             ControlState::Suspended       => false,
@@ -161,28 +177,21 @@ impl Control {
         &self.callback
     }
 
-    pub fn queue_message(&mut self, msg: String) {
-        self.messages.push_back((Instant::now(), msg));
+    ///
+    /// If additional inbox data was found whilst already running a job return true.
+    ///
+    /// Note: This is not the same state as 'Running - queued'.
+    ///
+    pub fn is_more(&self) -> bool {
+        self.queued
     }
 
-    ///
-    /// If the current head of the message queue is older then a few seconds then pop and return the next
-    /// message in the queue.
-    ///
-    pub fn next_message(&mut self) -> Option<String> {
-        if !self.messages.is_empty() {
-            if (self.messages.len() > 1)
-                && (self.messages[0].0.elapsed() > Duration::from_secs(2)) {
+    pub fn set_message(&mut self, msg: String) {
+        self.message = format!("[{}] {}", Local::now().format("%a %T"), msg) // e.g. SUN 12:45:12
+    }
 
-                self.messages.pop_front();
-            }
-
-            if let Some((when, msg)) = self.messages.iter().next() {
-                let when = Local::now() - chrono::Duration::from_std(when.elapsed()).expect("bad duration");
-                return Some(format!("[{}] {}", when.format("%a %T"), msg)) // e.g. SUN 12:45:12
-            }
-        }
-        None
+    pub fn message(&mut self) -> &str {
+        &self.message
     }
 
     ///
@@ -197,7 +206,7 @@ impl Control {
                 Ok(_) => {},
                 Err(err) => {
                     self.state = ControlState::Suspended;
-                    self.queue_message(format!("Unable to create inbox {:?}", inbox));
+                    self.set_message(format!("Unable to create inbox {:?}", inbox));
                     log::error!("Unable to create inbox for control {name} at {inbox:?} : {err}",
                         name = self.name(),
                         inbox = inbox,
@@ -212,7 +221,7 @@ impl Control {
             Ok(con) => con,
             Err(err) => {
                 self.state = ControlState::Suspended;
-                self.queue_message(format!("Unable to read inbox {:?}", inbox));
+                self.set_message(format!("Unable to read inbox {:?}", inbox));
                 log::error!("Unable to read inbox for control {name} : {err}",
                     name = self.name(),
                     err = err);
@@ -240,16 +249,22 @@ impl Control {
     /// Create a thread to spawn a matching job - or flip a flag if there's already a job in progress.
     ///
     pub fn queue_job(&mut self) {
+        self.set_message("Running match job".into());
         match self.job() {
-            Some(_) => self.queued = true, // Queue the job.
+            Some(_) => self.queued = true, // Queue the job. Note this is not the same as being in a
+                                           // queued state - it means we have a follow-up job to run
+                                           // after our current job.
             None => {
                 let (s, r) = channel::unbounded();
                 let control_name = self.name().to_string();
                 let charter = self.charter().to_path_buf();
                 let root = self.root().to_path_buf();
-                self.state = ControlState::StartedMatching;
+                let jetwash_histogram = self.metrics.jetwash_duration.clone();
+                let celerity_histogram = self.metrics.celerity_duration.clone();
+                self.state = ControlState::StartedQueued;
                 self.callback = Some(r);
-                self.job = Some(std::thread::spawn(|| do_match_job(control_name, charter, root, s)))
+                self.queued = false;
+                self.job = Some(std::thread::spawn(|| do_match_job(control_name, charter, root, s, jetwash_histogram, celerity_histogram)))
             },
         }
     }
@@ -299,10 +314,13 @@ impl State {
     pub fn new(register: &Register, filename: String) -> Self {
         let controls = register.controls()
             .iter()
-            .map(|c| Control::new(c)) // TODO: Box the controls?
+            .map(|c| Control::new(c))
             .collect();
 
-        Self { controls, register: filename }
+        Self {
+            controls,
+            register: filename,
+        }
     }
 
     pub fn register(&self) -> &str {
@@ -321,29 +339,17 @@ impl State {
 
 impl JobResult {
     pub fn new_success() -> Self {
-        Self {
+        Self::Completed {
             success: true,
             message: None
         }
     }
 
     pub fn new_failure(msg: String) -> Self {
-        Self {
+        Self::Completed {
             success: false,
             message: Some(msg),
         }
-    }
-
-    pub fn _success(&self) -> bool {
-        self.success
-    }
-
-    pub fn failure(&self) -> bool {
-        !self.success
-    }
-
-    pub fn message(&self) -> &Option<String> {
-        &self.message
     }
 }
 

@@ -37,6 +37,6 @@ bytesize = "1.1.0"
 itertools = "0.10.1"
 lazy_static = "1.4.0"
 regex = "1.5.4"
-
-# TODO: If cfg.
+std-semaphore = "0.1.0"
+num_cpus = "1.13.1"
 prometheus = { version = "0.13.0", features = ["push"] }

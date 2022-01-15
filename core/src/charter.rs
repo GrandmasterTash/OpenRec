@@ -3,8 +3,6 @@ use rust_decimal::Decimal;
 use std::{io::BufReader, path::Path};
 use crate::{data_type::DataType, error::Error};
 
-// TODO: Celerity and Jetwash sub-modules.
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Charter {

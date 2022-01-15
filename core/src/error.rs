@@ -5,7 +5,8 @@ pub enum Error {
     #[error("Charter {path} not found")]
     CharterFileNotFound { path: String, source: std::io::Error },
 
-    #[error("Charter {path} contains invalid configuration")]
+    // Rendered in steward against a control.
+    #[error("{source} : {path}")]
     InvalidCharter { path: String, source: serde_yaml::Error },
 
     #[error("Chart configuration is invalid - {reason}")]

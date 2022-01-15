@@ -1,5 +1,5 @@
 use termion::clear;
-use std::io::Write;
+use std::{io::Write, cmp};
 use crate::AppState;
 use termion::color::Bg;
 use std::{time::Duration, io::StdoutLock};
@@ -15,6 +15,8 @@ const INBOX: &str = "INBOX";
 const OUTBOX: &str = "OUTBOX";
 const DISK_USAGE: &str = "DISK USAGE";
 const MESSAGES: &str = "MESSAGES";
+
+const GAP: usize = 3; // gap between columns.
 
 const COLUMNS: [&str; 8] = [
     CONTROL,
@@ -61,8 +63,8 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
         STATUS.len(),
         DURATION.len(),
         UNMATCHED.len(),
-        INBOX.len(),
-        OUTBOX.len(),
+        8, //INBOX.len(),
+        8, //OUTBOX.len(),
         DISK_USAGE.len(),
         MESSAGES.len()
     ];
@@ -79,6 +81,7 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
         .take(max)
         .map(|c| match c.state() {
             ControlState::StartedIdle => color::Rgb(200, 200, 200),
+            ControlState::StartedQueued => color::Rgb(255, 255, 255),
             ControlState::StartedMatching => color::Rgb(255, 255, 255),
             ControlState::Stopped => color::Rgb(100, 100, 100),
             ControlState::Suspended => color::Rgb(255, 69, 0),
@@ -95,8 +98,9 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
     }
 
     // Display headers for each column.
-    write!(stdout, "{pos}{heading}{name:0w_name$}   {status:0w_status$}   {duration:>0w_duration$}   {unmatched:>0w_unmatched$}   {inbox:>0w_inbox$}   {outbox:>0w_outbox$}   {usage:>0w_usage$}   {messages:0w_messages$}{reset}",
+    write!(stdout, "{pos}{heading}{name:0w_name$}{gap}{status:0w_status$}{gap}{duration:>0w_duration$}{gap}{unmatched:>0w_unmatched$}{gap}{inbox:>0w_inbox$}{gap}{outbox:>0w_outbox$}{gap}{usage:>0w_usage$}{gap}{messages:0w_messages$}{reset}",
         pos = Goto(2, BANNER_HEIGHT),
+        gap = " ".repeat(GAP),
         heading = Fg(color::Rgb(240, 230, 140)),
         reset = Fg(color::Reset),
         w_name = widths[0],     name = "CONTROL",
@@ -112,9 +116,11 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
     // Display controls across the available columns.
     for (idx, captions) in control_captions.iter().enumerate() {
         let row = idx as u16 + BANNER_HEIGHT + 1;
+        let last_width = last_width(&widths, terminal_size.0 as usize);
 
-        write!(stdout, "{pos}{name:0w_name$}   {state_colour}{state:0w_state$}{reset}   {duration:>0w_duration$}   {unmatched:>0w_unmatched$}   {inbox:>0w_inbox$}   {outbox:>0w_outbox$}   {usage:>0w_usage$}   {messages:0w_messages$}{clear}",
+        write!(stdout, "{pos}{name:0w_name$}{gap}{state_colour}{state:0w_state$}{reset}{gap}{duration:>0w_duration$}{gap}{unmatched:>0w_unmatched$}{gap}{inbox:>0w_inbox$}{gap}{outbox:>0w_outbox$}{gap}{usage:>0w_usage$}{gap}{messages:0w_messages$}{clear}",
             pos = Goto(2, row),
+            gap = " ".repeat(GAP),
             state_colour = Fg(state_colours[idx]),
             reset = Fg(color::Reset),
             clear = clear::UntilNewline,
@@ -125,21 +131,41 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
             w_inbox = widths[4],    inbox = captions[4],
             w_outbox = widths[5],   outbox = captions[5],
             w_usage = widths[6],    usage = captions[6],
-            w_messages = widths[7], messages = captions[7])
+            w_messages = cmp::min(last_width, widths[7]), messages = truncate(&captions[7], last_width).to_string())
             .expect("cant write stdout");
     }
 
     // Display keyboard shortcuts in the footer.
-    display_shortcuts(stdout, terminal_size);
+    display_shortcuts(stdout, terminal_size, app_state);
 
     terminal_size
 }
 
-fn display_shortcuts(stdout: &mut RawTerminal<StdoutLock>, terminal_size: (u16, u16)) {
-    write!(stdout, "{pos}{style}[Q]uit | [R]efresh (re-load register){reset}",
+fn last_width(widths: &[usize; COLUMNS.len()], terminal_width: usize) -> usize {
+    let idx = COLUMNS.len() - 1;
+    let width = widths.iter().take(idx).sum::<usize>() + (idx * GAP);
+    terminal_width - width - 1
+}
+
+fn truncate(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        None => s,
+        Some((idx, _)) => &s[..idx],
+    }
+}
+
+fn display_shortcuts(stdout: &mut RawTerminal<StdoutLock>, terminal_size: (u16, u16), app_state: &AppState) {
+    let force = match app_state {
+        AppState::Running   |
+        AppState::Reloading => "",
+        AppState::Terminating => " | [F]orce quit (jobs may be left running!)",
+    };
+
+    write!(stdout, "{pos}{style}[Q]uit | [R]efresh (re-load register){force}{reset}",
         pos = Goto(1, terminal_size.1),
         style = Fg(color::Rgb(100, 149, 237)),
-        reset = Fg(color::Reset))
+        reset = Fg(color::Reset),
+        force = force)
         .expect("cant write shortcuts");
 }
 
@@ -185,8 +211,9 @@ fn display_overview(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app
         status = status,
     ).expect("cant write status header");
 
-    write!(stdout, "{pos}Disk Usage: {usage}",
+    write!(stdout, "{pos}Disk Usage: {usage}{clear}",
         pos = Goto(65, 3),
+        clear = clear::UntilNewline,
         usage = bytesize::to_string(state.controls().iter().map(|cn| cn.root_len()).sum::<usize>() as u64, false),
     ).expect("cant write status header");
 
@@ -207,6 +234,7 @@ fn captions(control: &mut Control) -> [String; COLUMNS.len()] {
         // State.
         match control.state() {
             ControlState::StartedIdle     => "Running - idle",
+            ControlState::StartedQueued   => "Running - queued",
             ControlState::StartedMatching => "Running - matching",
             ControlState::Stopped         => "Stopped - disabled",
             ControlState::Suspended       => "Suspended - Errors",
@@ -240,7 +268,7 @@ fn captions(control: &mut Control) -> [String; COLUMNS.len()] {
         },
 
         // Message(s).
-        control.next_message().unwrap_or_default(),
+        control.message().to_owned(),
     ]
 }
 
