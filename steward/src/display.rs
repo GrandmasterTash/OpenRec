@@ -59,7 +59,7 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
 
     // Get the widest content in each column - use the captions as the starting width for each column.
     let mut widths: [usize; COLUMNS.len()] = [
-        CONTROL.len(), // TODO: Limit as long paths use too much room
+        cmp::min(40, CONTROL.len()),
         STATUS.len(),
         DURATION.len(),
         UNMATCHED.len(),
@@ -174,7 +174,6 @@ fn display_shortcuts(stdout: &mut RawTerminal<StdoutLock>, terminal_size: (u16, 
 ///
 fn display_overview(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_state: &AppState) {
 
-    // TODO: Show full register path
     // TODO: Show pushgateway address or 'None'
 
     let suspended = state.controls().iter().filter(|cn| cn.state() == ControlState::Suspended).count();
@@ -217,9 +216,9 @@ fn display_overview(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app
         usage = bytesize::to_string(state.controls().iter().map(|cn| cn.root_len()).sum::<usize>() as u64, false),
     ).expect("cant write status header");
 
-    write!(stdout, "{pos}Register  : {register}",
-        pos = Goto(65, 4),
-        register = state.register()
+    write!(stdout, "{pos}Register : {register}",
+        pos = Goto(45, 5),
+        register = state.register().canonicalize().unwrap_or(state.register().to_path_buf()).to_string_lossy(),
     ).expect("cant write register header");
 }
 

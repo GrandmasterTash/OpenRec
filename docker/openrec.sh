@@ -6,4 +6,4 @@ export UID=${UID}
 export GID=${GID}
 
 # Steward is a console app - not a headless app so we run interactively.
-docker-compose run openrec /steward
+docker-compose run openrec /steward '/etc/openrec/register.yml' pushgateway:9091

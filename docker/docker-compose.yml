@@ -2,6 +2,7 @@ version: '3.7'
 
 volumes:
   prometheus_data: {}
+  grafana-storage: {}
 
 networks:
   openrec_net:
@@ -22,6 +23,7 @@ services:
     depends_on:
      - pushgateway
      - prometheus
+     - grafana
     networks:
       - openrec_net
 
@@ -56,5 +58,19 @@ services:
       - "9091:9091"
     networks:
       - openrec_net
-    labels:
-      org.label-schema.group: "monitoring"
+
+  grafana:
+    image: grafana/grafana-oss:8.3.3
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+     - GF_SECURITY_ADMIN_USER=admin
+     - GF_SECURITY_ADMIN_PASSWORD=admin
+     - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+     - grafana-storage:/var/lib/grafana
+     - ./grafana/provisioning/:/etc/grafana/provisioning/
+    ports:
+     - "3000:3000"
+    networks:
+      - openrec_net

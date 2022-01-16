@@ -6,22 +6,24 @@ mod register;
 use chrono::Utc;
 use crossbeam::channel;
 use parking_lot::Mutex;
-use prometheus::Histogram;
 use register::Register;
 use itertools::Itertools;
+use prometheus::Histogram;
 use anyhow::{Result, bail};
 use lazy_static::lazy_static;
-use fs_extra::dir::get_dir_content;
 use std_semaphore::Semaphore;
+use fs_extra::dir::get_dir_content;
 use std::io::{Write, stdout, Read, BufReader};
 use termion::{terminal_size, raw::IntoRawMode};
 use state::{State, JobResult, ControlState, Control, MATCH_JOB_FILENAME_REGEX};
 use std::{time::Duration, thread, path::{Path, PathBuf}, process::Command, fs};
 
+// TODO: Jetwash and celerity should create a .lock - prohibit starting a job if exists.
+// TODO: Default steward to noop - then use --ui --headless to control start mode.
 // TODO: Document the above .inprogress inclusion. Ensure Jetwash NEVER processes .inprogress inbox files - regardless of regex.
 // TODO: Document bins must be in the same folder unless the HOME env vars are set.
 // TODO: Headless mode with Ctrl..c graceful shtdown
-
+// TODO: Recover unpublished outbox files on start-up (i.e. make it safe to kill sentinal).
 
 lazy_static! {
     static ref FORCE_QUIT: Mutex<bool> = Mutex::new(false);
@@ -119,7 +121,7 @@ fn load_state(register_path: &Path) -> Result<State, anyhow::Error> {
     let register = Register::load(register_path)?;
 
     // Build a state engine to track control states and task queues.
-    Ok(State::new(&register, register_path.file_name().expect("register has no filename").to_string_lossy().to_string()))
+    Ok(State::new(&register, register_path))
 }
 
 ///

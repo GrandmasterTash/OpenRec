@@ -34,7 +34,7 @@ pub struct Control {
 }
 
 pub struct State {
-    register: String,
+    register: PathBuf,
     controls: Vec<Control>,
 }
 
@@ -134,10 +134,6 @@ impl Control {
         self.metrics.inbox_usage_bytes.set(self.inbox_len() as i64);
         self.metrics.outbox_usage_bytes.set(self.outbox_len() as i64);
         self.metrics.disk_usage_bytes.set(self.root_len() as i64);
-
-        // TODO: Hook into the process::command code in lib for this.
-        // jetwash_duration: Box<Histogram>,
-        // celerity_duration: Box<Histogram>,
 
         &self.metrics.registry
     }
@@ -311,7 +307,7 @@ impl Control {
 }
 
 impl State {
-    pub fn new(register: &Register, filename: String) -> Self {
+    pub fn new(register: &Register, path: &Path) -> Self {
         let controls = register.controls()
             .iter()
             .map(|c| Control::new(c))
@@ -319,11 +315,11 @@ impl State {
 
         Self {
             controls,
-            register: filename,
+            register: path.to_path_buf(),
         }
     }
 
-    pub fn register(&self) -> &str {
+    pub fn register(&self) -> &Path {
         &self.register
     }
 
