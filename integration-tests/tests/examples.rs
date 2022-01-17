@@ -254,11 +254,11 @@ fn test_04_3_way_match_from_examples() {
 fn test_05_2_stage_match_from_examples() {
 
     let charter = common::example_charter("05-2-Stage-Match.yaml");
-    let data_files = common::example_data_files(vec!("05-2-stage.csv"));
+    let data_files = common::example_data_files(vec!("05-invoices.csv", "05-payments.csv"));
 
     // Copy the test data files into a temporary working folder.
     let base_dir = common::init_test_from_examples("tests/examples/test_05_2_stage_match_from_examples/", &data_files);
-    common::assert_n_files_in(1, "inbox", &base_dir);
+    common::assert_n_files_in(2, "inbox", &base_dir);
 
     // Run the data-import.
     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
@@ -266,8 +266,8 @@ fn test_05_2_stage_match_from_examples() {
     // Check the files have been processed into the correct folders.
     common::assert_files_in_folders(&base_dir, vec!(
         (0, "inbox"),
-        (1, "waiting"),
-        (1, "archive/jetwash")));
+        (2, "waiting"),
+        (2, "archive/jetwash")));
 
     // Run the match.
     celerity::run_charter(&charter, &base_dir).unwrap();
@@ -276,8 +276,8 @@ fn test_05_2_stage_match_from_examples() {
     common::assert_files_in_folders(&base_dir, vec!(
         (0, "inbox"),
         (0, "waiting"),
-        (1, "archive/jetwash"),
-        (1, "archive/celerity"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
         (0, "unmatched"),
         (1, "matched")));
 
@@ -294,13 +294,14 @@ fn test_05_2_stage_match_from_examples() {
                 "file": charter.canonicalize().unwrap().to_string_lossy()
             },
             "job_id": FIXED_JOB_ID,
-            "files": [ "20211201_053700000_05-2-stage.csv" ]
+            "files": [
+                "20211201_053700000_05-invoices.csv",
+                "20211201_053700000_05-payments.csv"]
         },
         {
             "groups": [
-                [[0,3],[0,4]],
-                [[0,5],[0,6]],
-                [[0,7],[0,8]]
+                [[0,4],[1,4]],
+                [[0,3],[1,3],[1,5]]
             ]
         },
         {
@@ -442,6 +443,67 @@ fn test_07_unmatched_data_from_examples() {
             "groups": [
                 [[0,3],[1,3],[2,3]]
             ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
+        }
+    ]));
+}
+
+
+#[test]
+fn test_08_advanced_lua_from_examples() {
+
+    let charter = common::example_charter("08-Advanced-Lua-Scripts.yaml");
+    let data_files = common::example_data_files(vec!("08-invoices.csv", "08-payments.csv"));
+
+    // Copy the test data files into a temporary working folder.
+    let base_dir = common::init_test_from_examples("tests/examples/test_08_advanced_lua_from_examples/", &data_files);
+    common::assert_n_files_in(2, "inbox", &base_dir);
+
+    // Run the data-import.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
+
+    // Run the match.
+    celerity::run_charter(&charter, &base_dir).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
+
+    // Check the output files.
+    let matched = common::get_match_job_file(&base_dir);
+
+    // Check the matched file contains the correct groupings.
+    common::assert_matched_contents(matched, json!(
+    [
+        {
+            "charter": {
+                "name": "Advanced Lua Scripts",
+                "version": 1637208553000u64,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [
+                "20211201_053700000_08-invoices.csv",
+                "20211201_053700000_08-payments.csv" ]
+        },
+        {
+            "groups": [
+                [[0,3],[1,3],[1,5]],
+                [[0,4],[1,4]]]
         },
         {
           "changesets": [],

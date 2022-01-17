@@ -298,7 +298,7 @@ matching:
               local t1s = function (record) return record["Type"] == "T1" end
               local t2s = function (record) return record["Type"] == "T2" end
 
-              return count(t1s, records) == 1 and count(t2s, records) == 2
+              return count(t1s) == 1 and count(t2s) == 2
 "#);
 
     // Run the match.
@@ -339,10 +339,10 @@ matching:
               local t1 = function (record) return record["Type"] == "T1" end
               local t2 = function (record) return record["Type"] == "T2" end
 
-              return sum("Amount", t1, records) == decimal(100.00)
-                and sum("Amount", t2, records) == decimal(100.00)
-                and sum_int("IntAmount", t1, records) == 550
-                and sum_int("IntAmount", t2, records) == 550
+              return sum("Amount", t1) == decimal(100.00)
+                and sum("Amount", t2) == decimal(100.00)
+                and sum_int("IntAmount", t1) == 550
+                and sum_int("IntAmount", t2) == 550
 "#);
 
     // Run the match.
@@ -384,10 +384,10 @@ matching:
               local t1 = function (record) return record["Type"] == "T1" end
               local t2 = function (record) return record["Type"] == "T2" end
 
-              return max("Amount", t1, records) == decimal(100.00)
-                and max("Amount", t2, records) == decimal(75.00)
-                and max_int("IntAmount", t1, records) == 550
-                and max_int("IntAmount", t2, records) == 300
+              return max("Amount", t1) == decimal(100.00)
+                and max("Amount", t2) == decimal(75.00)
+                and max_int("IntAmount", t1) == 550
+                and max_int("IntAmount", t2) == 300
 "#);
 
     // Run the match.
@@ -428,10 +428,10 @@ matching:
               local t1 = function (record) return record["Type"] == "T1" end
               local t2 = function (record) return record["Type"] == "T2" end
 
-              return min("Amount", t1, records) == decimal(100.00)
-                and min("Amount", t2, records) == decimal(25.00)
-                and min_int("IntAmount", t1, records) == 550
-                and min_int("IntAmount", t2, records) == 250
+              return min("Amount", t1) == decimal(100.00)
+                and min("Amount", t2) == decimal(25.00)
+                and min_int("IntAmount", t1) == 550
+                and min_int("IntAmount", t2) == 250
 "#);
 
     // Run the match.

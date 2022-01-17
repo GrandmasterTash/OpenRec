@@ -1,0 +1,4 @@
+"PaymentId","PaymentRef","PaymentAmount","PaymentDate"
+"P1","INVONE","50.99","2021-11-27T04:36:08.000Z"
+"P2","INVTWO","500.00","2021-11-27T04:36:08.000Z"
+"P1","INVONE","1000.00","2021-11-28T04:36:08.000Z"

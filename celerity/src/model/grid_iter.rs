@@ -52,20 +52,9 @@ impl Iterator for GridIterator {
             }
 
             // Read a row from the csv file.
-            match read_next(self.pos, &mut self.data_readers, true) {
-                Ok(data) => {
-                    if let Some(data) = data  {
-                        // Read a row from the derived csv file, if applicable.
-                        let derived = match &mut self.derived_readers {
-                            Some(derived_readers) => {
-                                match read_next(self.pos, derived_readers, false) {
-                                    Ok(derived) => derived.unwrap_or_default(),
-                                    Err(err) => panic!("Failed to read next derived record for group: {}", err),
-                                }
-                            },
-                            None => csv::ByteRecord::new(),
-                        };
-
+            match read_next(self.pos, &mut self.data_readers, &mut self.derived_readers, true) {
+                Ok(result) => {
+                    if let Some((data, derived)) = result {
                         return Some(Record::new(self.pos, self.schema.clone(), data, derived))
                     }
 
@@ -78,18 +67,36 @@ impl Iterator for GridIterator {
     }
 }
 
+///
+/// Advances the data file reader (and if present, the derived file reader) by one record and returns the record(s) to the caller.
+///
+/// If the readers are at the end of file then returns None.
+///
+/// If the data reader encounters a matched record, then, if filter_status is true, returns None.
+///
+/// If an error is returned from either reader, then it is returned to the caller.
+///
+fn read_next(pos: usize, data_readers: &mut CsvReaders, derived_readers: &mut Option<CsvReaders>, filter_status: bool)
+    -> Result<Option<(csv::ByteRecord /* record data */, csv::ByteRecord /* derived data */)>, csv::Error> {
 
-fn read_next(pos: usize, readers: &mut CsvReaders, filter_status: bool) -> Result<Option<csv::ByteRecord>, csv::Error> {
-    let mut buffer = csv::ByteRecord::new();
+    let mut data_buffer = csv::ByteRecord::new();
+    let mut derived_buffer = csv::ByteRecord::new();
+
     loop {
-        match readers[pos].read_byte_record(&mut buffer) {
-            Ok(result) => match result {
-                true  => {
-                    if !filter_status || String::from_utf8_lossy(buffer.get(COL_STATUS).expect("no status")) == UNMATCHED {
-                        return Ok(Some(buffer))
-                    }
-                },
-                false => return Ok(None),
+        match data_readers[pos].read_byte_record(&mut data_buffer) {
+            Ok(result) => {
+                if let Some(derived_readers) = derived_readers {
+                    let _ = derived_readers[pos].read_byte_record(&mut derived_buffer);
+                }
+
+                match result {
+                    true  => {
+                        if !filter_status || String::from_utf8_lossy(data_buffer.get(COL_STATUS).expect("no status")) == UNMATCHED {
+                            return Ok(Some((data_buffer, derived_buffer)))
+                        }
+                    },
+                    false => return Ok(None),
+                }
             },
             Err(err) => return Err(err),
         }

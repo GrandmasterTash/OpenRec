@@ -11,30 +11,41 @@ jetwash:
    - pattern: ^02-invoices\.csv$
    - pattern: ^02-payments\.csv$
 
-   # TODO: Demonstrate trim with Jetwash
-
 matching:
   source_files:
     - pattern: .*02-invoices.*\.csv
       field_prefix: INV
     - pattern: .*02-payments.*\.csv
       field_prefix: PAY
+
+  # You can run these examples in the docker playground project - many of them are also used in the
+  # integration tests, so the quickest way to see their output (assuming you have the Rust language
+  # installed) is to run 'cargo test' from the project root folder, then look in the folder
+  # /target/tmp/tests/examples at the output - specifically the debug folder may be useful to
+  # illustrate what each matching instruction is doing.
   instructions:
     # All of the invoices records are using GBP currency, where-as the payments for those invoices are
-    # being provided in a variety of currencies. Fortuantely, the loading of the data has populated an
+    # being provided in a variety of currencies. Fortunately, the loading of the data has populated an
     # exchange rate against each payment, accurate on the payment date.
     #
     # Because we want perform a net-to-zero operation on the data (see 01-Basic-Match.yaml) we need the
-    # payment and invoice amounts to match and therefore we use a project to convert the payment amount
-    # into the GBP currency equivalent.
+    # payment and invoice amounts to match and therefore we use a project column instruction to convert
+    # the payment amount into the GBP currency equivalent.
     - project:
         # The column field denotes the name for the new projected column. This can be referenced in any
         # subsequent instruction in this charter.
         column: PAYMENT_AMOUNT_BASE
-        # We must define the type of this column.
+        # We must define the data type of this column, in this case it's a Decimal. Supported data-types
+        # are:
+        #    Boolean  - e.g. 1/0, y/n, true/false
+        #    Datetime - YYYY-MM-DDTHH:mm:SS.sssZ
+        #    Decimal  - 01234.5678
+        #    Integer  - 012345678
+        #    String   - I am a string
+        #    Uuid     - 6edaf90c-776e-11ec-8752-00155dea2a36
         as_a: Decimal
         # The Lua script below has access to a table called 'record' which is populated with the values of
-        # each column from the underlying file. In this case, we are multipling the Amount by the FXRate
+        # each column from the underlying file. In this case, we are multiplying the Amount by the FXRate
         # for the payment to derive a GBP value in a new column called PAYMENT_AMOUNT_BASE.
         #
         # NOTE: Decimal amounts use a precise backing data-type, something not normally possible with standard
@@ -48,33 +59,32 @@ matching:
         # (short) filename where the record originated from or, in our case, the field_alias defined above.
         # There are other META. fields available and these are discussed later.
         #
-        # NOTE: If we didn't have the following 'when' clause (which is optional), then our from script
-        # above, would cause an error as soon as it was evaluated against an invoice record, because
-        # invoices don't have a field called 'PAY.Amount' or 'PAY.FXRate'.
+        # NOTE: If we didn't have the following 'when' clause (which technically IS optional), then our
+        # from script above, would cause an error as soon as it was evaluated against an invoice record,
+        # because invoices don't have a field called 'PAY.Amount' or 'PAY.FXRate'.
         when: record["META.prefix"] == "PAY"
 
     - project:
-        # In this example our payment records have an invoice reference but it's embedded in the payment reference
-        # in the format '<pay ref>XX<inv ref>XX'. So we'll project a column for each payment that can extract the
-        # invoice reference from the payment reference.
+        # In this example our payment records have an invoice reference but it's embedded in the payment
+        # reference in the format '<pay ref>XX<inv ref>XX'. See /examples/data/02-payments.csv. So we'll
+        # project a column for each payment that can extract the invoice reference from the payment
+        # reference.
         column: PAYMENT_INV_REF
         # Our output column will be a string data-type.
         as_a: String
-        # Here we use the Lua function (https://www.lua.org/pil/20.3.html) to capture the portion of the field
-        # we require into a variable called inv_ref then return that variable. Note, the '_' represent values
-        # returned from string.find that we do not need (in this case the start and end position of the match).
+        # Here we use the Lua String.match function (http://lua-users.org/wiki/PatternsTutorial) to capture
+        # the portion of the field we require.
+        #
         # Lua uses it's own regular expression syntax, similar to standard POSIX (https://www.lua.org/pil/20.2.html).
         # In the pattern below, the brackets (.*) capture the value we want to use.
-        # TODO: Could also use string.match for a simpler approach.
-        from: |
-          local _start, _end, inv_ref = string.find(record["PAY.Reference"], "^PAY.*XX(.*)XX$")
-          return inv_ref
+        from: string.match(record["PAY.Reference"], "^PAY.*XX(.*)XX$")
         # Again, we only want to evaluate this against payment records, not invoices.
         when: record["META.prefix"] == "PAY"
 
     - merge:
-        # We're merging the (converted) paymount amount and the invoice's total amount into a new column
-        # called AMOUNT which we'll use in our group constraints to NET together and test the validity of each group.
+        # We're merging the (converted) payment amount and the invoice's total amount into a new column
+        # called AMOUNT which we'll use in our group constraints to NET together and test the validity of
+        # each group.
         columns: ['PAYMENT_AMOUNT_BASE', 'INV.TotalAmount']
         into: AMOUNT
 
@@ -89,7 +99,7 @@ matching:
         # This will group all records together that relate to the same invoice.
         by: ['REFERENCE']
         match_when:
-            # Finally, if the amounts add-up in the base invoice currency (GBP in this case), then the
+            # Finally, if the amounts NET to zero in the base invoice currency (GBP in this case), then the
             # group is a good match and it will be written off to history.
           - nets_to_zero:
               column: AMOUNT

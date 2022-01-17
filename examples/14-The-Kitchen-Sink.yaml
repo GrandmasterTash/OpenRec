@@ -1,0 +1,16 @@
+# TODO: Put every charter option in!
+
+
+# jetwash:
+#   source_files:
+#    - pattern: ^blahblah\.csv$
+#      # Double double-quotes is the standard way of embedding double quote. However, some formats use escape slashes '\'
+#      # for example.
+#     #  escape: \
+#      # The quote character to use when parsing, the default is double-quotes '"'. In the example below we're using
+#      # a single quote, but we must surround it in quotes first because of yaml syntax.
+#     #  quote: '\'
+#      # The field delimeter to use when parsing, the default is comma ','. In the example below we're using a vertical
+#      # pipe but must surround it in quotes first because of yaml syntax.
+#     #  delimeter: '|'
+#      column_mappings:

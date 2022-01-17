@@ -15,9 +15,10 @@ lazy_static! {
 pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> {
     let globals = lua_ctx.globals();
 
-    // Provide a count(filter, records) function to the custom Lua script.
-    let count = lua_ctx.create_function(|_, (filter, data): (rlua::Function, rlua::Table)| {
+    // Provide a count(filter) function to the custom Lua script.
+    let count = lua_ctx.create_function(|context, filter: rlua::Function| {
         let mut count = 0;
+        let data: rlua::Table = context.globals().get("records")?;
         for idx in 1..=data.len()? {
             let record: rlua::Table = data.get(idx)?;
 
@@ -29,9 +30,10 @@ pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> 
         Ok(count)
     })?;
 
-    // Provide a sum("field", filter, records) function to the custom Lua script.
-    let sum = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+    // Provide a sum("field", filter) function to the custom Lua script.
+    let sum = lua_ctx.create_function(|context, (field, filter): (String, rlua::Function)| {
         let mut sum = Decimal::ZERO;
+        let data: rlua::Table = context.globals().get("records")?;
 
         for idx in 1..=data.len()? {
             let record: rlua::Table = data.get(idx)?;
@@ -46,9 +48,10 @@ pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> 
         Ok(LuaDecimal(sum))
     })?;
 
-    // Provide a sum_int("field", filter, records) function to the custom Lua script.
-    let sum_int = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+    // Provide a sum_int("field", filter) function to the custom Lua script.
+    let sum_int = lua_ctx.create_function(|context, (field, filter): (String, rlua::Function)| {
         let mut sum = 0u64;
+        let data: rlua::Table = context.globals().get("records")?;
 
         for idx in 1..=data.len()? {
             let record: rlua::Table = data.get(idx)?;
@@ -62,9 +65,10 @@ pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> 
         Ok(sum)
     })?;
 
-    // Provide a max("field", filter, records) function to the custom Lua script.
-    let max = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+    // Provide a max("field", filter) function to the custom Lua script.
+    let max = lua_ctx.create_function(|context, (field, filter): (String, rlua::Function)| {
         let mut max = Decimal::MIN;
+        let data: rlua::Table = context.globals().get("records")?;
 
         for idx in 1..=data.len()? {
             let record: rlua::Table = data.get(idx)?;
@@ -81,9 +85,10 @@ pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> 
         Ok(LuaDecimal(max))
     })?;
 
-    // Provide a max_int("field", filter, records) function to the custom Lua script.
-    let max_int = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+    // Provide a max_int("field", filter) function to the custom Lua script.
+    let max_int = lua_ctx.create_function(|context, (field, filter): (String, rlua::Function)| {
         let mut max = u64::MIN;
+        let data: rlua::Table = context.globals().get("records")?;
 
         for idx in 1..=data.len()? {
             let record: rlua::Table = data.get(idx)?;
@@ -99,11 +104,10 @@ pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> 
         Ok(max)
     })?;
 
-    // Provide a min("field", filter, records) function to the custom Lua script.
-    let min = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+    // Provide a min("field", filter) function to the custom Lua script.
+    let min = lua_ctx.create_function(|context, (field, filter): (String, rlua::Function)| {
         let mut min = Decimal::MAX;
-
-        // println!("MIN-START: {}", min);
+        let data: rlua::Table = context.globals().get("records")?;
 
         for idx in 1..=data.len()? {
             let record: rlua::Table = data.get(idx)?;
@@ -113,18 +117,17 @@ pub fn create_aggregate_fns(lua_ctx: &rlua::Context) -> Result<(), rlua::Error> 
                     .map_err(|source| MatcherError::CustomConstraintError { reason: format!("Field {} not found in record or not a DECIMAL. If you are trying to max an INTEGER use min_int() instead", field), source })?
                     .0;
 
-                    // println!("MIN-CMP: {} / {}", min, value);
                     min = std::cmp::min(min, value);
-                    // println!("MIN-NOW: {}", min);
             }
         }
 
         Ok(LuaDecimal(min))
     })?;
 
-    // Provide a min_int("field", filter, records) function to the custom Lua script.
-    let min_int = lua_ctx.create_function(|_, (field, filter, data): (String, rlua::Function, rlua::Table)| {
+    // Provide a min_int("field", filter) function to the custom Lua script.
+    let min_int = lua_ctx.create_function(|context, (field, filter): (String, rlua::Function)| {
         let mut min = u64::MAX;
+        let data: rlua::Table = context.globals().get("records")?;
 
         for idx in 1..=data.len()? {
             let record: rlua::Table = data.get(idx)?;

@@ -1,5 +1,4 @@
 use std::path::Path;
-
 use chrono::{Utc, TimeZone};
 use rlua::{FromLuaMulti, Number};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
@@ -17,14 +16,21 @@ pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>, lookup
 
     globals.set("decimal", decimal)?;
 
-    // Create a date_only() function to remove the time portion of a datetime value.
-    let date_only = lua_ctx.create_function(|_, value: String| {
-        let ts = value.parse::<i64>().unwrap_or_else(|_| panic!("date_only called with a non-numeric: {}", value));
+    // Create an abs() function to specifically for a Rust Decimal data-type.
+    let abs = lua_ctx.create_function(|_, value: LuaDecimal| {
+        Ok(LuaDecimal(value.0.abs()))
+    })?;
+
+    globals.set("abs", abs)?;
+
+    // Create a midnight() function to remove the time portion of a datetime value.
+    let midnight = lua_ctx.create_function(|_, value: String| {
+        let ts = value.parse::<i64>().unwrap_or_else(|_| panic!("midnight called with a non-numeric: {}", value));
         let dt = Utc.timestamp(ts / 1000, 0).date();
         Ok(dt.and_hms_milli(0,0,0,0).timestamp_millis())
     })?;
 
-    globals.set("date_only", date_only)?;
+    globals.set("midnight", midnight)?;
 
     // Create a lookup(field, filename, filter_field, filter_string) function to find a value from another csv.
     let lookup_path = lookup_path.to_string_lossy().to_string();

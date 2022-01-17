@@ -1,78 +1,147 @@
-name: Advance Scripts
-description: |
-  TODO: Document sub-string regex in projected columns.
-  TODO: Implement and document custom constraint logic.
+name: Advanced Lua Scripts
+description: This charter builds on the Lua customization allowed in the data-cleansing and matching rules.
 version: 1637208553000
-debug: false
+debug: true
 
-# TODO: Demonstrate lua mapping and new columns with jetwash.
+# The global_lua section of the charter allows Lua functions to be defined in one place and re-used in any
+# appropriate Lua section elsewhere in the charter.
+#
+# Note: For any multi-line Lua, use the | yaml symbol to put multi-line values on the following lines. Just
+# make sure to indent it.
+global_lua: |
+  -- Remove all digits from the string.
+  function no_number(s)
+    return s:gsub("%d", "")
+  end
 
-# TODO: Show how to project a date - stripping the time portion. ie. group on a date but ignore the exact time.
+  -- Trim all surrounding whitespace from the string. ref: http://lua-users.org/wiki/StringTrim
+  function trim(s)
+    return s:gsub("^%s*(.-)%s*$", "%1")
+  end
+
+  -- These are filter functions used in custom constraints later. They return true if the record is of the
+  -- appropriate type. Don't worry about them for now, they should make more sense when you get to the custom
+  -- constraints.
+  invoices = function (record) return record["META.prefix"] == "INV" end
+  payments = function (record) return record["META.prefix"] == "PAY" end
+
+jetwash:
+  source_files:
+    - pattern: ^08-invoices\.csv
+      column_mappings:
+         # This column mapping transforms the InvoiceRef column by removing any numeric digits and then trimming
+         # any surrounding whitespace from the remaining string. The functions trim and no_number are defined in
+         # the global_lua section above. The data is transformed and the files in the waiting folder will have
+         # the modified values in so the matching instructions below have access to them.
+         #
+         # Note: There is a jetwash helper called trim which doesn't require any Lua and is much neater to write.
+         # In this case though, because I want to perform Lua on the value, I have to use a Lua trim function in
+         # addition to my no_number function.
+       - map:
+           column: InvoiceRef
+           as_a: String
+           # In the Lua below, the variable 'value' is set to the current record's value for the column being
+           # mapped. It is always a String data-type in jetwash regardless of the actual column's data-type.
+           from: trim(no_number(value))
+
+    - pattern: ^08-payments\.csv
+      new_columns:
+         # Okay this next bit is pretty neat but there's quite a bit of new stuff going on so lets unpack it. Firstly
+         # we are creating a new column in the jetwash process which will categorize the payments by their amount.
+         # In the mapping above the Lua script had access to the 'value' variable. For new_columns, the Lua script
+         # has access to a variable 'record' and each column's current value. So below, for example we are reading
+         # the current record's 'PaymentAmount' column, but we could read any of them.
+         #
+         # As with column_mappings, the values from the record will always be a String within the Lua script -
+         # although we are not constrained to returning strings from our mappings - for example if we wanted to
+         # parse a non-standard date format and return a Datetime then, although the source values would be a string
+         # We are allowed to return numerics and dates.
+         #
+         # Because record["PaymentAmount"] is a string, we use the internal helper function 'decimal' to parse the
+         # value into a decimal and then compare that to a literal number. Note: we also wrap 500.0 as a decimal
+         # because Lua only understands floating point numbers, so the 500.0 below is a float and we want a precise
+         # decimal data-type to avoid precision loss.
+         #
+         # The end result of this operation is to append a new column to each payment called 'Size' (or 'PAY.Size'
+         # if you're in the matching section below) which is either 'BIG' or 'SMALL'.
+       - column: Size
+         as_a: String
+         from: |
+           -- If the payment is over 500 it's a BIG payment.
+           if decimal(record["PaymentAmount"]) > decimal(500.0) then
+             return "BIG"
+           else
+             return "SMALL"
+           end
 
 matching:
-  use_field_prefixes: false
   source_files:
     - pattern: .*08-invoices.*\.csv
+      field_prefix: INV
     - pattern: .*08-payments.*\.csv
+      field_prefix: PAY
   instructions:
     - merge:
-        columns: ['InvoiceAmount', 'PaymentAmount']
+        columns: ['INV.InvoiceAmount', 'PAY.PaymentAmount']
         into: AMOUNT
     - merge:
-        columns: ['InvoiceDate', 'PaymentDate']
+        columns: ['INV.InvoiceDate', 'PAY.PaymentDate']
         into: INVOICE_DATE
+    - merge:
+        columns: ['INV.InvoiceRef', 'PAY.PaymentRef']
+        into: REF
     - group:
-        by: ['INVOICE_DATE']
+        by: ['REF']
         match_when:
+            # Up until now, we've only used the built-in constraints nets_to_zero and nets_with_tolerance. Here we'll start to
+            # explore the custom constraint type which uses a Lua script to evaluate a group's eligibility for a match.
           - custom:
-          # TODO: Remove the extra level in this configuration.
-              # As well as the pre-baked constraints nets_to_zero and nets_with_tolerance,
-              # constraints can also be implemented using bespoke Lua script which will
-              # have access to all the record data in a potential grouping and can call
-              # certain aggregate functions (see further examples below) on the group.
+              # The Lua script will have access to all the record data in a potential grouping and can call certain pre-baked
+              # Lua aggregate functions (see further examples below) on the group.
               script: |
-                -- The 'records' Lua table contains all the records in the potential group.
-                -- You can iterate them with standard Lua script.
-                print("Lua debugging works in the console output too!")
+                -- Amazingly you can debug print from Lua into the application's main log - obviously these need to be
+                -- removed before running a production system - but they can be a great way to debug issues in your scripts.
+                -- commented out to avoid spam in the integration tests.
+                --print("Lua debugging works in the console output too!")
 
-                -- Note: Lua array indexes start at 1 not 0.
+                -- The 'records' Lua table contains all the records in the potential group. You can iterate them with the
+                -- standard Lua pairs and ipairs functions. Also note: Lua array indexes start at 1 not 0.
                 for idx, record in ipairs(records) do
                   -- Each record is a table of field values which you can also reference and/or iterate.
                   for field, value in pairs(record) do
-                    print("Record [" ..idx.. "] has a value of [" .. value .. "] in field [" .. field .. "]")
+                    -- commented out to avoid spam in the integration tests.
+                    -- print("Record [" ..idx.. "] has a value of [" .. value .. "] in field [" .. field .. "]")
                   end
                 end
 
                 -- There are also some additional metadata fields on the record which contains record context
-                -- details, such as the 'prefix' - a value extracted from the record's original filename.
-                -- The meta table also contains filename and the timestamp extracted from the filename. i.e.
-                -- Note: If the charter setting 'use_field_prefixes' is false, the prefix metadata field is
-                -- unnavailable.
+                -- details, such as the 'prefix' - the applied field_prefix from the source_files section of the charter.
+                -- The meta table also contains 'filename' and the 'timestamp' extracted from the filename. i.e.
                 -- record["META.prefix"]
-                -- record["META.timestamp"]
+                -- record["META.timestamp"] << Unix Epoch millisecond timestamp.
                 -- record["META.filename"]
 
-                -- TODO: Document what returning true or false means.
-                -- Allow the data to be passes to the next custom constraint in the match_group instruction.
-                return false
+                -- Ultimately a constraint must return true or false - because this one is only demonstrating the Lua
+                -- integration and not actually evaluating anything, we'll return true so other constraints can be
+                -- evaluated.
+                return true
 
           - custom:
-              # By default a custom constraint will have access to all record fields.
-              # This can result in a performance hit on large numbers of columns and records.
-              # To alleviate this, when the script is complete and ready for production, you
-              # can use the 'fields' array to restrict which columns on a record are available in
-              # the Lua script below. You should strive to keep this fields array as small as
-              # possible
-              fields: ['INVOICE_DATE', 'InvoiceRef', 'PaymentRef']
-              #TODO: Rename above to available_fields
+              # By default a custom constraint will have access to all fields on a record. This can result in a performance
+              # hit on large numbers of columns and records. So to alleviate this, when the script is complete and ready
+              # for production, you can use the 'available_fields' array to restrict which columns on a record are available
+              # in the Lua script below. You should strive to keep this fields array as small as possible
+              available_fields: ['INVOICE_DATE', 'INV.InvoiceRef', 'PAY.PaymentRef']
 
               script: |
-                print("Hello from Lua - In custom constraint 1")
+                -- commented out to avoid spam in the integration tests.
+                -- print("Hello from Lua - in custom constraint 2 - there will be less fields output than the previous constraint")
 
                 for idx, record in ipairs(records) do
                   -- Each record is a table of field values which you can also reference or iterate.
                   for field, value in pairs(record) do
-                    print("Record [" ..idx.. "] F [" ..field.. "] V [" ..value.. "]")
+                    -- commented out to avoid spam in the integration tests.
+                    -- print("Record [" ..idx.. "] F [" ..field.. "] V [" ..value.. "]")
                   end
                 end
 
@@ -80,50 +149,30 @@ matching:
 
           # Custom constraint scripts have access to these aggregate functions which operate on a group of
           # records being evaluated for a match: -
-          #   sum
           #   count
-          #   min
-          #   max
-          #   avg
+          #   sum (sum_int for integers)
+          #   min (min_int for integers)
+          #   max (max_int for integers)
           - custom:
-              # Here we will match one invoice against one or more payments.
+              # Here we will allow one (and only one) invoice to match against one or more payments.
               script: |
-                  -- We start by creating two functions to filter rows in the current group being evaluated
-                  -- by a constraint. One function will filter to include only invoices and the other will
-                  -- filter records to only include payments.
-                  --
-                  -- We look at the meta data which contains which file the record came from. We could equally
-                  -- look at a field on the record itself to identify it's type.
-                  local invoices = function (record) return record["META.prefix"] == "invoices" end
-                  local payments = function (record) return record["META.prefix"] == "payments" end
+                -- count is a function that takes a filter as an argument (defined in the global Lua section) and
+                -- counts the number of records in the group matching the filter.
+                return count(invoices) == 1 and count(payments) > 0
 
-                  -- count is a function that takes a filter as an argument and counts the number
-                  -- of records in the group matching the filter.
-                  return count(invoices) == 1
-                      and count(payments) > 0
-          # - custom:
-          #     # This is an example of writing a nets-to-zero constaint manually in Lua script.
-          #     script: |
-          #         -- We start by creating anonymous functions used to filter data in the group of records.
-          #         local invoices = function (_record, meta) return meta["prefix"] == "invoices" end
-          #         local payments = function (_record, meta) return meta["prefix"] == "payments" end
-          # TODO: Can we create a rust filter() fn that would be used like: local invoices = filter(meta["prefix"] == "invoices")
+            # This is an example of writing a nets-to-zero constraint manually in Lua script. You could adapt this for example,
+            # if your data needed to be sensitive to numerical signs or the transactions had an ours/theirs indicator field.
+          - custom:
+              # This is an example of writing a nets-to-zero constraint manually in Lua script.
+              script: |
+                -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
+                -- the second is a filter to apply to the records in the group.
+                local inv_sum = sum("AMOUNT", invoices)
+                local pay_sum = sum("AMOUNT", payments)
 
-
-          # TODO: use tostring(xxx) to debug print a decimal for example.
-          
-          #         -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
-          #         -- the second is a filter to apply to the records in the group.
-          #         local inv_sum = sum("AMOUNT_BASE", invoices)
-          #         local pay_sum = sum("AMOUNT_BASE", payments)
-
-          #         -- count is a function that takes a filter as an argument and counts the number
-          #         -- of records in the group matching the filter.
-          #         local has_records = count(invoices) > 0
-          #             and count(payments) > 0
-
-          #         -- Finally, our group matches if it has all types of records and invoices net to zero with
-          #         -- the payments.
-          #         return has_records
-          #             and (math.abs(inv_sum) - math.abs(pay_sum)) == 0
-
+                -- Finally, our group matches if it has all types of records and invoices net to zero with
+                -- the payments. Whilst Lua has it's own Math.abs() function, the version used below is a specialized
+                -- version designed to work with the Decimal data-type returned by the sum aggregate functions above.
+                return count(invoices) > 0
+                    and count(payments) > 0
+                    and abs((abs(inv_sum) - abs(pay_sum))) == decimal(0)

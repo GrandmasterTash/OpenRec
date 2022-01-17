@@ -26,7 +26,7 @@ pub fn passes(
             }
         },
 
-        Constraint::Custom { script, fields } => custom_constraint(script, fields, records, schema, lua_ctx),
+        Constraint::Custom { script, available_fields } => custom_constraint(script, available_fields, records, schema, lua_ctx),
 
         Constraint::DatesWithRange { column: _, lhs: _, rhs: _, days: _, hours: _, minutes: _, seconds: _ } => todo!(),
     }
@@ -77,12 +77,12 @@ fn net_decimal<F>(
 ///
 fn custom_constraint(
     script: &str,
-    avail_cols: &Option<Vec<String>>,
+    available_fields: &Option<Vec<String>>,
     records: &[&Record],
     schema: &GridSchema,
     lua_ctx: &Context) -> Result<bool, MatcherError> {
 
-    let avail_cols = match avail_cols {
+    let avail_cols = match available_fields {
         Some(fields) => {
             let fields = fields.iter().map(|f|f.as_str()).collect::<Vec<&str>>();
 

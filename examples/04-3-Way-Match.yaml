@@ -1,16 +1,19 @@
 name: Three-way invoice match
 description: |
-  This charter demonstrates how to perform a 3-way match against data from 3 different sources.
-  In this example a single INVOICE will match against one or more PAYMENTS and one or more RECEIPTS.
+  This charter utilizes things from earlier examples and illustrates how to perform a 3-way match
+  against data from 3 different sources.
+
+  In this example a single invoice will match against one or more payment and one or more receipts.
   Relevant dates on each type of the record must be the same and the total amounts from each type of
   record must NET exactly to zero.
 
   Each record contains it's own currency amount along with an FXRate column denoting the exchange
-  rate to conert that to a common currency.
+  rate to convert that amount to the common (base) currency on the invoice.
 version: 1
 debug: false
 
 jetwash:
+  # In this case we have three sources of files involved and so have three patterns to import them.
   source_files:
    - pattern: ^04-invoices\.csv$
    - pattern: ^04-payments\.csv$
@@ -42,27 +45,29 @@ matching:
         columns: ['INV.SettlementDate', 'PAY.PaymentDate', 'REC.ReceiptDate']
         into: SETTLEMENT_DATETIME
       # We will be grouping on the settlement date, but to do so need to remove the time portion of the field.
-      # If we don't, then every trade would need to have the exact time to form the same group.
-      # Fortuanately, Celerity provides a helper function called date_only. This accepts a unix millisecond
-      # timestamp (which is what Datetime columns are in the Lua script) and truncates the time portion, setting
-      # the hours, minutes, seconds and milliseconds to 0. e.g. 2022-01-13T07:05:13.123Z -> 2022-01-13T00:00:00.000Z
-      # TODO: Consider renaming date_only() -> midnight()
+      # If we don't, then every trade would need to have the exact time (to the millisecond) to form the same
+      # group. Fortunately, Celerity provides a helper function called 'midnight'. This accepts a unix millisecond
+      # timestamp (which is what date-time columns are exposed as in the Lua script) and truncates the time
+      # portion, setting the hours, minutes, seconds and milliseconds to 0.
+      #   e.g. 2022-01-13T07:05:13.123Z -> 2022-01-13T00:00:00.000Z
+      # Within the Lua script record["SETTLEMENT_DATETIME"] is actually a Unix timestamp integer,
+      #  e.g. 1642057513123 -> 1642032000000
     - project:
         column: SETTLEMENT_DATE
         as_a: Datetime
-        from: date_only(record["SETTLEMENT_DATETIME"])
+        from: midnight(record["SETTLEMENT_DATETIME"])
     - group:
         by: ['SETTLEMENT_DATE']
         match_when:
           # Here we have two netting constraints and both must pass for the group to be valid.
-          # First, we ensure all the payments net against the invoice(s) in the group.
+          # First, we ensure all the payments NET against the invoice(s) in the group.
           - nets_with_tolerance:
               column: AMOUNT_BASE
               lhs: record["META.prefix"] == "PAY"
               rhs: record["META.prefix"] == "INV"
               tol_type: Amount
               tolerance: 1.00
-          # Then we ensure all the receipts net with all the invoices in the group.
+          # Then we ensure all the receipts NET with all the invoices in the group.
           - nets_with_tolerance:
               column: AMOUNT_BASE
               lhs: record["META.prefix"] == "REC"

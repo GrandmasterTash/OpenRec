@@ -1,21 +1,9 @@
 name: NET with Tolerance
 description: |
-
-# 20211129_043300000_03-invoices.csv
-#
-# "Invoice No","Ref","Invoice Date","Amount"
-# "ST","ST","DA","DE"
-# "0001","INV0001","1637814968000","1050.99"
-# "0002","INV0002","1637901368000","500.00"
-
-# 20211129_043300000_03-payments.csv
-#
-# "PaymentId","Ref","Amount","Payment Date"
-# "ST","ST","DE","DA"
-# "P1","INV0001","50.00","1637987768000"
-# "P2","INV0002","500.00","1637987768000"
-# "P1","INV0001","1000.00","1638074168000"
-
+  This example demonstrates a new type of grouping constraint rule. nets_with_tolerance. This is
+  similar to the nets_to_zero constraint example you can specify an amount or percentage-based
+  tolerance. For example, if exact exchange rates cannot be pinned down at the time of a transaction
+  then some fluctuations may be permissible.
 version: 1
 debug: true
 
@@ -31,6 +19,7 @@ matching:
     - pattern: .*03-payments.*\.csv
       field_prefix: PAY
   instructions:
+      # In this example, both invoice and payment amounts are assumed to be in the same currency.
     - merge:
         columns: ['INV.Amount', 'PAY.Amount']
         into: AMOUNT
@@ -44,8 +33,8 @@ matching:
               column: AMOUNT
               lhs: record["META.prefix"] == "INV"
               rhs: record["META.prefix"] == "PAY"
+              # Here we stipulate a tolerance of 1 unit in the base currency.
+              # tol_type can also be Percent. In which case the rhs sum must be with in
+              # x percent of the lhs sum where x is the tolerance value. so 10.0 for 10%.
               tol_type: Amount
               tolerance: 1.00
-              # tol_type can also be Percent. In whice case the rhs sum must be with in
-              # x percent of the lhs sum where x is the tolerance value. so 10.0 for 10%.
-# TODO: Add comments with an example date tolerance.

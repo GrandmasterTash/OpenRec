@@ -9,7 +9,8 @@ networks:
 
 services:
   openrec:
-    # TODO: Build with context, etc...
+    build:
+      context: ../
     image: openrec:latest
     container_name: openrec
     user: "${UID}:${GID}"

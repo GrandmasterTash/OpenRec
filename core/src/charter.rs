@@ -93,7 +93,7 @@ pub enum Constraint {
     NetsToZero { column: String, lhs: String, rhs: String },
     NetsWithTolerance { column: String, lhs: String, rhs: String, tol_type: ToleranceType, tolerance: Decimal },
     DatesWithRange { column: String, lhs: String, rhs: String, days: Option<u16>, hours: Option<u16>, minutes: Option<u16>, seconds: Option<u16> },
-    Custom { script: String, fields: Option<Vec<String>> }
+    Custom { script: String, available_fields: Option<Vec<String>> }
 }
 
 impl Jetwash {

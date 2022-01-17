@@ -1,1 +1,3 @@
-# TODO: Add row filtering to Jetwash.
+# Filtering is on the feature backlog so the example is missing for now.
+# It will demonstrate row filtering in Jetwash to effectively screen-out unwanted data records altogether.
+# It will also demonstrate a new GROUP->FILTER filter lua clause in Celerity to exclude rows from being grouped at a particular phase.

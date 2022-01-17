@@ -1,46 +1,139 @@
+# This is the first example charter. It touches on the basics of the charter structure. As you read through
+# additional examples, more and more configuration options will be introduced. Finally the 'kitchen sink'
+# example will attempt to document every configuration option and Lua helper function available.
+
+# Note: I have a tendency to waffle-on in these comments, as a result the example configuration can often
+# feel disjointed and padded-out. Feel free to delete the comments and you'll see how concise the
+# configuration can really be!
+
+# Each charter should have it's own unique name to identify the systems it is reconciling.
 name: Basic Match
+
+# An optional description can be provided to document details of the charter. You can also use '#' at the
+# start of a line to added comments like these. For more details on YAML syntax see this tutorial
+# https://www.cloudbees.com/blog/yaml-tutorial-everything-you-need-get-started but if you get into problems
+# the best tip is 'check you indentation!'.
 description: |
   This charter demonstrates how to set-up a basic match between a single invoice and one or more payments
-  for that invoice. There no complexities in this match, a unique reference ('Ref') is present for both sets
-  of data.
+  for that invoice. There no complications with this match, a unique reference ('Ref') column is present for
+  both sets of data.
 
-  TODO: Document qualified field names and how data is loaded into memory.
+  These examples assume you have read the OpenRec concepts sections of the README.md file.
 
-# TODO: Document that all waiting files must have a particular file format.
-# TODO: Document that fields are case-sensitive.
+  For the sake of simplicity, these examples assume you are using the Steward module to initiate match jobs.
+  If not, then you must manually copy the files into the inbox folder and first run jetwash and then run
+  celerity your self.
+
+# You can use the version field however you wish - it is not referenced by any OpenRec components but intended
+# for you own versioning use.
 version: 1
+
+# The debug setting will dump the current virtual grid to disk in a debug folder during the matching job. This
+# allows you to experiment and see the results of your changes in the matching charter. Do not use this for
+# large datasets though and it should not be used in a production system.
+#
+# Note: This value does NOT effect the log level of the logs files produced by jetwash and celerity. To increase
+# the log file level, set the RUST_LOG environment variable from 'info' (the default) to 'debug' or 'trace'. Again
+# only use 'info' in a production system.
 debug: true
 
+# This section of the charter deals with the pre-processing of the csv - this stage of a match is all about
+# converting an incoming csv file to an internal csv representation of the data (yes there is variation even with
+# CSV files).
 jetwash:
   source_files:
+     # This section defines a regular express that will import files from the inbox folder call '01-invoices.csv'.
+     # An example file can be seen in the /examples/data/01-invoices.csv file.
    - pattern: ^01-invoices\.csv$
+     # jetwash will scan and determine the schema (column data-types) of all incoming files. However, sometimes
+     # files may have a column which is entirely empty, or date formats which are not understood. Also, some values
+     # may need to look-up other values in another CSV file. This is where those sort of rules can be defined.
      column_mappings:
+        # To use this column as a date rather than a string, we use the jetwash helper 'ymd' denoting the column
+        # contains year/month/day values. Various separators are allowed between the segments: '/', '\', '-', ' '.
       - ymd: Invoice Date
    - pattern: ^01-payments\.csv$
      column_mappings:
+        # As above, this date value is in the format day-month-year. Both of these date columns will be converted
+        # to an ISO8601 (RFC3339) date TIME format, i.e. -> 'YYYY-MM-DDTHH:mm:SS.sssZ'
       - dmy: Payment Date
 
+# This section of the charter deals with the sorting and grouping aspects of the job along with the transformations
+# in the data required to achieve this.
 matching:
-  # TODO: Explain how the pattern works and how it allows unmatched files as well.
+  # This section is similar to the jetwash version except now, all source files will be prefixed with a timestamp.
+  # So for example, if a file was delivered to jetwash called '01-invoices.csv' then it will be delivered to celerity
+  # with a filename '20220117_061400123_01-invoices.csv' (obviously the timestamp is relative to when the file was imported).
+  # This means the patterns used in the matching section must allow for the timestamp and so, rather than starting with
+  # a '^' now start with '.*'.
   source_files:
-     # Notice '.*' appears twice in both patterns? The first occurrence is because all files presented to matching have a timestamp prefix in their filename. So the above patterns match all dates. The second occurrence is because, when a match job results in un-matched data, the original file is given a new format. For example:
-    # 20220103_18400000_invoices.csv -> 20220103_18400000_invoices.unmatched.csv
-     # So the second occurrence of '.*' allows files with or without the '.unmatched' portion of the filename to be processed.
+     # Notice '.*' below appears twice in both patterns? The first occurrence is as discussed above, to cover the timestamp,
+     # the second occurrence is because, if a match job results in un-matched data, the original file is given a new filename.
+     # For example: '20220117_061400123_01-invoices.csv' would be called '20220117_061400123_01-invoices.unmatched.csv'
+     # so the second occurrence of '.*' allows files with or without the '.unmatched' portion of the filename to be processed.
+     # If you ever find your unmatched data is not being included in a match job, it will because this second '.*' has been
+     # left out.
     - pattern: .*01-invoices.*\.csv
+      # Where multiple types of files are being matched, (invoices and payments in this case) you should give each file a
+      # unique field prefix. This ensures that if columns from different files share the safe name, there will be no ambiguity
+      # in the matching rules.
+      # In this example the files /examples/data/01-invoices.csv and /example/data/01-payments.csv both have columns called
+      # 'Amount' and 'Ref'. So we prefix the invoice file with 'INV' and the payment file with 'PAY'. Now, for example, the
+      # amount column from the invoice file is called 'INV.Amount' and the same column from the payment file is called
+      # 'PAY.Amount'.
+      # Note: All field names used in the rules are case-sensitive!
       field_prefix: INV
+      # This pattern will match any payment files whether they are new or unmatched data.
     - pattern: .*01-payments.*\.csv
       field_prefix: PAY
+
+  # This section is a sequential list of transformations to make to the data. Before ultimately grouping the data and testing
+  # each group to see if each is a good match.
   instructions:
+      # An instruction to merge columns together forms a single new column taking values from the source columns
+      # (where the row has a non-blank value). All source columns must share the same data-type. If they don't
+      # then you can either use a project instruction to create a derived column with a new data-type (see next
+      # example for projected columns).
     - merge:
+        # Here we take the invoice Amount column and the payment amount column and produce a harmonized AMOUNT
+        # column, so every row should have a value in this column.
         columns: ['INV.Amount', 'PAY.Amount']
         into: AMOUNT
     - merge:
+        # Similarly, we take the unique Ref column from both types of record and create a single REF column, so
+        # every row should have a value in this column.
         columns: ['INV.Ref', 'PAY.Ref']
         into: REF
+      # Similar to an SQL GROUP BY this instruction will group the data by one or more columns.
     - group:
         by: ['REF']
+        # Once groups are formed, the match_when is used to perform a list of constraint rules on the data.
+        # If the data passes ALL the constraint rules defined here then it is consider a 'good match' and
+        # is released from the system (this means it is effectively removed). Each grouping is logged to a
+        # match report, but the data is effectively gone.
+        #
+        # Any groups which fail to pass every constraint rule are considered un-matched and their data is
+        # written to a new unmatched version of the original file. This data remains in the OpenRec system
+        # and is treated like new files of data when a subsequent match job occurs. A later example will
+        # demonstrate this in more detail.
         match_when:
+            # We have a single constraint for this group. That-is, every invoice amount in the group must
+            # exactly add-up to the sum of all the payments for those invoices. We do this with the
+            # nets_to_zero rule which accepts the column to NET and a filter to determine which records in the
+            # group are on the left hand side of the equation and which records are on the right hand side.
+            #
+            # The exact calculate used when netting-to-zero is: -
+            #   ( sum(lhs.AMOUNT).abs() - sum(rhs.AMOUNT).abs() ).abs() == Zero
+            #
+            # In-addition, there must be at least ONE lhs record and at least ONE rhs record. More specific
+            # constraints can be used with Lua scripting (shown in later examples).
           - nets_to_zero:
               column: AMOUNT
+              # In this example, we can use the field_prefix we assigned earlier to each data file to determine
+              # if it is an invoice or a payment as this prefix is populated into a meta-data field on each
+              # record. In this case a field called 'META.prefix'. Here you can see we are using Lua script to
+              # write these lhs and rhs filters. The Lua script has full access to any field on a record which
+              # can be referenced in the format 'record["<field_name>"]'. We'll look at more Lua examples
+              # shortly.
               lhs: record["META.prefix"] == "PAY"
               rhs: record["META.prefix"] == "INV"
