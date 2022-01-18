@@ -1,4 +1,4 @@
-# Unknown Data Types
+# Unknown Datatypes
 
 There are two features of OpenRec which, together, can lead to a scenario where a match job fails with a validation error and the root cause is due to an unknown data type.
 
@@ -8,7 +8,7 @@ However, when an inbound file contains an empty column, Jetwash cannot infer the
 
 The second feature lies within Celerity. Celerity mandates that every file loaded from a given `source_files->pattern` (config in the charter) must have the same schema - this is to ensure the virtual grid is consistent from row to row.
 
-### Side-Effects
+## Side-Effects
 
 Let's draw-up a scenario where these two features, together, cause us an unexpected problem. Imagine the following two files are loaded and put through a match job.
 
@@ -80,13 +80,23 @@ and the new data file: -
 "0003","INV0003","2021-11-28","550.00",""
 ```
 
-Which will fail as the 'Thing' column has a data-type mismatch.
+Which will fail as the 'Thing' column has a data-type mismatch (in one file it's an integer and in another it's a string).
 
-### Problem Prevention
+## Problem Prevention
 
 Let's first look at how this problem can be prevented from occurring.
 
 If you can identify columns of this nature at the outset (i.e. the inbound data may or may not be present), then you can set-up a column mapping in Jetwash to force the data-type of the resultant column.
+
+```yaml
+jetwash:
+  source_files:
+   - pattern: ^01-invoices.*\.csv$
+     column_mappings:
+      - as_integer: Thing
+```
+
+There are also `as_datetime`, `as_decimal` and `as_boolean` equivalents - for reference, if the above was to be done explicitly in Lua script it might look like this: -
 
 ```yaml
 jetwash:
@@ -104,20 +114,9 @@ jetwash:
             end
 ```
 
-This is a rather long-winded way of forcing the column to an integer using lua. So there's a better, more concise option: -
+Now, the column will always be presented to Celerity as an IN(teger) - although the match job will still fail if this is not possible (due to an incompatible value).
 
-```yaml
-jetwash:
-  source_files:
-   - pattern: ^01-invoices.*\.csv$
-     column_mappings:
-      - as_integer: Thing
-```
-
-Now, the column will always be presented to Celerity as an IN(teger) and the match job will fail if this is not possible (due
-to an incompatible value).
-
-### Problem Resolution - Back-out and Reloading
+## Problem Resolution - Back-out and Reloading
 
 Not let's look at what to do, if we get into this situation - as we didn't anticipate it. If the above prevention was not in place, then we would have a match job that will always error because the data files are sat in the matching folder.
 
@@ -138,6 +137,6 @@ An example changeset might look like this: -
 ]
 ```
 
-Running a match job with a changeset in the inbox, will always apply the changeset to the data before commencing the match job. So in this case all the records from the offending file will be ignored.
+Running a match job with a changeset in the inbox, will always apply the changeset to the data **before** commencing the match job. So in this case all the records from the offending file will be ignored.
 
-Now you can amend the charter with the above solution (for example) and load the data file once again allowing the schemas to match.
+Now you would amend the charter with the above Jetwash solution (for example) and (re)load the data file once again allowing the schemas to match and the rest of the job to complete without error.

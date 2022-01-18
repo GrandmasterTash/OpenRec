@@ -42,6 +42,8 @@ If you're interested in discovering more, then you should take a look at the fol
 [OpenRec Examples](docs/examples.md)<br>
 [Getting Started](docs/getting_started.md)<br>
 
+Finally there's a [useful page](docs/problems.md) which discusses a possible failure scenario and details how to recover from it - this would be useful information to have on hand.
+
 ## Feature Road Map
 
 The following is on my wishlist of things to tackle: -
