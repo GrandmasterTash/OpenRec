@@ -98,7 +98,6 @@ impl rlua::UserData for LuaDecimal {
 fn lookup(what_field: &str, file_name: &str, where_field: &str, is: &str, lookup_path: &str)
     -> Result<String, csv::Error> {
 
-    // TODO: Perf. Once working consider creating a reader cache, with last 5 entries cached in memory - consider function memoization.
     let path = Path::new(lookup_path).join(file_name);
     if !path.exists() {
         panic!("Lookup file {} does not exist", path.to_string_lossy());

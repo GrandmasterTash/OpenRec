@@ -14,6 +14,7 @@ use anyhow::{Result, Context as ErrContext};
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}, sync::atomic::{AtomicUsize, Ordering}};
 use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context, blue, formatted_duration_rate};
 
+// BUG: Docs cover this but it's not implemented, as_integer, as_boolean, as_datetime jetwash mappings.
 // TODO: If charter doesn't exist - log the path that's failing.
 // TODO: Logging - log files moved into waiting - reduce analyser spam
 // TODO: Ensure the output file ends in .csv (even if original didn't).

@@ -22,6 +22,15 @@ jetwash:
      new_columns:
        - column: FXRate
          as_a: Decimal
+         # Here we prepend the payment's date value to the GBP FX rate file. i.e. there is a daily GBP dump
+         # of fx rates in the lookups folder. We then retrieve the FXRate column value where the FROM_CUR
+         # column in the lookup file equals the currency on the current record.
+         # Finally, was convert the string result to a decimal and add the value to a new FXRate column.
+         # The syntax for the lookup Lua function is therefore: -
+         #  <string> = lookup(<get column: String>, <filename: String>, <where column: String>, <equals: String>)
+         #
+         # Note: If no lookup is found a nil value is returned - this example doesn't demonstrate this being handled.
+         # Also Note: If the lookup file is not found, an error occurs and the job fails.
          from: |
            decimal(lookup("FXRate", record["Date"].."_GBP_FXRates.csv", "FROM_CUR", record["Currency"]))
 

@@ -25,6 +25,7 @@ use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialStr
 pub enum Change {
     UpdateFields { updates: Vec<FieldChange>, lua_filter: String },
     IgnoreRecords { lua_filter: String },
+    IgnoreFile { filename: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -109,6 +110,8 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
 
         ctx.lua().context(|lua_ctx| {
             init_context(&lua_ctx, ctx.charter().global_lua(), &folders::lookups(ctx))?;
+
+            // TODO: Apply IgnoreFiles first.
 
             // Apply each changeset in order to each record.
             for mut record in grid.iter(ctx) {

@@ -30,6 +30,24 @@ description: |
 
   Also, all records processed by Jetwash are given a unique identifier (UUID) in a column called OpenRecId. If the source
   data has no unique identifiers, this OpenRecId field can be referenced in a changeset to modify a specific record.
+
+  There is one final type of changeset not shown in the example file. It allows you to ignore all records from a specific
+  file, for example: -
+
+  [
+      {
+          "id": "f3377a6c-6324-11ec-bc4d-00155ddc3e05",
+          "change": {
+              "type": "IgnoreFile",
+              "filename": "20220118_084109873_01-invoices-b.csv"
+          },
+          "timestamp": "2021-12-20T06:18:00.000Z"
+      }
+  ]
+
+  This can be useful if an entire file is causing a matching issue - a changeset like the above effectively
+  ignores the file so steps can be taken to resolve the issue and then the file can be re-submitted.
+
 version: 1
 debug: true
 

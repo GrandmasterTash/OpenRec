@@ -53,7 +53,7 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     let start = Instant::now();
 
     let rnd_seed = options.rnd_seed.unwrap_or(1234567890u64);
-    let mut rng = StdRng::seed_from_u64(rnd_seed); // TODO: Mung next 3 lines into Options somehow.
+    let mut rng = StdRng::seed_from_u64(rnd_seed);
     let inv_schema = column_schema(&options.inv_schema, &options.inv_columns, &mut rng);
     let pay_schema = column_schema(&options.pay_schema, &options.pay_columns, &mut rng);
     let rec_schema = column_schema(&options.rec_schema, &options.rec_columns, &mut rng);
@@ -102,7 +102,6 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
         invoices +=1;
 
         for payment in group.payments() {
-            // TODO: Split payments into 2 files.
             pay_wtr.write_record(payment)?;
             payments += 1
         }
