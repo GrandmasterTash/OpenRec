@@ -39,7 +39,6 @@ pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>, lookup
         /* file_name:  */ String,
         /* where_field: */ String,
         /* where_value: */ String)| {
-        // Ok(lookup(&search.0, &search.1, &search.2, &search.3, lookup_path.clone())?)
         Ok(lookup(&search.0, &search.1, &search.2, &search.3, &lookup_path)
             .map_err(|err| rlua::Error::external(format!("{}", err)))?)
     })?;
@@ -98,8 +97,6 @@ impl rlua::UserData for LuaDecimal {
 ///
 fn lookup(what_field: &str, file_name: &str, where_field: &str, is: &str, lookup_path: &str)
     -> Result<String, csv::Error> {
-
-    // TODO: Prohibit lookup path escapes....
 
     // TODO: Perf. Once working consider creating a reader cache, with last 5 entries cached in memory - consider function memoization.
     let path = Path::new(lookup_path).join(file_name);

@@ -20,10 +20,9 @@ use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate, lua::
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
-// BUG: Example 5 - 2nd stage derived data is not aligned with the real data (see debug folder).
 // BUG: Example 5 can 'work' if grouping by 'Ref' not 'REF' - but ref doesn't exist so it's just 1 bug group!
 // BUG: Derived data not in the debug output during the derived phase - but it IS in the first grouping phase!
-// TODO: Option in charter (effects celerity and jetwash) to NOT archive data.
+// TODO: Option in charter (effects celerity and jetwash) to NOT archive data. Enable in the big data examples
 // TODO: Change generator to group by ref not date. It's not a good example to set....
 // TODO: Disable colors from logs and jetwash. Investigate if this is ansi_term - maybe termion is okay?
 // TODO: Flesh-out examples.

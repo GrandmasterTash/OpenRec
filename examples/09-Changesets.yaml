@@ -1,0 +1,65 @@
+name: ChangeSets
+description: |
+  This charter demonstrates how unmatched data can be modified via audited change instructions called changesets.
+
+  Changesets are used to modify the fields of one or more records to correct mistakes in front-office systems allowing
+  data to reconcile. They can also be used to delete (or 'ignore') records which may never receive a matching set of
+  data to reconcile with.
+
+  Start by only copying these files into the inbox folder: -
+    09-invoices.csv
+    09-payments.csv
+
+  The data contains two invoices and two payments (one with a data-entry mistake) - both payments are for the first
+  invoice only. As a result, when a match job is run, none of the above data will match. In-fact, invoice 'INV0002' was
+  sent by mistake so no payments will be sent. In addition, payment P1 has a decimal point in the wrong place.
+
+  After the job has run but failed, add this changeset file (found in the examples/data folder) to the inbox folder: -
+    20220118_041500000_changeset.json
+
+  Note: Changesets must adhere to this filename format (i.e. have a timestamp prefix YYYYMMDD_HHmmSSsss_changeset.json) -
+  this ensures they are run sequentially against any new or unmatched data (as-in, each changeset file is executed in
+  chronological order).
+
+  Running a subsequent match job will apply the changeset to any new or unmatched data present for the control. In
+  this case, the changeset contains an instruction to ignore INV002 effectively releasing it from the system and a second
+  instruction to modify the amount of payment P1 to correct the decimal point - resulting in INV001 matching with both
+  it's payments.
+
+  Note: Changesets are run after Jetwash but before any matching instructions are processed.
+
+  Also, all records processed by Jetwash are given a unique identifier (UUID) in a column called OpenRecId. If the source
+  data has no unique identifiers, this OpenRecId field can be referenced in a changeset to modify a specific record.
+version: 1
+debug: true
+
+jetwash:
+  source_files:
+   - pattern: ^09-invoices\.csv$
+     column_mappings:
+      - ymd: Invoice Date
+   - pattern: ^09-payments\.csv$
+     column_mappings:
+      - dmy: Payment Date
+
+matching:
+  source_files:
+    - pattern: .*09-invoices.*\.csv
+      field_prefix: INV
+    - pattern: .*09-payments.*\.csv
+      field_prefix: PAY
+
+  instructions:
+    - merge:
+        columns: ['INV.Amount', 'PAY.Amount']
+        into: AMOUNT
+    - merge:
+        columns: ['INV.Ref', 'PAY.Ref']
+        into: REF
+    - group:
+        by: ['REF']
+        match_when:
+          - nets_to_zero:
+              column: AMOUNT
+              lhs: record["META.prefix"] == "PAY"
+              rhs: record["META.prefix"] == "INV"

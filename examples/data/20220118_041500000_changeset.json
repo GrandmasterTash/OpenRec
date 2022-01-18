@@ -1,0 +1,19 @@
+[
+    {
+        "id": "53c4674e-60a7-11ec-a5fb-00155ddc3c4d",
+        "change": {
+            "type": "UpdateFields",
+            "updates": [ { "field": "PAY.Amount", "value": "50.99" } ],
+            "lua_filter": "record[\"PAY.PaymentId\"] == \"P1\" and record[\"META.prefix\"] == \"PAY\""
+        },
+        "timestamp": "2021-12-20T06:18:00.000Z"
+    },
+    {
+        "id": "f3377a6c-6324-11ec-bc4d-00155ddc3e05",
+        "change": {
+            "type": "IgnoreRecords",
+            "lua_filter": "record[\"INV.Invoice No\"] == 2"
+        },
+        "timestamp": "2021-12-20T06:18:00.000Z"
+    }
+]

@@ -1,5 +1,6 @@
 use serde_json::json;
 use crate::common::{self, FIXED_JOB_ID};
+use fs_extra::{copy_items, dir::CopyOptions};
 
 #[test]
 fn test_01_basic_match_from_examples() {
@@ -504,6 +505,283 @@ fn test_08_advanced_lua_from_examples() {
             "groups": [
                 [[0,3],[1,3],[1,5]],
                 [[0,4],[1,4]]]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
+        }
+    ]));
+}
+
+#[test]
+fn test_09_changesets_from_examples() {
+
+    let charter = common::example_charter("09-Changesets.yaml");
+    let data_files = common::example_data_files(vec!("09-invoices.csv", "09-payments.csv"));
+
+    // Copy the test data files into a temporary working folder.
+    let base_dir = common::init_test_from_examples("tests/examples/test_09_changesets_from_examples/", &data_files);
+    common::assert_n_files_in(2, "inbox", &base_dir);
+
+    // Run the data-import.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
+
+    // Run the match.
+    celerity::run_charter(&charter, &base_dir).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (2, "unmatched"),
+        (1, "matched")));
+
+    // Check the output files.
+    let matched = common::get_match_job_file(&base_dir);
+
+    // Check the matched file contains the correct groupings.
+    common::assert_matched_contents(matched, json!(
+    [
+        {
+            "charter": {
+                "name": "ChangeSets",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [
+                "20211201_053700000_09-invoices.csv",
+                "20211201_053700000_09-payments.csv" ]
+        },
+        {
+            "groups": []
+        },
+        {
+          "changesets": [],
+          "matched_groups": 0,
+          "matched_records": 0,
+          "unmatched": [
+            {
+               "file": "20211201_053700000_09-invoices.unmatched.csv",
+               "rows": 2
+            },
+            {
+               "file": "20211201_053700000_09-payments.unmatched.csv",
+               "rows": 2
+            }
+          ],
+          "unmatched_records": 4
+        }
+    ]));
+
+    // Now copy the changeset in and run the match charter again.
+    common::copy_example_data_file("20220118_041500000_changeset.json", &base_dir);
+    common::assert_files_in_folders(&base_dir, vec!(
+        (1, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (2, "unmatched"),
+        (1, "matched")));
+
+     // Run the data-import.
+     jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+     // Check the files have been processed into the correct folders.
+     common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (1, "waiting"),
+        (3, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (2, "unmatched"),
+        (1, "matched")));
+
+     // Run the match.
+     celerity::run_charter(&charter, &base_dir).unwrap();
+
+     // The changeset should be applied and all data unmatched
+     common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (3, "archive/jetwash"),
+        (3, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched"))); // Would be 2 in real life but tests overwrite last match job file.
+
+    // Check the matched file contains the correct groupings.
+    let matched = common::get_match_job_file(&base_dir);
+    common::assert_matched_contents(matched, json!(
+        [
+            {
+                "charter": {
+                    "name": "ChangeSets",
+                    "version": 1,
+                    "file": charter.canonicalize().unwrap().to_string_lossy()
+                },
+                "job_id": FIXED_JOB_ID,
+                "files": [
+                    "20211201_053700000_09-invoices.unmatched.csv",
+                    "20211201_053700000_09-payments.unmatched.csv" ]
+            },
+            {
+                "groups": []
+            },
+            {
+              "changesets": [
+                {
+                  "file": "20220118_041500000_changeset.json",
+                  "ignored": 1,
+                  "updated": 1
+                }
+              ],
+              "matched_groups": 1,
+              "matched_records": 3,
+              "unmatched": [],
+              "unmatched_records": 0
+            }
+        ]));
+}
+
+#[test]
+fn test_11_group_by_dates_from_examples() {
+
+    let charter = common::example_charter("11-Group-By-Dates.yaml");
+    let data_files = common::example_data_files(vec!("11-invoices.csv", "11-payments.csv"));
+
+    // Copy the test data files into a temporary working folder.
+    let base_dir = common::init_test_from_examples("tests/examples/test_11_group_by_dates_from_examples/", &data_files);
+    common::assert_n_files_in(2, "inbox", &base_dir);
+
+    // Run the data-import.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
+
+    // Run the match.
+    celerity::run_charter(&charter, &base_dir).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
+
+    // Check the output files.
+    let matched = common::get_match_job_file(&base_dir);
+
+    // Check the matched file contains the correct groupings.
+    common::assert_matched_contents(matched, json!(
+    [
+        {
+            "charter": {
+                "name": "Grouping By Dates",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [
+                "20211201_053700000_11-invoices.csv",
+                "20211201_053700000_11-payments.csv"
+            ]
+        },
+        {
+            "groups": [
+                [[0,3], [1,3]],
+                [[0,4], [1,4], [1,5]],
+                [[0,5], [1,6]]
+            ]
+        },
+        {
+          "changesets": [],
+          "unmatched": []
+        }
+    ]));
+}
+
+#[test]
+fn test_12_fxrate_lookups_from_examples() {
+
+    let charter = common::example_charter("12-FXRate-Lookups.yaml");
+    let data_files = common::example_data_files(vec!("12-invoices.csv", "12-payments.csv"));
+
+    // Copy the test data files into a temporary working folder.
+    let base_dir = common::init_test_from_examples("tests/examples/test_12_fxrate_lookups_from_examples/", &data_files);
+    common::assert_n_files_in(2, "inbox", &base_dir);
+
+    // Copy the GBP FX rate files into the lookups folder.
+    let lookups = base_dir.join("lookups/");
+    std::fs::create_dir_all(&lookups).expect("Cannot create a lookups folder");
+    let lookup_files = common::example_data_files(vec!(
+        "2021-10-21_GBP_FXRates.csv",
+        "2021-10-22_GBP_FXRates.csv",
+        "2021-11-25_GBP_FXRates.csv",
+        "2022-03-20_GBP_FXRates.csv"));
+    copy_items(&lookup_files, &lookups, &CopyOptions::new()).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (2, "inbox"),
+        (4, "lookups")));
+
+    // Run the data-import.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash")));
+
+    // Run the match.
+    celerity::run_charter(&charter, &base_dir).unwrap();
+
+    // Check the files have been processed into the correct folders.
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched")));
+
+    // Check the output files.
+    let matched = common::get_match_job_file(&base_dir);
+
+    // Check the matched file contains the correct groupings.
+    common::assert_matched_contents(matched, json!(
+    [
+        {
+            "charter": {
+                "name": "Exchange Rate Lookup",
+                "version": 1,
+                "file": charter.canonicalize().unwrap().to_string_lossy()
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [
+                "20211201_053700000_12-invoices.csv",
+                "20211201_053700000_12-payments.csv"
+            ]
+        },
+        {
+            "groups": [
+                [[0,3], [1,3]],
+                [[0,4], [1,4], [1,5]],
+                [[0,5], [1,6]]
+            ]
         },
         {
           "changesets": [],

@@ -3,7 +3,7 @@ description: |
   This charter demonstrates what occurs when not all data is immediately matched.
 
   Start by only copying these files into the inbox folder: -
-    07-invoices
+    07-invoices.csv
     07-payments-a.csv
 
   The invoice file contains two invoices, the payment file contains a full payment for one invoice

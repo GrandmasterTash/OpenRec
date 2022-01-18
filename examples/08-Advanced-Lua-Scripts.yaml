@@ -166,7 +166,8 @@ matching:
               # This is an example of writing a nets-to-zero constraint manually in Lua script.
               script: |
                 -- sum is a function that takes 2 arguments. The first is the name of a column on the records.
-                -- the second is a filter to apply to the records in the group.
+                -- the second is a filter to apply to the records in the group. If you wish to sum an integer column then
+                -- use the sum_int function instead.
                 local inv_sum = sum("AMOUNT", invoices)
                 local pay_sum = sum("AMOUNT", payments)
 

@@ -1,0 +1,3 @@
+"FROM_CUR","FXRate","Comment"
+"EUR","0.86","not used"
+"USD","0.715","Payment #4 should use"

@@ -6,46 +6,18 @@ use std::{io::BufReader, fs::File, collections::HashMap, time::{Duration, Instan
 use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialString}, lua, model::{grid::Grid, datafile::DataFile, record::Record, schema::GridSchema}, formatted_duration_rate, blue, utils::{self, csv::{CsvWriters, CsvWriter}}};
 
 /*
-    TODO: Put this in a readme.
-    
-    Changeset files are instructions to modified unmatched or yet-to-be-matched data.
-    The following shows how the flow of files through thr folder 'pipe-line' functions when a changeset is involved.
-    Note: Only the date portion of the filename timestamp is shown for brevity.
-
-    --------------------------------------------- BEFORE JOB ------------------------------------------------------------------------------
-    WAITING                   UNMATCHED                      MATCHING                              MATCHED                 ARCHIVE
-    20210110_inv.csv          20210109_inv.unmatched.csv                                           20210109_matched.json   20210109_inv.csv
-    20210111_changeset.json
-    --------------------------------------------- GRID DATA SOURCED -----------------------------------------------------------------------
-    WAITING                   UNMATCHED                      MATCHING                              MATCHED                 ARCHIVE
-                                                             20210109_inv.unmatched.csv            20210109_matched.json   20210109_inv.csv
-                                                             20210110_inv.csv
-                                                             20210111_changeset.json
-    ------------------------------------ CHANGSETS APPLIED (affecting both data files) ----------------------------------------------------
-    WAITING                   UNMATCHED                      MATCHING                              MATCHED                 ARCHIVE
-                                                             20210109_inv.unmatched.csv            20210109_matched.json   20210109_inv.csv
-                                                             20210110_inv.csv.                                             20210110_inv.csv
-                                                             20210111_changeset.json
-                                                             20210109_inv.unmatched.csv.pre_modified
-    ------------------------------------ MATCH COMPLETE (unmatch data remains from both file) ---------------------------------------------
-    WAITING                   UNMATCHED                              MATCHING                      MATCHED                 ARCHIVE
-                              20210109_inv.unmatched.csv                                           20210109_matched.json   20210109_inv.csv
-                              20210110_inv.unmatched.csv                                           20210111_matched.json   20210110_inv.csv
-                                                                                                   20210111_changeset.json 20210110_inv.csv.pre_modified 
-
     Whilst changesets are being applied, new data files are written into the matching folder with the .modifying extension. These files
     contain the original data with any changeset modifications applied. Note: If a record is ignored by a changeset, it is absent from the
     new file.
 
-    At the end of ChangeSet processing, the original unmatched files are given a _pre_modified suffix and for data which is new for this
-    match job (i.e. it arrived in the waiting folder) the original file is immediately moved to the archive folder.
+    At the end of ChangeSet processing, the original file is immediately moved to the archive folder.
 
-    Next the .modifying suffix is removed from the new copies of the data and matching continues by re-sourcing the grid from the latest set
-    of files in the matching folder.
+    Next the .modifying suffix is removed from the new copies of the data files and matching continues by re-sourcing the grid from the
+    latest set of files in the matching folder.
 
-    At the end of the job, _pre_modified files (i.e. the unmatched files) are dropped and data which was new at the start of the job will be
-    archived as normal, except, because the filename already exists, the modified data files are archived and given a new extension of
-    '.modified.csv' to avoid a collision with the unmodified version of the datafile.
+    At the end of the job, modified data files will be archived as normal (note: unmatched files are never archived), except, because the
+    filename already exists now in the archive, the modified data files are archived and given a unique numeric suffix to avoid a
+    collision with the unmodified version of the original datafile.
 */
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,12 +35,9 @@ pub struct FieldChange {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ChangeSet {
-    id: uuid::Uuid,
-    change: Change,
-    source: Option<String>,
-    comment: Option<String>,
-    approved_by: Option<Vec<String>>,
-    timestamp: DateTime<Utc>,
+    id: uuid::Uuid,                     // A unique UUID for the changeset. May be used in logs.
+    change: Change,                     // The change to apply.
+    timestamp: DateTime<Utc>,           // The time this change was created.
 
     #[serde(skip)]
     effected: usize,
