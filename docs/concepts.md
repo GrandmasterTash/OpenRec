@@ -22,16 +22,16 @@ The charters can be registered in a central registry yaml file - this file is us
 OpenRec is composed of a number of sub-modules.
 - **Steward** - Steward is the OpenRec orchestration application. Using the register, Steward will monitor control inboxes for new data and initiate the other OpenRec components to perform a match job. Steward is also responsible for ensuring only one match job per control is invoked at any one time and that metrics are exposed to a [Prometheus](https://prometheus.io/) server (if configured - via a [Pushgateway](https://github.com/prometheus/pushgateway)).
 - **Jetwash** - Jetwash is component which pre-processes and cleans the inbox data, trimming whitespace, converting dates to ISO8601 format, etc. As well as adding a schema row and delivers well-formatted data to Celerity.
-- **Celerity** - Celerity is the matching engine ingests data from Jetwash and combines it with any previous unmatched data to groups it and evaluate it against defined matching rules. Matched data is 'released' leaving only un-matched data behind.
+- **Celerity** - Celerity is the matching engine which ingests data from Jetwash and combines it with any previously unmatched data to group it and evaluate it against defined matching rules. Matched data is 'released' leaving only un-matched data behind.
 
-So the sequence of events is broadly, new data arrives, Steward triggers Jetwash, then triggers Celerity.
+So the sequence of events is broadly, new data arrives in the inbox, Steward triggers Jetwash, Jetwash then triggers Celerity finally Steward exposes the unmatched data in the outbox.
 
 <img src="modules.png" style="padding-right: 5px" width="400px"/>
 
 ## Folder Structure
 [top](#openrec-concepts)
 
-Each control will operate within it's own folder structure. A controls folder structure should be kept separate from any other controls structure. A typical folder structure looks as follows: -
+Each control will operate within it's own folder structure. A control's folder structure should be kept separate from any other controls structure. A typical folder structure looks as follows: -
 
 ```
   .
@@ -54,7 +54,7 @@ Each control will operate within it's own folder structure. A controls folder st
   .   .
 ```
 
-***Important!*** Files written into the inbox should have a .inprogress suffix. After the file is written, the file should be renamed to remove this suffix. This ensures larger files are not corrupted as OpenRec will begin processing the file before all the data is written.
+***Important!*** Files written into the inbox should have a `.inprogress` suffix. After the file is written, the file should be renamed to remove this suffix. This ensures larger files are not corrupted as OpenRec will begin processing the file before all the data is written.
 
 ## File Format
 [top](#openrec-concepts)

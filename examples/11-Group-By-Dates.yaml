@@ -37,10 +37,12 @@ matching:
     - project:
         column: FLUFFY_DATE
         as_a: Datetime
+        # Truncates every datetime to midnight so the time portion is the same value for every record on the same day.
         from: |
           midnight(record["DATE"])
 
     - group:
+        # Now grouping by the truncated date means we can group records on the same day together.
         by: ['FLUFFY_DATE']
         match_when:
           - nets_to_zero:
