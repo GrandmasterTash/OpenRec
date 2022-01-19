@@ -25,7 +25,7 @@ use crate::{Context, error::{MatcherError, here}, folders::{self, ToCanoncialStr
 pub enum Change {
     UpdateFields { updates: Vec<FieldChange>, lua_filter: String },
     IgnoreRecords { lua_filter: String },
-    IgnoreFile { filename: String },
+    DeleteFile { filename: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -51,6 +51,10 @@ pub struct ChangeSet {
 }
 
 impl ChangeSet {
+    pub fn id(&self) -> uuid::Uuid {
+        self.id
+    }
+
     pub fn change(&self) -> &Change {
         &self.change
     }
@@ -85,33 +89,35 @@ struct EvalContext {
 ///
 /// Apply any ChangeSets to the csv data now.
 ///
-pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), MatcherError> {
+pub fn apply(ctx: &Context) -> Result<Vec<ChangeSet>, MatcherError> {
 
     // Load any changesets for the data.
     let mut changesets = load_changesets(ctx)?;
-    let mut any_applied = false;
 
     if !changesets.is_empty() {
+        // Apply DeleteFiles first.
+        delete_files_now(ctx, &changesets)?;
+
+        let mut grid = Grid::load(ctx)?;
+
         // Clone the grid schema - some lower level fns need mut accessor, mut grid and an immutable schema.
         let schema = grid.schema().clone();
 
         // Create a DataAccessor to read real CSV data only (derived data wont exist yet) and to write any
         // required modified data out to new files.
-        let mut writers = writers(grid)?;
+        let mut writers = writers(&mut grid)?;
 
         // Debug the grid if we have any changesets - before they are evaluated.
         grid.debug_grid(ctx, 1);
 
         // Track how many changes are made to each file.
-        let mut metrics = init_metrics(grid);
+        let mut metrics = init_metrics(&mut grid);
 
         // Track the record and changeset being processed.
         let mut eval_ctx = EvalContext { change_idx: 0, row: 0, file: 0 };
 
         ctx.lua().context(|lua_ctx| {
             init_context(&lua_ctx, ctx.charter().global_lua(), &folders::lookups(ctx))?;
-
-            // TODO: Apply IgnoreFiles first.
 
             // Apply each changeset in order to each record.
             for mut record in grid.iter(ctx) {
@@ -129,29 +135,28 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
                     let started = Instant::now();
                     eval_ctx.change_idx = c_idx;
 
-                    let lua_filter = match changeset.change() {
-                        Change::UpdateFields { updates: _, lua_filter } => lua_filter,
-                        Change::IgnoreRecords { lua_filter }            => lua_filter,
-                    };
-
-                    if record_effected(&record, lua_filter, &lua_ctx, &schema)? {
-                        match changeset.change() {
-                            Change::UpdateFields { updates, .. } => {
-                                // Modify the record in a buffer.
+                    match changeset.change() {
+                        Change::UpdateFields { updates, lua_filter } => {
+                            if record_effected(&record, lua_filter, &lua_ctx, &schema)? {
                                 for update in updates {
-                                    record.update(&update.field, &update.value)?;
+                                    record.update(&update.field, &update.value)?; // Modify the record in a buffer.
                                 }
                                 metrics.get_mut(data_file).expect("No metrics for record").modified += 1;
-                            },
-                            Change::IgnoreRecords { .. } => {
+                                changeset.effected += 1;
+                                changeset.elapsed += started.elapsed();
+                            }
+
+                        },
+                        Change::IgnoreRecords { lua_filter } => {
+                            if record_effected(&record, lua_filter, &lua_ctx, &schema)? {
                                 // Stops the modified record being written and index is removed from memory.
                                 deleted = true;
                                 metrics.get_mut(data_file).expect("No metrics for record").ignored += 1;
-                            },
-                        }
-
-                        changeset.effected += 1;
-                        changeset.elapsed += started.elapsed();
+                                changeset.effected += 1;
+                                changeset.elapsed += started.elapsed();
+                            }
+                        },
+                        Change::DeleteFile { .. } => {}, // Already applied to the files.
                     }
                 }
 
@@ -172,7 +177,7 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
         })?;
 
         // Finalise the modifying files, renaming and archiving things as required.
-        any_applied = finalise_files(ctx, &metrics, grid)?;
+        finalise_files(ctx, &metrics, &mut grid)?;
 
         for changeset in &changesets {
             let (duration, rate) = formatted_duration_rate(grid.len(), changeset.elapsed);
@@ -180,7 +185,22 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
         }
     }
 
-    Ok((any_applied, changesets))
+    Ok(changesets)
+}
+
+///
+/// Apply any ignore file changesets now to immediately archive those files (or delete them if unmatched).
+///
+fn delete_files_now(ctx: &Context, changesets: &[ChangeSet]) -> Result<(), MatcherError> {
+    for changeset in changesets {
+        match changeset.change() {
+            Change::DeleteFile { filename }=> {
+                folders::delete_matching_file_if_exist(ctx, &filename, changeset.id());
+            },
+            _ => {},
+        }
+    }
+    Ok(())
 }
 
 ///
@@ -192,14 +212,10 @@ pub fn apply(ctx: &Context, grid: &mut Grid) -> Result<(bool, Vec<ChangeSet>), M
 ///
 /// Report on any changes made to the data.
 ///
-fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>, grid: &mut Grid) -> Result<bool, MatcherError> {
-
-    let mut any_applied = false;
+fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>, grid: &mut Grid) -> Result<(), MatcherError> {
 
     for (data_file, metric) in metrics.iter() {
         if metric.modified > 0 || metric.ignored > 0 {
-            any_applied = true;
-
             if !is_unmatched(data_file) {
                 // For new data files, we need to archive the original file immediately. Find the mutable grid instance
                 // so we can archive and set the archived filename.
@@ -231,7 +247,7 @@ fn finalise_files(ctx: &Context, metrics: &HashMap<DataFile, Metrics>, grid: &mu
         folders::progress_to_archive_now(ctx, file)?;
     }
 
-    Ok(any_applied)
+    Ok(())
 }
 
 ///

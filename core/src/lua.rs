@@ -140,3 +140,32 @@ fn lookup(what_field: &str, file_name: &str, where_field: &str, is: &str, lookup
 
     return Ok(String::default())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decimal_from_integer_conversion() {
+        let lua = rlua::Lua::new();
+
+        lua.context(|lua_ctx| {
+            init_context(&lua_ctx, &None, Path::new("/tmp")).expect("init_context failed");
+            let ld: LuaDecimal = lua_ctx.load("decimal(123)").eval().expect("lua failed");
+            assert_eq!(ld.0, Decimal::from_i64(123).unwrap());
+        });
+    }
+
+    #[test]
+    fn test_decimal_from_string_conversion() {
+        let lua = rlua::Lua::new();
+
+        lua.context(|lua_ctx| {
+            init_context(&lua_ctx, &None, Path::new("/tmp")).expect("init_context failed");
+            let ld: LuaDecimal = lua_ctx.load("decimal(\"1234\")").eval().expect("lua failed");
+            assert_eq!(ld.0, Decimal::from_i64(1234).unwrap());
+        });
+    }
+
+}

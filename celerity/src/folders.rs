@@ -218,6 +218,17 @@ pub fn rollback_any_incomplete(ctx: &Context) -> Result<(), MatcherError> {
 }
 
 ///
+/// Delete the file from the matching folder (if it exists).
+///
+pub fn delete_matching_file_if_exist(ctx: &Context, filename: &str, changeset_id: uuid::Uuid) {
+    let p = matching(ctx).join(filename);
+    if p.exists() {
+        log::info!("Changeset {} deleting {}", changeset_id, p.to_canoncial_string());
+        let _ignored = remove_file(p);
+    }
+}
+
+///
 /// Rename a file ending in .inprogress to remove the suffix.
 ///
 pub fn complete_file(path: &str) -> Result<PathBuf, MatcherError> {

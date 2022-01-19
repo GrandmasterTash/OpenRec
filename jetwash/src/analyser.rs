@@ -202,7 +202,7 @@ fn is_more_general(type_1: DataType, type_2: DataType) -> bool {
 }
 
 
-fn is_type(value: &str, data_type: DataType) -> bool {
+pub fn is_type(value: &str, data_type: DataType) -> bool {
 	let result = match data_type {
 		DataType::Unknown => false, // This won't be called.
 		DataType::Boolean => is_boolean(value),

@@ -8,7 +8,7 @@ use crate::{data_type::DataType, error::Error};
 pub struct Charter {
     name: String,
     description: Option<String>,
-    version: u64, // Epoch millis at UTC.
+    version: u64,
     debug: Option<bool>,
     matching: Matching,
     jetwash: Option<Jetwash>,
@@ -26,8 +26,7 @@ pub struct Matching {
     instructions: Option<Vec<Instruction>>,
 
     #[serde(default = "default_group_limit")]
-    group_limit: usize, // The maximum number of records in a single group.
-    // TODO: Rename group_size_limit
+    group_size_limit: usize, // The maximum number of records in a single group.
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,7 +48,7 @@ pub struct JetwashSourceFile {
     pattern: String,
     escape: Option<String>,
     quote: Option<String>,
-    delimeter: Option<String>,
+    delimiter: Option<String>,
     headers: Option<Vec<String>>,
     column_mappings: Option<Vec<ColumnMapping>>,
     new_columns: Option<Vec<NewColumn>>,
@@ -66,11 +65,15 @@ pub struct NewColumn {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ColumnMapping {
-    Map { column: String, as_a: DataType, from: String  }, // Lua script creating a new column.
+    Map { column: String, as_a: DataType, from: String  }, // Lua script transforming an existing column with Lua script.
     Dmy ( String /* column */ ),  // Parse a day/month/year into a UTC Datetime
     Mdy ( String /* column */ ),  // Parse a month/day/year into a UTC Datetime
     Ymd ( String /* column */ ),  // Parse a year/month/day into a UTC Datetime
     Trim ( String /* column */ ), // Trim whitespace from the value.
+    AsBoolean ( String /* column */ ),  // Column data-type hint.
+    AsDatetime ( String /* column */ ), // Column data-type hint.
+    AsDecimal ( String /* column */ ),  // Column data-type hint.
+    AsInteger ( String /* column */ ),  // Column data-type hint.
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,7 +95,6 @@ pub enum ToleranceType {
 pub enum Constraint {
     NetsToZero { column: String, lhs: String, rhs: String },
     NetsWithTolerance { column: String, lhs: String, rhs: String, tol_type: ToleranceType, tolerance: Decimal },
-    DatesWithRange { column: String, lhs: String, rhs: String, days: Option<u16>, hours: Option<u16>, minutes: Option<u16>, seconds: Option<u16> },
     Custom { script: String, available_fields: Option<Vec<String>> }
 }
 
@@ -115,8 +117,8 @@ impl JetwashSourceFile {
         &self.quote
     }
 
-    pub fn delimeter(&self) -> &Option<String> {
-        &self.delimeter
+    pub fn delimiter(&self) -> &Option<String> {
+        &self.delimiter
     }
 
     pub fn headers(&self) -> &Option<Vec<String>> {
@@ -164,6 +166,10 @@ impl ColumnMapping {
             ColumnMapping::Mdy( column )      => column,
             ColumnMapping::Ymd( column )      => column,
             ColumnMapping::Trim( column )     => column,
+            ColumnMapping::AsBoolean( column )  => column,
+            ColumnMapping::AsDatetime( column ) => column,
+            ColumnMapping::AsDecimal( column )  => column,
+            ColumnMapping::AsInteger( column )  => column,
         }
     }
 }
@@ -189,8 +195,8 @@ impl Charter {
         self.memory_limit
     }
 
-    pub fn group_limit(&self) -> usize {
-        self.matching.group_limit
+    pub fn group_size_limit(&self) -> usize {
+        self.matching.group_size_limit
     }
 
     pub fn source_files(&self) -> &[MatchingSourceFile] {

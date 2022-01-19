@@ -129,7 +129,7 @@ An example changeset might look like this: -
     {
         "id": "f3377a6c-6324-11ec-bc4d-00155ddc3e05",
         "change": {
-            "type": "IgnoreFile",
+            "type": "DeleteFile",
             "filename": "20220118_084109873_01-invoices-b.csv"
         },
         "timestamp": "2021-12-20T06:18:00.000Z"

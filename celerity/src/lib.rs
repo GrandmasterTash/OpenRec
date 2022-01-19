@@ -34,7 +34,7 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 #[derive(Clone, Copy, Debug)]
 pub enum Phase {
      FolderInitialisation,
-     SourceData,
+    //  SourceData,
      ApplyChangeSets,
      DeriveSchema,
      DeriveData,
@@ -47,13 +47,13 @@ impl Phase {
     pub fn ordinal(&self) -> usize {
         match self {
             Phase::FolderInitialisation => 1,
-            Phase::SourceData           => 2,
-            Phase::ApplyChangeSets      => 3,
-            Phase::DeriveSchema         => 4,
-            Phase::DeriveData           => 5,
-            Phase::MatchAndGroup        => 6,
-            Phase::ComleteAndArchive    => 7,
-            Phase::Complete             => 8,
+            // Phase::SourceData           => 2,
+            Phase::ApplyChangeSets      => 2,
+            Phase::DeriveSchema         => 3,
+            Phase::DeriveData           => 4,
+            Phase::MatchAndGroup        => 5,
+            Phase::ComleteAndArchive    => 6,
+            Phase::Complete             => 7,
         }
     }
 }
@@ -142,11 +142,11 @@ pub fn run_charter<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<()> {
     ctx.set_phase(Phase::FolderInitialisation);
     init_folders(&ctx)?;
 
-    ctx.set_phase(Phase::SourceData);
-    let grid = Grid::load(&ctx)?;
+    // ctx.set_phase(Phase::SourceData);
+    // let grid = Grid::load(&ctx)?; // TODO: This phase should come out. changesets can remove files before it should be loaded.
 
     ctx.set_phase(Phase::ApplyChangeSets);
-    let (mut grid, changesets) = apply_changesets(&ctx, grid)?;
+    let (mut grid, changesets) = apply_changesets(&ctx/* , grid */)?;
 
     ctx.set_phase(Phase::DeriveSchema);
     let (projection_cols, writers) = create_derived_schema(&ctx, &mut grid)?;
@@ -200,14 +200,10 @@ fn init_folders(ctx: &Context) -> Result<(), MatcherError> {
 ///
 /// If data is modified, we re-load/index the records in a new instance of the grid.
 ///
-fn apply_changesets(ctx: &Context, mut grid: Grid) -> Result<(Grid, Vec<ChangeSet>), MatcherError> {
+fn apply_changesets(ctx: &Context) -> Result<(Grid, Vec<ChangeSet>), MatcherError> {
 
-    let (any_applied, changesets) = changeset::apply(ctx, &mut grid)?;
-    if any_applied {
-        grid.debug_grid(ctx, 2);
-        return Ok((Grid::load(ctx)?, changesets))
-    }
-    Ok((grid, changesets))
+    let changesets = changeset::apply(ctx)?;
+    return Ok((Grid::load(ctx)?, changesets))
 }
 
 ///

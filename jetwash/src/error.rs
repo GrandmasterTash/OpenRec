@@ -39,6 +39,9 @@ pub enum JetwashError {
     #[error("Cannot map a new column {column} it is already present")]
     CannotMapNewExistingColumn { column: String },
 
+    #[error("Value '{value}' in colume {column} can not be coerced into a {data_type}")]
+    SchemaViolation { column: String, value: String, data_type: String},
+
     #[error(transparent)]
     LuaError(#[from] rlua::Error),
 

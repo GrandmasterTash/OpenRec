@@ -14,7 +14,6 @@ use anyhow::{Result, Context as ErrContext};
 use std::{time::Instant, path::{PathBuf, Path}, str::FromStr, fs::{File, self}, sync::atomic::{AtomicUsize, Ordering}};
 use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::DataType, lua::init_context, blue, formatted_duration_rate};
 
-// BUG: Docs cover this but it's not implemented, as_integer, as_boolean, as_datetime jetwash mappings.
 // TODO: If charter doesn't exist - log the path that's failing.
 // TODO: Logging - log files moved into waiting - reduce analyser spam
 // TODO: Ensure the output file ends in .csv (even if original didn't).
@@ -332,7 +331,7 @@ fn csv_reader(path: &PathBuf, source_file: &JetwashSourceFile) -> Result<csv::Re
         None => b'"',
     };
 
-    let delimeter = match source_file.delimeter() {
+    let delimiter = match source_file.delimiter() {
         Some(d) => d.as_bytes()[0],
         None => b',',
     };
@@ -341,7 +340,7 @@ fn csv_reader(path: &PathBuf, source_file: &JetwashSourceFile) -> Result<csv::Re
         .has_headers(!source_file.headers().is_some())
         .escape(escape)
         .quote(quote)
-        .delimiter(delimeter)
+        .delimiter(delimiter)
         .from_path(path)
             .map_err(|source| JetwashError::CannotOpenCsv { source, path: path.to_canoncial_string() })
 }
@@ -376,6 +375,10 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
                             ColumnMapping::Mdy { .. } => DataType::Datetime,
                             ColumnMapping::Ymd { .. } => DataType::Datetime,
                             ColumnMapping::Trim { .. } => *analysed_schema.get(idx).expect(&format!("no analyed type for {}", header)),
+                            ColumnMapping::AsBoolean{ .. }  => DataType::Boolean,
+                            ColumnMapping::AsDatetime{ .. } => DataType::Datetime,
+                            ColumnMapping::AsDecimal{ .. }  => DataType::Decimal,
+                            ColumnMapping::AsInteger{ .. }  => DataType::Integer,
                         }
                     }),
                     None => None,

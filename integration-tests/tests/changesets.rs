@@ -525,3 +525,296 @@ r#"    [
         }
     ]));
 }
+
+
+// This is the scenario as described in the problems.md page. It's quite long...
+#[test]
+fn test_changesets_can_ignore_files() {
+
+    let base_dir = common::init_test(format!("tests/{}", function!()));
+
+    // Create a matching payment and invoice and an invoice without a payment.
+    common::write_file(&base_dir.join("inbox/"), "invoices-a.csv",
+r#""Invoice No","Ref","Invoice Date","Amount","Thing"
+"0001","INV0001","2021-11-25","1050.99","11"
+"0002","INV0002","2021-11-26","500.00","22"
+"#);
+
+    common::write_file(&base_dir.join("inbox/"), "payments-a.csv",
+r#""PaymentId","Ref","Amount","Payment Date"
+"P1","INV0001","1050.99","25/11/2021"
+"#);
+
+    // Write a charter file.
+    let charter = common::write_file(&base_dir, "charter.yaml",
+r#"name: changeset ignore file test
+version: 1
+jetwash:
+  source_files:
+    - pattern: ^invoices.*\.csv$
+    - pattern: ^payments.*\.csv$
+matching:
+  source_files:
+  - pattern: .*invoices.*\.csv$
+    field_prefix: INV
+  - pattern: .*payments.*\.csv$
+    field_prefix: PAY
+  instructions:
+    - merge:
+        columns: ['INV.Ref', 'PAY.Ref']
+        into: REF
+    - merge:
+        columns: ['INV.Amount', 'PAY.Amount']
+        into: AMOUNT
+    - group:
+        by: ['REF']
+        match_when:
+        - nets_to_zero:
+            column: AMOUNT
+            lhs: record["META.prefix"] == "INV"
+            rhs: record["META.prefix"] == "PAY""#);
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (2, "inbox"),
+        (0, "unmatched")));
+
+    // Run the data-import.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (2, "archive/jetwash"),
+        (0, "unmatched")));
+
+    // Run a match job. There should be unmatched data at the end.
+    celerity::run_charter(&charter, &base_dir).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (1, "unmatched"),
+        (1, "matched")));
+
+    // Check the matched job file indicates the record was ignored.
+    common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
+    [
+        {
+            "charter": {
+                "name": "changeset ignore file test",
+                "version": 1,
+                "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [
+                "20211201_053700000_invoices-a.csv",
+                "20211201_053700000_payments-a.csv"
+            ]
+        },
+        {
+            "groups": [[[0,3],[1,3]]]
+        },
+        {
+            "changesets": [],
+            "matched_groups": 1,
+            "matched_records": 2,
+            "unmatched": [
+              {
+                "file": "20211201_053700000_invoices-a.unmatched.csv",
+                "rows": 1
+              }
+            ],
+            "unmatched_records": 1
+        }
+    ]));
+
+    //
+    // Now we'll create a schema mismatch so we can't proceed.
+    //
+
+    // Create a payment and an invoice and a payment for the unmatched invoice.
+    // The Thing column has now data so it's type will become a ST where-as earlier it was IN.
+    common::write_file(&base_dir.join("inbox/"), "invoices-b.csv",
+r#""Invoice No","Ref","Invoice Date","Amount","Thing"
+"0003","INV0003","2021-11-28","550.00",""
+"#);
+
+    common::write_file(&base_dir.join("inbox/"), "payments-b.csv",
+r#""PaymentId","Ref","Amount","Payment Date"
+"P2","INV0002","500.00","26/11/2021"
+"P3","INV0003","550.00","28/11/2021"
+"#);
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (2, "inbox"),
+        (0, "waiting"),
+        (2, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (1, "unmatched"),
+        (1, "matched")));
+
+    // Run the data-import.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (2, "waiting"),
+        (4, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (1, "unmatched"),
+        (1, "matched")));
+
+    // Run a match job. This will error due to a schema mismatch.
+    let result = celerity::run_charter(&charter, &base_dir);
+    assert!(result.is_err());
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (4, "archive/jetwash"),
+        (2, "archive/celerity"),
+        (3, "matching"),
+        (0, "unmatched"),
+        (1, "matched")));
+
+    // Create a changeset to remove invoices-b.csv as it's schema is bad.
+    let changeset =
+r#"[
+    {
+        "id": "f3377a6c-6324-11ec-bc4d-00155ddc3e05",
+        "change": {
+            "type": "DeleteFile",
+            "filename": "20211201_053700000_invoices-b.csv"
+        },
+        "timestamp": "2021-12-20T06:18:00.000Z"
+    }
+]"#;
+
+    common::write_file(&base_dir.join("inbox/"), "20211220_061800000_changeset.json", changeset);
+
+    // Remove the offending file.
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (5, "archive/jetwash"),
+        (4, "archive/celerity"),
+        (1, "unmatched"),
+        (1, "matched"))); // Stuck at 1 in tests due to fixed timestamp.
+
+    // Check the matched job file indicates the record was ignored.
+    common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
+    [
+        {
+            "charter": {
+                "name": "changeset ignore file test",
+                "version": 1,
+                "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [
+                "20211201_053700000_invoices-a.unmatched.csv",
+                "20211201_053700000_payments-b.csv"
+            ]
+        },
+        {
+            "groups": [[[0,3],[1,3]]]
+        },
+        {
+            "changesets": [
+            {
+                "file": "20211220_061800000_changeset.json",
+                "ignored": 0,
+                "updated": 0
+            }],
+            "matched_groups": 1,
+            "matched_records": 2,
+            "unmatched": [
+            {
+                "file": "20211201_053700000_payments-b.unmatched.csv",
+                "rows": 1
+            }],
+            "unmatched_records": 1
+        }
+    ]));
+
+    // Replace the charter with one which forces the Thing column's schema to be IN.
+    // Write a charter file.
+    let charter = common::write_file(&base_dir, "charter.yaml",
+r#"name: changeset ignore file test
+version: 1
+jetwash:
+  source_files:
+    - pattern: ^invoices.*\.csv$
+      column_mappings:
+       - as_integer: Thing
+    - pattern: ^payments.*\.csv$
+matching:
+  source_files:
+  - pattern: .*invoices.*\.csv$
+    field_prefix: INV
+  - pattern: .*payments.*\.csv$
+    field_prefix: PAY
+  instructions:
+    - merge:
+        columns: ['INV.Ref', 'PAY.Ref']
+        into: REF
+    - merge:
+        columns: ['INV.Amount', 'PAY.Amount']
+        into: AMOUNT
+    - group:
+        by: ['REF']
+        match_when:
+        - nets_to_zero:
+            column: AMOUNT
+            lhs: record["META.prefix"] == "INV"
+            rhs: record["META.prefix"] == "PAY""#);
+
+    // Re-submit invoices-b.csv and verify everything matches.
+    common::write_file(&base_dir.join("inbox/"), "invoices-b.csv",
+r#""Invoice No","Ref","Invoice Date","Amount","Thing"
+"0003","INV0003","2021-11-28","550.00",""
+"#);
+
+    jetwash::run_charter(&charter, &base_dir, Some(1)).unwrap();
+    celerity::run_charter(&charter, &base_dir).unwrap();
+
+    common::assert_files_in_folders(&base_dir, vec!(
+        (0, "inbox"),
+        (0, "waiting"),
+        (5, "archive/jetwash"),
+        (5, "archive/celerity"),
+        (0, "unmatched"),
+        (1, "matched"))); // Stuck at 1 in tests due to fixed timestamp.
+
+    // Check the matched job file indicates the record was ignored.
+    common::assert_matched_contents(base_dir.join("matched/20211201_053700000_matched.json"), json!(
+    [
+        {
+            "charter": {
+                "name": "changeset ignore file test",
+                "version": 1,
+                "file": base_dir.join("charter.yaml").canonicalize().unwrap().to_string_lossy()
+            },
+            "job_id": FIXED_JOB_ID,
+            "files": [
+                "20211201_053700000_invoices-b.csv",
+                "20211201_053700000_payments-b.unmatched.csv"
+            ]
+        },
+        {
+            "groups": [[[0,3],[1,3]]]
+        },
+        {
+            "changesets": [],
+            "matched_groups": 1,
+            "matched_records": 2,
+            "unmatched": [],
+            "unmatched_records": 0
+        }
+    ]));
+}

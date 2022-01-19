@@ -186,6 +186,7 @@ fn summerise_changesets(changesets: Vec<ChangeSet>) -> Vec<Value> {
             match cs.change() {
                 Change::UpdateFields { .. }  => true,
                 Change::IgnoreRecords { .. } => false,
+                Change::DeleteFile { .. } => false,
             }
         });
 

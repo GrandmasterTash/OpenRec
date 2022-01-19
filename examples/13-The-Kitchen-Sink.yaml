@@ -1,16 +1,227 @@
-# TODO: Put every charter option in!
+# This is a reference example that contains all the charter configuration options.
+
+# Each charter should have it's own unique name to identify the systems it is reconciling.
+name: Kitchen Sink
+
+# An optional description can be provided to document details of the charter.
+description: Option<String>,
+
+# A numerical version number for this charter. Use however you wish.
+version: 1
+
+# An optional true|false setting. When true the virtual grid is output to a 'debug' sub-folder.
+debug: false
+
+# An optional section to define Lua functions which can be used in other Lua scripts within this charter.
+global_lua: |
+  -- Global Lua functions can go here.
+
+# An optional memory limit (in bytes) used when grouping data. The default is 50MB.
+memory_limit: 52428800
 
 
-# jetwash:
-#   source_files:
-#    - pattern: ^blahblah\.csv$
-#      # Double double-quotes is the standard way of embedding double quote. However, some formats use escape slashes '\'
-#      # for example.
-#     #  escape: \
-#      # The quote character to use when parsing, the default is double-quotes '"'. In the example below we're using
-#      # a single quote, but we must surround it in quotes first because of yaml syntax.
-#     #  quote: '\'
-#      # The field delimeter to use when parsing, the default is comma ','. In the example below we're using a vertical
-#      # pipe but must surround it in quotes first because of yaml syntax.
-#     #  delimeter: '|'
-#      column_mappings:
+
+# This section is used by jetwash when pre-processing data files.
+jetwash:
+  # Repeat the source_files for each _type_ of data file the charter needs to import.
+  source_files:
+    # The filename regex pattern use to identify files in the inbox to process in this section.
+    pattern: ^filename\.csv$
+
+    # An optional setting - two double-quotes is the standard way of embedding double quote. However, some formats use escape slashes '\' for example
+    escape: '\'
+
+    # An optional setting - the quote character to use when parsing, the default is double-quotes '"'.
+    quote: ^
+
+    # An optional setting - the field delimiter to use when parsing, the default is comma ','. In the example below we're using a vertical pipe.
+    delimiter: '|'
+
+    # The headers list can be used if imported files do not have their own column headers.
+    headers: ['Reference', 'Date', 'Amount', 'Currency']
+
+    # An optional list of column mappings for this file type.
+    column_mappings:
+      # Use Map to use Lua script to transform a column's value before the file is presented to the matching engine.
+      map:
+        # The name of the column in the source file. Column names are always case-sensitive.
+        column: Reference
+        # The Datatype of the transformed column's value. Can be one-of: -
+        #   Boolean   - e.g. 1, 0
+        #   Datetime  - ISO8601 (RFC3339) format, e.g. '2022-01-19T16:34:00.123Z'
+        #   Decimal   - 123456.789012
+        #   Integer   - 1234567890
+        #   String    - UTF-8 text, e.g. 'Hello'
+        #   Uuid      - A hypenated UUID, e.g. 'd692080a-7945-11ec-9bcb-00155dea2408'
+        as_a: String
+        # Some Lua script to return a new value. The Lua script in a Map->from section is given the original file's value as
+        # a string called 'value'. In the example below, we're converting the value to upper-case.
+        from: value:upper()
+
+      # Take a value in the format 'dd-mm-yyyy' and convert into an ISO8601 datetime, e.g. -> '2022-01-19T16:34:00.123Z'
+      dmy: TradeDate
+
+      # Take a value in the format 'mm-dd-yyyy' and convert into an ISO8601 datetime, e.g. -> '2022-01-19T16:34:00.123Z'
+      mdy: SettlementDate
+
+      # Take a value in the format 'yyyy-mm-dd' and convert into an ISO8601 datetime, e.g. -> '2022-01-19T16:34:00.123Z'
+      ymd: ValueDate
+
+      # Trims any surrounding whitespace from the incoming value.
+      trim: Reference
+
+      # Forces the columns data-type to be a boolean rather than the analysed type. Can be useful where the column may be empty in some files.
+      as_boolean: Internal
+
+      # Forces the columns data-type to be a datetime rather than the analysed type. Can be useful where the column may be empty in some files.
+      as_datetime: TradeDate
+
+      # Forces the columns data-type to be a decimal rather than the analysed type. Can be useful where the column may be empty in some files.
+      as_decimal: Amount
+
+      # Forces the columns data-type to be a integer rather than the analysed type. Can be useful where the column may be empty in some files.
+      as_integer: Principal
+
+    # An optional list of new columns to create on files before they are presented to the matching engine.
+    new_columns:
+      # The name of the new column.
+      column: ConvertedAmount
+      # The data type for the new column.
+      as_a: Decimal
+      # The Lua script used to create a new column. The script has access to every other field on the record
+      # by using the 'record' Lua table. All values on the record are strings - hence in the example below
+      # we're converting the strings to decimals before multiplying.
+      from: decimal(record["Amount"]) * decimal(10.5)
+
+
+# This section is applied after jetwash and is used to process matching instructions and rules to
+# build the groups to be matched.
+matching:
+  # An optional true|false setting. If all columns have unique names across all imported types of files
+  # then you may want to set this to true. If prefixes are not used, then the original column header name
+  # can be used to reference a column.
+  use_field_prefixes: true
+
+  # An optional setting to limit the maximum number of records that can be grouped together. Defaults to 1000.
+  # This can be useful to avoid mis-configuration issues trying to load all data into memory. If a group would
+  # exceed this limit, the match job will fail with an appropriate error indicating the limit has been met.
+  group_size_limit: 1000
+
+  # Repeat the source_files for each _type_ of data file the charter needs to import. Typically will mirror the
+  # jetwash source_files but needs to be more relaxed as jetwash prefixes files with timestamps and celerity can
+  # rename unmatched data files e.g.:
+  #    invoices.csv -> 20220119_163400123-invoices.csv -> 20220119_163400123-invoices.unmatched.csv
+  source_files:
+    # The filename regex pattern use to identify files in the waiting folder to process in this section.
+    pattern: ^\d{8}_\d{9}_invoices\.csv$
+    # Prefixes every column name to ensure it wont conflict with another source_file's column.
+    field_prefix: INV
+
+  # The matching instructions are processed in phases. The first phase will perform the column projections and
+  # column mergers, the second phase will perform the grouping instructions. Within each phase, the instructions
+  # are executed in the order they are defined in the charter.
+  instructions:
+    # Projects (creates) a new column using data from the rest of the record. Similar to a column_mapping->new
+    # operation in Jetwash.
+    - project:
+        # The name of the new column. This is temporary and not stored in any files that outlive the match job.
+        column: PAYMENT_INV_REF
+        # The data type for the new column
+        as_a: String
+        # The Lua script used to create a projected column. The script has access to every other field on the record
+        # by using the 'record' Lua table. Unlike jetwash, the values from the record are not all strings, they have
+        # a data-type governed by their column schema.
+        from: string.match(record["PAY.Reference"], "^PAY.*XX(.*)XX$")
+        # An optional Lua filter to control which records the 'from' Lua script is run against.
+        when: record["META.prefix"] == "PAY"
+
+    # Merge two or more columns into a single column.
+    - merge:
+      # The value from the first column in the list is used, unless it's blank, in which case the second in the list
+      # is used, unless it is blank, and so on.
+      columns: ['INV.Amount', 'PAY.Amount']
+      # The name of the new column to create. This is temporary and not stored in any files that outlive the match job.
+      into: AMOUNT
+
+    # Groups data before testing constraint rules on it. Groups which match are 'released' (effectively deleted) from the system
+    # any records at the end of the match job which don't match are exposed in the outbox in unmatched csv files.
+    - group:
+        # A list of columns to group the data by. Care should be taken to ensure every row has a value in this column to avoid
+        # a group where the by column is blank - this would typically exceed the group_size_limit.
+        by: ['SETTLEMENT_DATE']
+        # A list of constraint rules to apply to the group. If ALL evaluate to true the group matches.
+        match_when:
+          # If the abs(sum(abs(PAY.Amount)) - sum(abs(INV.Amount))) == 0 this constraint evaluates to true.
+          - nets_to_zero:
+              column: AMOUNT
+              lhs: record["META.prefix"] == "PAY"
+              rhs: record["META.prefix"] == "INV"
+          # As above but allows a +/- tolerance defined either as a decimal/integer amount or a percentage of the value.
+          - nets_with_tolerance:
+              column: AMOUNT_BASE
+              lhs: record["META.prefix"] == "PAY"
+              rhs: record["META.prefix"] == "INV"
+              tol_type: Amount
+              tolerance: 1.00
+          # Bespoke Lua script which must return true or false.
+          - custom:
+              # Optional setting to restrict which fields from the record are available to the Lua script (for performance reasons).
+              available_fields: ['PAY.Amount', 'INV.Amount']
+              script: |
+                -- Lua script with access to aggregate helper functions (see below).
+                -- This Lua script is given a Lua table called 'records' which contains all the records in the group.
+                -- Each table item is another table representing a row of data.
+
+#  _
+# | |
+# | |    _   _  __ _
+# | |   | | | |/ _` |
+# | |___| |_| | (_| |
+# \_____/\__,_|\__,_|
+#
+# Here's a quick OpenRec Lua cheat-sheet
+#
+# Magic Variables
+# ---------------
+#
+# value   - Available in jetwash->column_mappings->map->from Lua.
+# record  - Available in jetwash->new_columns->from Lua.
+#         - Available in matching->instructions->from Lua.
+#         - Available in matching->instructions->when Lua.
+# records - Available in matching->instructions->group->match_when->custom->script Lua.
+#
+#
+# Record Metadata
+# ---------------
+# META.filename  -> The filename the record was loaded from.
+# META.timestamp -> The timestamp prefix from the above file, converted to a Unix epoch long.
+# META.prefix    -> The matching->source_files->field_prefix associated to the file's column headers.
+#
+#
+# Magic Functions
+# ---------------
+#
+# abs(arg)      -> Similar to the Lua maths.abs() function but used with decimal data-types.
+# decimal(arg)  -> Converts an integer, float or string into a financially precise Decimal data-type.
+# midnight(arg) -> Accepts a Unix epoch millisecond timestamp (which is what Datetime columns are) and truncates the time to be midnight.
+# lookup(field, filename, where_field, where_value)
+#               -> Used to look-up a mapped value from a reference CSV data file in the lookups folder for the control.
+#
+# Constraint-only (aggregate) Functions
+# -------------------------------------
+#
+# count(filter)          -> Counts all records in the group which match the filter (filter detailed below).
+# sum(field, filter)     -> Sums the decimal field for all records in the group which match the filter.
+# sum_int(field, filter) -> Sums the integer field for all records in the group which match the filter.
+# max(field, filter)     -> Returns the maximum decimal field for all records in the group which match the filter.
+# max_int(field, filter) -> Returns the maximum integer field for all records in the group which match the filter.
+# min(field, filter)     -> Returns the minimum decimal field for all records in the group which match the filter.
+# min_int(field, filter) -> Returns the minimum integer field for all records in the group which match the filter.
+#
+# Filters are your own Lua functions which accept a record as an argument and return a boolean result. They can be defined
+# in the global_lua section of the charter, for example the filter below can be used to apply an aggregate function above
+# to any record with 'INV' as a field prefix: -
+#
+# global_lua: |
+#   invoices = function (record) return record["META.prefix"] == "INV" end
+#

@@ -27,8 +27,6 @@ pub fn passes(
         },
 
         Constraint::Custom { script, available_fields } => custom_constraint(script, available_fields, records, schema, lua_ctx),
-
-        Constraint::DatesWithRange { column: _, lhs: _, rhs: _, days: _, hours: _, minutes: _, seconds: _ } => todo!(),
     }
 }
 

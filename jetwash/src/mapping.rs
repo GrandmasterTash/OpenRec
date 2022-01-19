@@ -3,7 +3,7 @@ use bytes::Bytes;
 use rlua::FromLuaMulti;
 use rust_decimal::Decimal;
 use lazy_static::lazy_static;
-use crate::error::JetwashError;
+use crate::{error::JetwashError, analyser};
 use chrono::{Utc, TimeZone, SecondsFormat};
 use core::{data_type::DataType, lua::LuaDecimal, charter::ColumnMapping};
 
@@ -99,9 +99,24 @@ pub fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Byt
         },
 
         ColumnMapping::Trim( _column ) => value.trim().to_string(),
+
+        ColumnMapping::AsBoolean( column )  => check_type(&value, &column, DataType::Boolean)?.to_string(),
+        ColumnMapping::AsDatetime( column ) => check_type(&value, &column, DataType::Datetime)?.to_string(),
+        ColumnMapping::AsDecimal( column )  => check_type(&value, &column, DataType::Decimal)?.to_string(),
+        ColumnMapping::AsInteger( column )  => check_type(&value, &column, DataType::Integer)?.to_string(),
     };
 
     Ok(mapped.into())
+}
+
+///
+/// If there's a value check it can be co-erced into the type.
+///
+fn check_type<'a>(value: &'a str, column: &str, data_type: DataType) -> Result<&'a str, JetwashError> {
+    if !value.is_empty() && !analyser::is_type(&value, DataType::Boolean) {
+        return Err(JetwashError::SchemaViolation { column: column.to_string(), value: value.to_string(), data_type: data_type.as_str().to_string()})
+    }
+    Ok(value)
 }
 
 ///
