@@ -17,7 +17,6 @@ use core::{charter::{Charter, JetwashSourceFile, ColumnMapping}, data_type::Data
 // TODO: If charter doesn't exist - log the path that's failing.
 // TODO: Logging - log files moved into waiting - reduce analyser spam
 // TODO: Ensure the output file ends in .csv (even if original didn't).
-// TODO: Clippy!
 
 ///
 /// Created for each match job. Used to pass the main top-level job 'things' around.
@@ -129,10 +128,10 @@ pub fn run_charter<P: AsRef<Path>>(charter_path: P, base_dir: P, uuid_seed: Opti
 ///
 /// Run any column transformations for this file and generate a 'standard form' csv for Celerity.
 ///
-fn wash_file(ctx: &Context, file: &PathBuf, results: &AnalysisResults) -> Result<(), JetwashError> {
+fn wash_file(ctx: &Context, file: &Path, results: &AnalysisResults) -> Result<(), JetwashError> {
 
-    let result = results.get(file).expect(&format!("Result for {:?} was not found", file));
-    let new_file = folders::new_waiting_file(&ctx, file);
+    let result = results.get(file).unwrap_or_else(|| panic!("Result for {:?} was not found", file));
+    let new_file = folders::new_waiting_file(ctx, file);
     let mut reader = csv_reader(file, result.source_file())?;
 
     // Create new file to start transforming the data into.
@@ -169,13 +168,13 @@ fn wash_file(ctx: &Context, file: &PathBuf, results: &AnalysisResults) -> Result
     writer.flush()?;
 
     // Move the original file now.
-    folders::move_to_archive(&ctx, file)?;
+    folders::move_to_archive(ctx, file)?;
 
     // Rename xxx.csv.inprogress to xxx.csv
     let new_file = folders::complete_new_file(&new_file)?;
 
     // Log file sizes.
-    let f = File::open(new_file.clone()).expect(&format!("Unable to open {}", new_file.to_canoncial_string()));
+    let f = File::open(new_file.clone()).unwrap_or_else(|_| panic!("Unable to open {}", new_file.to_canoncial_string()));
     log::info!("Created file {} ({})", new_file.to_canoncial_string(), f.metadata().expect("no metadata").len().bytes());
 
     Ok(())
@@ -229,7 +228,7 @@ fn transform_record(
             Some(mappings) => {
                 match mappings.iter().find(|m| m.column() == header) {
                     Some(mapping) => {
-                        let new_value = mapping::map_field(lua_ctx, mapping, bytes_from_slice(&value))?;
+                        let new_value = mapping::map_field(lua_ctx, mapping, bytes_from_slice(value))?;
 
                         log::trace!("Mapping row {row}, column {column} from [{from}] to [{to}]",
                             column = header,
@@ -248,10 +247,10 @@ fn transform_record(
 
     // Transform new columns.
     if let Some(new_columns) = source_file.new_columns() {
-        lua_ctx.globals().set("record", mapping::lua_record(lua_ctx, &new_record, &header_record)?)?;
+        lua_ctx.globals().set("record", mapping::lua_record(lua_ctx, &new_record, header_record)?)?;
 
         for column in new_columns {
-            let new_value: Bytes = mapping::eval_typed_lua(&lua_ctx, column.from(), column.as_a())?.into();
+            let new_value: Bytes = mapping::eval_typed_lua(lua_ctx, column.from(), column.as_a())?.into();
 
             log::trace!("Mapping row {row}, column {column} from [new] to [{to}]",
                 column = column.column(),
@@ -320,11 +319,8 @@ fn init_job(charter: PathBuf, base_dir: PathBuf, uuid_seed: Option<usize>) -> Re
 ///
 /// Create a CSV reader configured from the source file options ready to read the file/path specified.
 ///
-fn csv_reader(path: &PathBuf, source_file: &JetwashSourceFile) -> Result<csv::Reader<File>, JetwashError> {
-    let escape = match source_file.escape() {
-        Some(e) => Some(e.as_bytes()[0]),
-        None => None,
-    };
+fn csv_reader(path: &Path, source_file: &JetwashSourceFile) -> Result<csv::Reader<File>, JetwashError> {
+    let escape = source_file.escape().as_ref().map(|e| e.as_bytes()[0]);
 
     let quote = match source_file.quote() {
         Some(q) => q.as_bytes()[0],
@@ -349,7 +345,7 @@ fn csv_reader(path: &PathBuf, source_file: &JetwashSourceFile) -> Result<csv::Re
 ///
 /// The analysed schema datatype adjusted for mapped column datatypes in the charter.
 ///
-fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile, header_record: &csv::ByteRecord)
+fn final_schema(analysed_schema: &[DataType], source_file: &JetwashSourceFile, header_record: &csv::ByteRecord)
     -> Vec<DataType> {
 
     header_record.iter()
@@ -374,7 +370,7 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
                             ColumnMapping::Dmy { .. } => DataType::Datetime,
                             ColumnMapping::Mdy { .. } => DataType::Datetime,
                             ColumnMapping::Ymd { .. } => DataType::Datetime,
-                            ColumnMapping::Trim { .. } => *analysed_schema.get(idx).expect(&format!("no analyed type for {}", header)),
+                            ColumnMapping::Trim { .. } => *analysed_schema.get(idx).unwrap_or_else(|| panic!("no analyed type for {}", header)),
                             ColumnMapping::AsBoolean{ .. }  => DataType::Boolean,
                             ColumnMapping::AsDatetime{ .. } => DataType::Datetime,
                             ColumnMapping::AsDecimal{ .. }  => DataType::Decimal,
@@ -388,12 +384,10 @@ fn final_schema(analysed_schema: &Vec<DataType>, source_file: &JetwashSourceFile
                 let mapped_type = match mapped_type {
                     Some(mt) => Some(mt),
                     None => match source_file.new_columns() {
-                        Some(new_cols) => {
-                            match new_cols.iter().find(|nc| nc.column() == header) {
-                                Some(new_col) => Some(new_col.as_a()),
-                                None => None,
-                            }
-                        },
+                        Some(new_cols) => new_cols
+                            .iter()
+                            .find(|nc| nc.column() == header)
+                            .map(|new_col| new_col.as_a()),
                         None => None,
                     },
                 };
@@ -418,12 +412,7 @@ pub struct UuidProvider { counter: Option<AtomicUsize> }
 
 impl UuidProvider {
     fn new(uuid_seed: Option<usize>) -> Self {
-        let counter = match uuid_seed {
-            Some(arg) => {
-                Some(AtomicUsize::new(arg))
-            },
-            None => None,
-        };
+        let counter = uuid_seed.map(AtomicUsize::new);
 
         Self { counter }
     }

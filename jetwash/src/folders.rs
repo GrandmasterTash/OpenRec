@@ -91,16 +91,14 @@ pub fn progress_changesets(ctx: &Context) -> Result<(), JetwashError> {
 pub fn files_in_inbox(ctx: &Context, file_pattern: &str) -> Result<Vec<DirEntry>, JetwashError> {
     let wildcard = Regex::new(file_pattern).map_err(|source| JetwashError::InvalidSourceFileRegEx { source })?;
     let mut files = vec!();
-    for entry in inbox(ctx).read_dir()? {
-        if let Ok(entry) = entry {
-            if wildcard.is_match(&entry.file_name().to_string_lossy()) && !is_failed(&entry) {
-                files.push(entry);
-            }
+    for entry in (inbox(ctx).read_dir()?).flatten() {
+        if wildcard.is_match(&entry.file_name().to_string_lossy()) && !is_failed(&entry) {
+            files.push(entry);
         }
     }
 
     // Return files sorted by filename - for consistent behaviour.
-    files.sort_by(|a,b| a.file_name().cmp(&b.file_name()));
+    files.sort_by_key(|a| a.file_name());
 
     Ok(files)
 }
@@ -110,16 +108,14 @@ pub fn files_in_inbox(ctx: &Context, file_pattern: &str) -> Result<Vec<DirEntry>
 ///
 pub fn failed_files_in_inbox(ctx: &Context) -> Result<Vec<DirEntry>, JetwashError> {
     let mut files = vec!();
-    for entry in inbox(ctx).read_dir()? {
-        if let Ok(entry) = entry {
-            if is_failed(&entry) {
-                files.push(entry);
-            }
+    for entry in (inbox(ctx).read_dir()?).flatten() {
+        if is_failed(&entry) {
+            files.push(entry);
         }
     }
 
     // Return files sorted by filename - for consistent behaviour.
-    files.sort_by(|a,b| a.file_name().cmp(&b.file_name()));
+    files.sort_by_key(|a| a.file_name());
 
     Ok(files)
 }
@@ -129,16 +125,14 @@ pub fn failed_files_in_inbox(ctx: &Context) -> Result<Vec<DirEntry>, JetwashErro
 ///
 pub fn incomplete_in_waiting(ctx: &Context) -> Result<Vec<DirEntry>, JetwashError> {
     let mut files = vec!();
-    for entry in waiting(ctx).read_dir()? {
-        if let Ok(entry) = entry {
-            if entry.file_name().to_string_lossy().ends_with(".inprogress") {
-                files.push(entry);
-            }
+    for entry in (waiting(ctx).read_dir()?).flatten() {
+        if entry.file_name().to_string_lossy().ends_with(".inprogress") {
+            files.push(entry);
         }
     }
 
     // Return files sorted by filename - for consistent behaviour.
-    files.sort_by(|a,b| a.file_name().cmp(&b.file_name()));
+    files.sort_by_key(|a| a.file_name());
 
     Ok(files)
 }
@@ -148,23 +142,31 @@ pub fn incomplete_in_waiting(ctx: &Context) -> Result<Vec<DirEntry>, JetwashErro
 ///
 /// invoices.csv -> 20211229_113200000_invoices.csv
 ///
-pub fn move_to_archive(ctx: &Context, path: &PathBuf) -> Result<(), JetwashError> {
-    let mut destination = archive(ctx);
-    destination.push(format!("{}_{}", ctx.ts(), path.file_name().expect("filename missing from original file").to_string_lossy()));
+/// If archiving is disabled in the charter, the file is deleted.
+///
+pub fn move_to_archive(ctx: &Context, path: &Path) -> Result<(), JetwashError> {
+    if ctx.charter().archive_files() {
+        let mut destination = archive(ctx);
+        destination.push(format!("{}_{}", ctx.ts(), path.file_name().expect("filename missing from original file").to_string_lossy()));
 
-    log::debug!("Moving {:?} to {:?}", path, destination);
+        log::debug!("Moving {:?} to {:?}", path, destination);
 
-    fs::rename(path, destination.clone())
-        .map_err(|source| JetwashError::CannotMoveFile { path: path.to_canoncial_string(), destination: destination.to_canoncial_string(), source })
+        fs::rename(path, destination.clone())
+            .map_err(|source| JetwashError::CannotMoveFile { path: path.to_canoncial_string(), destination: destination.to_canoncial_string(), source })
+
+    } else {
+        log::debug!("Removing {:?}", path);
+        fs::remove_file(&path)
+            .map_err(|source| JetwashError::CannotRemoveFile { path: path.to_canoncial_string(), source })
+    }
 }
 
 ///
 /// Rename xxx.csv.inprogress to xxx.csv
 ///
-pub fn complete_new_file(path: &PathBuf) -> Result<PathBuf, JetwashError> {
+pub fn complete_new_file(path: &Path) -> Result<PathBuf, JetwashError> {
 
     let destination = path.with_extension("");
-    // destination.push(format!("{}.{}", path.file_name().expect("filename missing from original file").to_string_lossy(), ctx.ts()));
 
     log::debug!("Moving {:?} to {:?}", path, destination);
 
@@ -227,7 +229,7 @@ pub fn new_timestamp() -> String {
 ///
 /// ./tmp/inbox/invoices.csv -> ./tmp/waiting/20211229_063800123_invoices.csv.inprogress
 ///
-pub fn new_waiting_file(ctx: &Context, file: &PathBuf) -> PathBuf {
+pub fn new_waiting_file(ctx: &Context, file: &Path) -> PathBuf {
     let mut pb = waiting(ctx);
     pb.push(format!("{ts}_{filename}.inprogress",
         ts = new_timestamp(),

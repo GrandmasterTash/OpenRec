@@ -135,8 +135,12 @@ pub fn progress_to_archive(ctx: &Context, mut grid: Grid) -> Result<(), MatcherE
 /// Move the specified file to the archive folder immediately.
 ///
 pub fn progress_to_archive_now(ctx: &Context, entry: &DirEntry) -> Result<(), MatcherError> {
-    let dest = archive(ctx).join(entry.file_name());
-    rename(entry.path(), dest)
+    if ctx.charter().archive_files() {
+        let dest = archive(ctx).join(entry.file_name());
+        rename(entry.path(), dest)
+    } else {
+        remove_file(entry.path())
+    }
 }
 
 
@@ -146,16 +150,21 @@ pub fn progress_to_archive_now(ctx: &Context, entry: &DirEntry) -> Result<(), Ma
 pub fn archive_data_file(ctx: &Context, file: &mut DataFile) -> Result<(), MatcherError> {
 
     if file.archived_filename().is_none() {
-        let mut counter = 0;
-        let mut dest = archive(ctx).join(file.filename());
+        if ctx.charter().archive_files() {
+            let mut counter = 0;
+            let mut dest = archive(ctx).join(file.filename());
 
-        while dest.exists() {
-            counter += 1;
-            dest = archive(ctx).join(format!("{}_{:02}", file.filename(), counter));
+            while dest.exists() {
+                counter += 1;
+                dest = archive(ctx).join(format!("{}_{:02}", file.filename(), counter));
+            }
+
+            rename(file.path(), &dest)?;
+            file.set_archived_filename(dest.file_name().expect("no archive filename").to_string_lossy().into());
+
+        } else {
+            remove_file(file.path())?;
         }
-
-        rename(file.path(), &dest)?;
-        file.set_archived_filename(dest.file_name().expect("no archive filename").to_string_lossy().into());
     }
 
     Ok(())
@@ -404,7 +413,7 @@ pub fn filename(pb: &Path) -> String {
 /// e.g. $REC_HOME/unmatched/20191209_020405000_INV.csv
 ///    -> $REC_HOME/unmatched/20191209_020405000_INV.csv.derived.csv
 ///
-pub fn derived(path: &PathBuf) -> PathBuf {
+pub fn derived(path: &Path) -> PathBuf {
 
     if is_data_file(path) || is_unmatched_data_file(path) {
         return path.with_extension(DERIVED)

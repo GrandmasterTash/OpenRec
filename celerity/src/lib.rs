@@ -20,12 +20,6 @@ use core::{charter::{Charter, Instruction}, blue, formatted_duration_rate, lua::
 use std::{time::{Instant, Duration}, collections::HashMap, cell::Cell, path::{PathBuf, Path}, str::FromStr, sync::Arc};
 use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{project_col::{project_column, referenced_cols}, merge_col}, matching::matched::MatchedHandler, matching::unmatched::UnmatchedHandler, utils::csv::{CsvReader, CsvWriter}};
 
-// BUG: Example 5 can 'work' if grouping by 'Ref' not 'REF' - but ref doesn't exist so it's just 1 bug group!
-// BUG: Derived data not in the debug output during the derived phase - but it IS in the first grouping phase!
-// TODO: Option in charter (effects celerity and jetwash) to NOT archive data. Enable in the big data examples
-// TODO: Change generator to group by ref not date. It's not a good example to set....
-// TODO: Opt-out of archiving for both JW and Cel.
-
 ///
 /// These are the linear state transitions of a match Job.
 ///
@@ -35,7 +29,6 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 #[derive(Clone, Copy, Debug)]
 pub enum Phase {
      FolderInitialisation,
-    //  SourceData,
      ApplyChangeSets,
      DeriveSchema,
      DeriveData,
@@ -48,7 +41,6 @@ impl Phase {
     pub fn ordinal(&self) -> usize {
         match self {
             Phase::FolderInitialisation => 1,
-            // Phase::SourceData           => 2,
             Phase::ApplyChangeSets      => 2,
             Phase::DeriveSchema         => 3,
             Phase::DeriveData           => 4,
@@ -143,9 +135,6 @@ pub fn run_charter<P: AsRef<Path>>(charter: P, base_dir: P) -> Result<()> {
     ctx.set_phase(Phase::FolderInitialisation);
     init_folders(&ctx)?;
 
-    // ctx.set_phase(Phase::SourceData);
-    // let grid = Grid::load(&ctx)?; // TODO: This phase should come out. changesets can remove files before it should be loaded.
-
     ctx.set_phase(Phase::ApplyChangeSets);
     let (mut grid, changesets) = apply_changesets(&ctx/* , grid */)?;
 
@@ -204,7 +193,7 @@ fn init_folders(ctx: &Context) -> Result<(), MatcherError> {
 fn apply_changesets(ctx: &Context) -> Result<(Grid, Vec<ChangeSet>), MatcherError> {
 
     let changesets = changeset::apply(ctx)?;
-    return Ok((Grid::load(ctx)?, changesets))
+    Ok((Grid::load(ctx)?, changesets))
 }
 
 ///
@@ -311,7 +300,7 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
             .par_iter_mut()
             .enumerate()
             .map(|(file_idx, (reader, writer))| {
-                derive_file(file_idx, reader, writer, schema.clone(), charter.clone(), projection_cols.clone(), &lookup_path)
+                derive_file(file_idx, reader, writer, schema.clone(), &charter, projection_cols.clone(), &lookup_path)
             })
             .collect::<Result<Vec<Metrics>, MatcherError>>()?
             .into_iter() // Result IntoIterator takes the R not the E
@@ -336,9 +325,6 @@ fn derive_data(ctx: &Context, grid: &Grid, projection_cols: HashMap<usize, Vec<C
         Ok(())
     })?;
 
-    // Debug the derived data now.
-    grid.debug_grid(ctx, 1);
-
     Ok(())
 }
 
@@ -356,7 +342,7 @@ fn derive_file(
     reader: &mut CsvReader,
     writer: &mut CsvWriter,
     schema: Arc<GridSchema>,
-    charter: Arc<&Charter>,
+    charter: &Charter,
     avail_cols: HashMap<usize, Vec<Column>>,
     lookup_path: &Path) -> Result<HashMap<usize, Duration>, MatcherError> {
 

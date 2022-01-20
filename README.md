@@ -1,12 +1,13 @@
 # What is a OpenRec?
 
-TODO: some screenshots / gifs
-
 <img src="docs/overview.png" align="right" style="padding-left: 5px" width="300px"/>
 
 OpenRec is a reconciliation matching engine written in the [Rust](https://www.rust-lang.org/) language. It can be used to group and match data presented to it in CSV format using easy-to-configure YAML and Lua rules. OpenRec comprises a small number of modules which are intended to be used as libraries and services **within your own enterprise-wide solution**.
 
 The motivation for this project was simply personal. I wished to solve the problem of writing a matching engine in a way that wouldn't consume system (memory) resources in a new, modern language. As a result you should take note: OpenRec is a matching engine, not a full solution.
+
+<img src="docs/steward.png" width="500px" />
+<img src="docs/dashboard.png" width="500px" />
 
 ## OpenRec High-Level Features
 

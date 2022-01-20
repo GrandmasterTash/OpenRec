@@ -266,10 +266,7 @@ impl FileSchema {
 
         for (idx, hdr) in hdrs.iter().enumerate() {
             let data_type = match type_record.get(idx) {
-                Some(raw_type) => {
-                    let parsed = raw_type.into();
-                    parsed
-                },
+                Some(raw_type) => raw_type.into(),
                 None => return Err(MatcherError::NoSchemaTypeForColumn { column: idx }),
             };
 

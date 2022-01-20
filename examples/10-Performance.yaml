@@ -17,6 +17,9 @@ version: 1
 # data out to multiple files after each instruction if it's set to true.
 debug: false
 
+# We're using large data files with this charter so to avoid consuming too much disk space we'll disable archiving.
+archive_files: false
+
 jetwash:
   source_files:
    - pattern: ^10-invoices\.csv$
@@ -48,12 +51,15 @@ matching:
     - merge:
         columns: ['INV.SettlementDate', 'PAY.PaymentDate', 'REC.ReceiptDate']
         into: SETTLEMENT_DATETIME
+    - merge:
+        columns: ['INV.Reference', 'PAY.Reference', 'REC.Reference']
+        into: REFERENCE
     - project:
         column: SETTLEMENT_DATE
         as_a: Datetime
         from: midnight(record["SETTLEMENT_DATETIME"])
     - group:
-        by: ['SETTLEMENT_DATE']
+        by: ['REFERENCE']
         match_when:
           - nets_with_tolerance:
               column: AMOUNT_BASE

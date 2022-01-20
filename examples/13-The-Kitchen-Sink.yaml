@@ -19,7 +19,9 @@ global_lua: |
 # An optional memory limit (in bytes) used when grouping data. The default is 50MB.
 memory_limit: 52428800
 
-
+# An optional setting to control if inbox files are written the the archive/jetwash and archive/celerity
+# folders (defaults to true).
+archive_files: true
 
 # This section is used by jetwash when pre-processing data files.
 jetwash:

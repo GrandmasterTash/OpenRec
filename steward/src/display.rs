@@ -72,7 +72,7 @@ pub fn display(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app_stat
     let control_captions: Vec<[String; COLUMNS.len()]> = state
         .controls_mut()
         .take(max)
-        .map(|con| captions(con))
+        .map(captions)
         .collect::<_>();
 
     let state_colours: Vec<color::Rgb> = state
@@ -185,8 +185,8 @@ fn display_overview(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app
                 format!("{style} GOOD {reset}{clear}", style = Bg(color::Rgb(85, 107, 47)), reset = Bg(color::Reset), clear = clear::UntilNewline)
             }
         },
-        AppState::Reloading   => format!("Refreshing Controls"),
-        AppState::Terminating => format!("Terminating..."),
+        AppState::Reloading   => "Refreshing Controls".to_string(),
+        AppState::Terminating => "Terminating...".to_string(),
     };
 
     write!(stdout, "{pos}Running  : {running}/{total}",
@@ -218,7 +218,7 @@ fn display_overview(stdout: &mut RawTerminal<StdoutLock>, state: &mut State, app
 
     write!(stdout, "{pos}Register : {register}",
         pos = Goto(45, 5),
-        register = state.register().canonicalize().unwrap_or(state.register().to_path_buf()).to_string_lossy(),
+        register = state.register().canonicalize().unwrap_or_else(|_| state.register().to_path_buf()).to_string_lossy(),
     ).expect("cant write register header");
 }
 

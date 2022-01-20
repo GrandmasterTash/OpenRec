@@ -34,7 +34,7 @@ impl From<&str> for DataType {
             "ST" => DataType::String,
             "ID" => DataType::Uuid,
             "??" => DataType::Unknown,
-            eh @ _ => panic!("REALLY unknown data-type '{}'", eh)
+            eh => panic!("REALLY unknown data-type '{}'", eh)
         }
     }
 }

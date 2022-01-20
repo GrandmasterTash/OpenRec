@@ -27,6 +27,9 @@ pub enum JetwashError {
     #[error("Unable to move file from {path} to {destination}")]
     CannotMoveFile { path: String, destination: String, source: std::io::Error },
 
+    #[error("Unable to remove file from {path}")]
+    CannotRemoveFile { path: String, source: std::io::Error },
+
     #[error("Encountered one or more errors in inbox files during data analysis - job aborted")]
     AnalysisErrors,
 

@@ -40,7 +40,7 @@ pub fn init_context(lua_ctx: &rlua::Context, global_lua: &Option<String>, lookup
         /* where_field: */ String,
         /* where_value: */ String)| {
         Ok(lookup(&search.0, &search.1, &search.2, &search.3, &lookup_path)
-            .map_err(|err| rlua::Error::external(format!("{}", err)))?)
+            .map_err(|err| rlua::Error::external(format!("{}", err))))
     })?;
 
     globals.set("lookup", lookup)?;
@@ -138,7 +138,7 @@ fn lookup(what_field: &str, file_name: &str, where_field: &str, is: &str, lookup
         }
     }
 
-    return Ok(String::default())
+    Ok(String::default())
 }
 
 

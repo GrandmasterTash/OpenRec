@@ -18,10 +18,8 @@ use termion::{terminal_size, raw::IntoRawMode};
 use state::{State, JobResult, ControlState, Control, MATCH_JOB_FILENAME_REGEX};
 use std::{time::Duration, thread, path::{Path, PathBuf}, process::Command, fs};
 
-// TODO: Jetwash and celerity should create a .lock - prohibit starting a job if exists.
+// TODO: Jetwash and celerity should create a .lock - prohibit starting a job if exists - incase of steward hang.
 // TODO: Default steward to noop - then use --ui --headless to control start mode.
-// TODO: Document the above .inprogress inclusion. Ensure Jetwash NEVER processes .inprogress inbox files - regardless of regex.
-// TODO: Document bins must be in the same folder unless the HOME env vars are set.
 // TODO: Headless mode with Ctrl..c graceful shtdown
 // TODO: Recover unpublished outbox files on start-up (i.e. make it safe to kill sentinal).
 
@@ -145,7 +143,7 @@ fn handle_keyboard(app_state: AppState, key: Option<Result<u8, std::io::Error>>)
         }
     }
 
-    return app_state
+    app_state
 }
 
 ///
@@ -174,11 +172,11 @@ fn check_child_binaries() -> Result<()> {
 }
 
 fn jetwash() -> String {
-    format!("{}jetwash", std::env::var("JETWASH_HOME").unwrap_or("./".into()))
+    format!("{}jetwash", std::env::var("JETWASH_HOME").unwrap_or_else(|_| "./".into()))
 }
 
 fn celerity() -> String {
-    format!("{}celerity", std::env::var("CELERITY_HOME").unwrap_or("./".into()))
+    format!("{}celerity", std::env::var("CELERITY_HOME").unwrap_or_else(|_| "./".into()))
 }
 
 ///
@@ -327,7 +325,7 @@ pub fn find_latest_match_file(root: &Path) -> Option<PathBuf> {
 ///
 /// Parse the unmatched files from the match report and return the filenames
 ///
-pub fn unmatched_filenames(match_file: &PathBuf) -> Result<Vec<String>, anyhow::Error> {
+pub fn unmatched_filenames(match_file: &Path) -> Result<Vec<String>, anyhow::Error> {
     let file = fs::File::open(match_file)?;
     let reader = BufReader::new(file);
     let json: serde_json::Value = serde_json::from_reader(reader)?;
@@ -347,7 +345,7 @@ pub fn unmatched_filenames(match_file: &PathBuf) -> Result<Vec<String>, anyhow::
 ///
 /// If for any reason this is not possible - return a new timestamp.
 ///
-pub fn timestamp(path: &PathBuf) -> String {
+pub fn timestamp(path: &Path) -> String {
 
     if let Some(filename) = path.file_name() {
         let filename = filename.to_string_lossy().to_string();

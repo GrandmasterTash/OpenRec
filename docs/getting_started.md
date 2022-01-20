@@ -46,4 +46,4 @@ celerity --help
 
 ## What Next?
 
-If you haven't already read the [concepts](concepts.md)) section you should do that now. Combine that with the 'kitchen sink' example charter as a reference and you should now be able to craft your own charters for your own data!
+If you haven't already read the [concepts](concepts.md) section you should do that now. Combine that with the 'kitchen sink' example charter as a reference and you should now be able to craft your own charters for your own data!

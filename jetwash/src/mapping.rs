@@ -61,7 +61,7 @@ pub fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Byt
     let mapped: String = match mapping {
         ColumnMapping::Map { from, as_a, .. } => {
             // Perform some Lua to evaluate the mapped value to push into the new record.
-            lua_ctx.globals().set("value", value.clone())?;
+            lua_ctx.globals().set("value", value)?;
             eval_typed_lua(lua_ctx, from, *as_a)?
         },
 
@@ -100,10 +100,10 @@ pub fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Byt
 
         ColumnMapping::Trim( _column ) => value.trim().to_string(),
 
-        ColumnMapping::AsBoolean( column )  => check_type(&value, &column, DataType::Boolean)?.to_string(),
-        ColumnMapping::AsDatetime( column ) => check_type(&value, &column, DataType::Datetime)?.to_string(),
-        ColumnMapping::AsDecimal( column )  => check_type(&value, &column, DataType::Decimal)?.to_string(),
-        ColumnMapping::AsInteger( column )  => check_type(&value, &column, DataType::Integer)?.to_string(),
+        ColumnMapping::AsBoolean( column )  => check_type(&value, column, DataType::Boolean)?.to_string(),
+        ColumnMapping::AsDatetime( column ) => check_type(&value, column, DataType::Datetime)?.to_string(),
+        ColumnMapping::AsDecimal( column )  => check_type(&value, column, DataType::Decimal)?.to_string(),
+        ColumnMapping::AsInteger( column )  => check_type(&value, column, DataType::Integer)?.to_string(),
     };
 
     Ok(mapped.into())
@@ -113,7 +113,7 @@ pub fn map_field(lua_ctx: &rlua::Context, mapping: &ColumnMapping, original: Byt
 /// If there's a value check it can be co-erced into the type.
 ///
 fn check_type<'a>(value: &'a str, column: &str, data_type: DataType) -> Result<&'a str, JetwashError> {
-    if !value.is_empty() && !analyser::is_type(&value, DataType::Boolean) {
+    if !value.is_empty() && !analyser::is_type(value, DataType::Boolean) {
         return Err(JetwashError::SchemaViolation { column: column.to_string(), value: value.to_string(), data_type: data_type.as_str().to_string()})
     }
     Ok(value)
@@ -124,7 +124,7 @@ fn check_type<'a>(value: &'a str, column: &str, data_type: DataType) -> Result<&
 ///
 fn date_captures(value: &str) -> Option<(u32, u32, u32)> {
     for pattern in &*DATES {
-        match pattern.captures(&value) {
+        match pattern.captures(value) {
             Some(captures) if captures.len() == 4 => {
                 if let Ok(n1) = captures.get(1).expect("capture 1 missing").as_str().parse::<u32>() {
                     if let Ok(n2) = captures.get(2).expect("capture 2 missing").as_str().parse::<u32>() {

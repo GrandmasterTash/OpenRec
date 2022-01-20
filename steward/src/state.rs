@@ -63,12 +63,10 @@ impl Control {
         // Suspend un-parseable controls, unless they are already disabled.
         let state = if c.parsed() && !c.disabled() {
             ControlState::StartedIdle
+        } else if c.disabled() {
+            ControlState::Stopped
         } else {
-            if c.disabled() {
-                ControlState::Stopped
-            } else {
-                ControlState::Suspended
-            }
+            ControlState::Suspended
         };
 
         Self {
@@ -310,7 +308,7 @@ impl State {
     pub fn new(register: &Register, path: &Path) -> Self {
         let controls = register.controls()
             .iter()
-            .map(|c| Control::new(c))
+            .map(Control::new)
             .collect();
 
         Self {
@@ -374,7 +372,7 @@ impl ControlMetrics {
 
         // Get the latest match report statistics if available.
         if let Some(match_report) = latest_match_file {
-            if let Some(footer) = get_json_report_footer(&match_report) {
+            if let Some(footer) = get_json_report_footer(match_report) {
                 me.unmatched_txs.set(footer["unmatched_records"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
                 me.matched_txs.set(footer["matched_records"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);
                 me.matched_groups.set(footer["matched_groups"].as_u64().map(|u| u as usize).unwrap_or_default() as i64);

@@ -17,7 +17,7 @@ export OPENREC_UID=${UID}
 export OPENREC_GID=${GID}
 
 # Generator is a utility to generate three-way match groups of random data.
-echo "Generating a SMALL amount of data for the performance control..."
+echo "Generating a $ROWS invoices for the performance control..."
 pushd $DOCKER_DIR/data
 docker-compose run openrec /generator --rows $ROWS --output /data
 

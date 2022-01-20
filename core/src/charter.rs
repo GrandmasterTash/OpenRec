@@ -16,6 +16,9 @@ pub struct Charter {
 
     #[serde(default = "default_memory_limit")]
     memory_limit: usize, // The maximum number of bytes allowed for grouping and sorting data.
+
+    #[serde(default = "default_archive")]
+    archive_files: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -199,6 +202,10 @@ impl Charter {
         self.matching.group_size_limit
     }
 
+    pub fn archive_files(&self) -> bool {
+        self.archive_files
+    }
+
     pub fn source_files(&self) -> &[MatchingSourceFile] {
         &self.matching.source_files
     }
@@ -248,4 +255,8 @@ fn default_group_limit() -> usize {
 
 fn default_memory_limit() -> usize {
     52428800 // 50MB, 50 * 1048576
+}
+
+fn default_archive() -> bool {
+    true
 }

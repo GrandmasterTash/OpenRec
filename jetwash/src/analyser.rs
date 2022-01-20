@@ -31,8 +31,8 @@ const SEQUENCE: [DataType; 6] = [
 	DataType::String
 ];
 
-const BOOLEAN_TRUES: [&'static str; 4] = [ "yes", "true", "1", "y" ];
-const BOOLEAN_FALSES: [&'static str; 4] = [ "no", "false", "0", "n" ];
+const BOOLEAN_TRUES: [&str; 4] = [ "yes", "true", "1", "y" ];
+const BOOLEAN_FALSES: [&str; 4] = [ "no", "false", "0", "n" ];
 
 lazy_static! {
 	static ref INTEGER_REGEX: Regex = Regex::new(r"^[-+]?[0-9]{1,19}$").expect("invalid integer regex");
@@ -161,16 +161,13 @@ fn analyse_types(data_types: &mut [DataType], csv_record: &csv::ByteRecord) -> R
 
 	for (col_idx, value) in csv_record.iter().enumerate() {
 		// Ensure the value is a valid UTF8.
-		let value = std::str::from_utf8(&value)?;
+		let value = std::str::from_utf8(value)?;
 
 		if !value.is_empty() {
-			// for data_type in SEQUENCE {
-			for idx in type_position(data_types[col_idx])..SEQUENCE.len() {
-				let data_type = SEQUENCE[idx];
-
-				if is_type(value, data_type) {
-					if is_more_general(data_type, data_types[col_idx]) {
-						data_types[col_idx] = data_type;
+			for data_type in SEQUENCE.iter().skip(type_position(data_types[col_idx])) {
+				if is_type(value, *data_type) {
+					if is_more_general(*data_type, data_types[col_idx]) {
+						data_types[col_idx] = *data_type;
 					}
 					break;
 				}
@@ -203,7 +200,7 @@ fn is_more_general(type_1: DataType, type_2: DataType) -> bool {
 
 
 pub fn is_type(value: &str, data_type: DataType) -> bool {
-	let result = match data_type {
+	match data_type {
 		DataType::Unknown => false, // This won't be called.
 		DataType::Boolean => is_boolean(value),
 		DataType::Datetime => is_datetime(value),
@@ -211,14 +208,7 @@ pub fn is_type(value: &str, data_type: DataType) -> bool {
 		DataType::Integer => is_integer(value),
 		DataType::String => true, // Everything can be a string.
 		DataType::Uuid => is_uuid(value),
-	};
-
-	// match result {
-	// 	true => println!("{} is a {:?}", value, data_type),
-	// 	false => println!("{} is NOT a {:?}", value, data_type),
-	// }
-
-	result
+	}
 }
 
 fn is_boolean(value: &str) -> bool {

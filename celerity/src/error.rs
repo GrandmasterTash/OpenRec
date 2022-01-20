@@ -106,6 +106,9 @@ pub enum MatcherError {
     #[error("A problem occured during the match")]
     MatchGroupError { source: rlua::Error },
 
+    #[error("The colmun {column} was referenced in a group-by instruction but doesn't exist")]
+    GroupByColumnMissing { column: String },
+
     #[error("The constraint column {column} is not present")]
     ConstraintColumnMissing { column: String },
 

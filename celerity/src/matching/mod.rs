@@ -26,14 +26,15 @@ mod prelude {
 ///
 /// Derive a value ('match key') to group this record with others.
 ///
-fn match_key(record: &Record, headers: &[String]) -> Bytes {
+fn match_key(record: &Record, headers: &[String]) -> Result<Bytes, MatcherError> {
     let mut buf = BytesMut::new();
     for header in headers {
-        if let Some(bytes) = record.get_as_bytes(header).expect("Failed to read match ley") {
-            buf.put(bytes);
+        match record.get_as_bytes(header).expect("Failed to read match ley") {
+            Some(bytes) => buf.put(bytes),
+            None => return Err(MatcherError::GroupByColumnMissing { column: header.to_string() }),
         }
     }
-    buf.freeze()
+    Ok(buf.freeze())
 }
 
 ///
@@ -167,7 +168,7 @@ fn create_unsorted(ctx: &crate::Context, group_by: &[String], grid: &Grid) -> Re
         buffer.push_field(convert::int_to_string(record.data_position().line() as i64).as_bytes());
         buffer.push_field(convert::int_to_string(record.derived_position().byte() as i64).as_bytes());
         buffer.push_field(convert::int_to_string(record.derived_position().line() as i64).as_bytes());
-        buffer.push_field(&match_key(&record, group_by));
+        buffer.push_field(&match_key(&record, group_by)?);
         unsorted_writer.write_byte_record(&buffer)?;
         buffer.clear();
     }
@@ -266,8 +267,8 @@ fn initialise_buffers(ctx: &crate::Context, file_count: usize) -> (Vec<csv::Read
 fn merge_sort(mut inputs: Vec<csv::Reader<File>>, mut output: csv::Writer<File>) {
 
     let mut registers = Vec::with_capacity(inputs.len());
-    for idx in 0..inputs.len() {
-        registers.push(inputs[idx].next());
+    for input in &mut inputs {
+        registers.push(input.next());
     };
 
     // Loop until all our registers are empty.
@@ -349,10 +350,10 @@ fn eval_contraints(
                 matched.append_group(&records)?;
                 match_count += 1;
 
-            } else if group_count <= 0 /* Useful but grid debugging might mean this isn't required. */{
-                log::info!("Unmatched group:-\n{:?}{}",
-                    grid.schema().headers(),
-                    records.iter().map(|r| format!("\n{:?}", r.as_strings())).collect::<String>());
+            // } else if group_count <= 0 /* Useful but grid debugging might mean this isn't required. */{
+            //     log::info!("Unmatched group:-\n{:?}{}",
+            //         grid.schema().headers(),
+            //         records.iter().map(|r| format!("\n{:?}", r.as_strings())).collect::<String>());
             }
         }
 

@@ -28,7 +28,7 @@ pub fn main() -> Result<()> {
 
     let charter_path = Path::new(options.value_of("charter_path").expect("no charter specified"));
     let base_path = Path::new(options.value_of("control_dir").expect("no control dir specififed"));
-    let _handle = init_logging(&base_path);
+    let _handle = init_logging(base_path);
 
     jetwash::run_charter(charter_path, base_path, None)?;
 
@@ -50,7 +50,7 @@ fn init_logging(base_path: &Path) -> Handle {
 
     // Create the logs folder.
     let log_path = base_path.join("logs/");
-    fs::create_dir_all(&log_path).expect(&format!("cannot create log folder {}", log_path.to_string_lossy()));
+    fs::create_dir_all(&log_path).unwrap_or_else(|_| panic!("cannot create log folder {}", log_path.to_string_lossy()));
 
     // Initialise logging.
     let stdout = ConsoleAppender::builder()
@@ -60,7 +60,7 @@ fn init_logging(base_path: &Path) -> Handle {
     let log_file = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new(FILE_PATTERN)))
         .build(&log_path.join(format!("{}_jetwash.log", Utc::now().format("%Y%m%d").to_string())))
-        .expect(&format!("cannot create log file appended to {}", log_path.to_string_lossy()));
+        .unwrap_or_else(|_| panic!("cannot create log file appended to {}", log_path.to_string_lossy()));
 
     let config = Config::builder()
         .appender(Appender::builder().build("file", Box::new(log_file)))

@@ -105,13 +105,13 @@ pub fn apply(ctx: &Context) -> Result<Vec<ChangeSet>, MatcherError> {
 
         // Create a DataAccessor to read real CSV data only (derived data wont exist yet) and to write any
         // required modified data out to new files.
-        let mut writers = writers(&mut grid)?;
+        let mut writers = writers(&grid)?;
 
         // Debug the grid if we have any changesets - before they are evaluated.
         grid.debug_grid(ctx, 1);
 
         // Track how many changes are made to each file.
-        let mut metrics = init_metrics(&mut grid);
+        let mut metrics = init_metrics(&grid);
 
         // Track the record and changeset being processed.
         let mut eval_ctx = EvalContext { change_idx: 0, row: 0, file: 0 };
@@ -193,11 +193,8 @@ pub fn apply(ctx: &Context) -> Result<Vec<ChangeSet>, MatcherError> {
 ///
 fn delete_files_now(ctx: &Context, changesets: &[ChangeSet]) -> Result<(), MatcherError> {
     for changeset in changesets {
-        match changeset.change() {
-            Change::DeleteFile { filename }=> {
-                folders::delete_matching_file_if_exist(ctx, &filename, changeset.id());
-            },
-            _ => {},
+        if let Change::DeleteFile { filename } = changeset.change() {
+            folders::delete_matching_file_if_exist(ctx, filename, changeset.id());
         }
     }
     Ok(())

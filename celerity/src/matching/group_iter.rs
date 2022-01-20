@@ -121,7 +121,8 @@ impl Iterator for GroupIterator {
                         }
 
                         if group.len() > self.limit {
-                            panic!("The current configuration and data would result in a group exceeding the maximum number of records ({}). This will have memory resource implications if allowed. If you still want to proceed, specify the group_size_limit property on the charter to be the maximum number of allowed records in a single group.", self.limit)
+                            log::error!("The current configuration and data would result in a group exceeding the maximum number of records ({}). This will have memory resource implications if allowed. If you still want to proceed, specify the group_size_limit property on the charter to be the maximum number of allowed records in a single group.", self.limit);
+                            panic!("group size exceeds limit")
                         }
 
                         // Track the current group.
