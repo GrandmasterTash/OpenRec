@@ -1,4 +1,8 @@
-# What is a OpenRec?
+# OpenRec
+
+[![Rust](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml)
+
+## What is a OpenRec?
 
 <img src="docs/overview.png" align="right" style="padding-left: 5px" width="300px"/>
 
