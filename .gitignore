@@ -13,5 +13,8 @@ Cargo.lock
 **/tmp/
 **/data/
 
+# Docker playground mounted files
+/docker/etc/charters
+
 lcov.info
 .vscode

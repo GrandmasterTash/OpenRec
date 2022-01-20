@@ -1,3 +1,43 @@
 controls:
- - charter: /etc/openrec/01-Basic-Match.yaml
-   root: /data/basic/
+ - charter: /etc/openrec/charters/01-Basic-Match.yaml
+   root: /data/01_basic/
+
+ - charter: /etc/openrec/charters/02-Projected-Columns.yaml
+   root: /data/02_projected/
+
+ - charter: /etc/openrec/charters/03-Net-With-Tolerance.yaml
+   root: /data/03_tolerance/
+
+ - charter: /etc/openrec/charters/04-3-Way-Match.yaml
+   root: /data/04_three_way/
+
+ - charter: /etc/openrec/charters/05-2-Stage-Match.yaml
+   root: /data/05_two_stage/
+
+ - charter: /etc/openrec/charters/06-Filtering.yaml
+   root: /data/06_filtering/
+   # Not yet implemented filtering.
+   disabled: true
+
+ - charter: /etc/openrec/charters/07-Unmatched-Data.yaml
+   root: /data/07_unmatched/
+
+ - charter: /etc/openrec/charters/08-Advanced-Lua-Scripts.yaml
+   root: /data/08_advanced_lua/
+
+ - charter: /etc/openrec/charters/09-Changesets.yaml
+   root: /data/09_changesets/
+
+ - charter: /etc/openrec/charters/10-Performance.yaml
+   root: /data/10_performance/
+
+ - charter: /etc/openrec/charters/11-Group-By-Dates.yaml
+   root: /data/11_group_dates/
+
+ - charter: /etc/openrec/charters/12-FXRate-Lookups.yaml
+   root: /data/12_lookups/
+
+   # Non-functional - just a reference config file.
+ - charter: /etc/openrec/charters/13-The-Kitchen-Sink.yaml
+   root: /data/13_kitchen_sink/
+   disabled: true

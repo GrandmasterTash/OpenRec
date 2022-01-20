@@ -13,12 +13,24 @@ services:
       context: ../
     image: openrec:latest
     container_name: openrec
-    user: "${UID}:${GID}"
+    user: "${OPENREC_UID}:${OPENREC_GID}"
     volumes:
      - ./etc:/etc/openrec/
+     - ../examples/01-Basic-Match.yaml:/etc/openrec/charters/01-Basic-Match.yaml
+     - ../examples/02-Projected-Columns.yaml:/etc/openrec/charters/02-Projected-Columns.yaml
+     - ../examples/03-Net-With-Tolerance.yaml:/etc/openrec/charters/03-Net-With-Tolerance.yaml
+     - ../examples/04-3-Way-Match.yaml:/etc/openrec/charters/04-3-Way-Match.yaml
+     - ../examples/05-2-Stage-Match.yaml:/etc/openrec/charters/05-2-Stage-Match.yaml
+     - ../examples/07-Unmatched-Data.yaml:/etc/openrec/charters/07-Unmatched-Data.yaml
+     - ../examples/08-Advanced-Lua-Scripts.yaml:/etc/openrec/charters/08-Advanced-Lua-Scripts.yaml
+     - ../examples/09-Changesets.yaml:/etc/openrec/charters/09-Changesets.yaml
+     - ../examples/10-Performance.yaml:/etc/openrec/charters/10-Performance.yaml
+     - ../examples/11-Group-By-Dates.yaml:/etc/openrec/charters/11-Group-By-Dates.yaml
+     - ../examples/12-FXRate-Lookups.yaml:/etc/openrec/charters/12-FXRate-Lookups.yaml
+     - ../examples/13-The-Kitchen-Sink.yaml:/etc/openrec/charters/13-The-Kitchen-Sink.yaml
      - ./data:/data
-    # environment:
-    #  - RUST_LOG=trace
+    environment:
+     - RUST_LOG=info
     links:
      - pushgateway:pushgateway
     depends_on:

@@ -28,6 +28,12 @@ fn main() {
     let matches = App::new("CSV Data Generator")
         .version("1.0")
         .about(ABOUT)
+        .arg(Arg::with_name("OUTPUT_DIR")
+            .help("The output folder to create data in")
+            .required(true)
+            .short("o")
+            .long("output")
+            .takes_value(true))
         .arg(Arg::with_name("INVOICE_SCHEMA")
             .help("The schema string for the invoice file.")
             .required(false)
@@ -95,6 +101,7 @@ fn parse<T: std::str::FromStr>(value: Option<&str>, msg: &str) -> Option<T> {
 impl From<ArgMatches<'static>> for Options {
     fn from(matches: ArgMatches<'static>) -> Self {
         Self {
+            output: matches.value_of("OUTPUT_DIR").map(str::to_string),
             inv_schema: matches.value_of("INVOICE_SCHEMA").map(str::to_string),
             rec_schema: matches.value_of("RECEIPT_SCHEMA").map(str::to_string),
             pay_schema: matches.value_of("PAYMENT_SCHEMA").map(str::to_string),

@@ -1,19 +1,7 @@
 name: Performance
 description: |
-  This charter is intended to demonstrate the low resource requirements for large match jobs. You will have to run the
-  generator to generate the data though and this can take sometime (be sure to use a release build of everything - Rust
-  debug builds are an order of magnitude slower than release builds!).
-
-  Use these arguments for a fairly extreme example (see below for an automated way of generating and deploying this): -
-
-    ./target/release/generator --invoice-columns 50 --payment-columns 50 --receipt-columns 50 --rows 1000000
-
-  This should create around 5GB of data across 3 files. You should then rename the files to include the '09-BIG-'
-  segment - this will ensure only this charter is going to use those files. for example: -
-
-    mv 20211130_041659150_invoices.csv 20211130_041659150_09-BIG-invoices.csv
-    mv 20211130_041659150_payments.csv 20211130_041659150_09-BIG-payments.csv
-    mv 20211130_041659150_receipts.csv 20211130_041659150_09-BIG-receipts.csv
+  This charter is intended to demonstrate the low resource requirements for large match jobs. It is intended to be
+  used as part of the docker playground - using the small_data.sh and big_data.sh scripts to load data into the control.
 
   It is important to stress, files copied to the inbox folder SHOULD INITIALLY BE GIVEN A '.inprogress' FILENAME SUFFIX.
   The Steward module will ignore these files until the suffix is removed.
@@ -21,54 +9,61 @@ description: |
   FAILURE to adhere to the above can lead to large data files becoming corrupted as Jetwash attempts to copy and process
   them prior to the data being fully written.
 
-  The above is a fairly extreme example, if you're impatient you can scale back the number of rows and/or columns to
-  create smaller datasets.
+  Feel free to tweak the number of rows the generator utility creates in the big/small_data.sh scripts.
 
-  NOTE: If you are running this example from the docker playground, you can use the `small_data.sh` or `big_data.sh`
-  scripts to generate and deploy data files for this control rather than doing the above manually.
 version: 1
+
 # Ensure debug is false - there is significant overhead when true as the matcher will be writing all
 # data out to multiple files after each instruction if it's set to true.
 debug: false
 
+jetwash:
+  source_files:
+   - pattern: ^10-invoices\.csv$
+   - pattern: ^10-payments\.csv$
+   - pattern: ^10-receipts\.csv$
+
 matching:
   source_files:
-    - pattern: .*09-BIG-invoices\.csv
+    - pattern: .*10-invoices.*\.csv
       field_prefix: INV
-    - pattern: .*09-BIG-payments\.csv
+    - pattern: .*10-payments.*\.csv
       field_prefix: PAY
-    - pattern: .*09-BIG-receipts\.csv
+    - pattern: .*10-receipts.*\.csv
       field_prefix: REC
   instructions:
     - project:
         column: PAYMENT_AMOUNT_BASE
-        as_a: DECIMAL
+        as_a: Decimal
         from: record["PAY.Amount"] * record["PAY.FXRate"]
         when: record["META.prefix"] == "PAY"
     - project:
         column: RECEIPT_AMOUNT_BASE
-        as_a: DECIMAL
+        as_a: Decimal
         from: record["REC.Amount"] * record["REC.FXRate"]
         when: record["META.prefix"] == "REC"
-    - project:
-        column: TOTAL_AMOUNT_BASE
-        as_a: DECIMAL
-        from: record["INV.TotalAmount"] * record["INV.FXRate"]
-        when: record["META.prefix"] == "INV"
     - merge:
-        columns: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'TOTAL_AMOUNT_BASE']
+        columns: ['PAYMENT_AMOUNT_BASE', 'RECEIPT_AMOUNT_BASE', 'INV.TotalAmount']
         into: AMOUNT_BASE
     - merge:
-        columns: ['INV.Reference', 'PAY.Reference', 'REC.Reference']
-        into: REFERENCE
+        columns: ['INV.SettlementDate', 'PAY.PaymentDate', 'REC.ReceiptDate']
+        into: SETTLEMENT_DATETIME
+    - project:
+        column: SETTLEMENT_DATE
+        as_a: Datetime
+        from: midnight(record["SETTLEMENT_DATETIME"])
     - group:
-        by: ['REFERENCE']
+        by: ['SETTLEMENT_DATE']
         match_when:
-          - nets_to_zero:
+          - nets_with_tolerance:
               column: AMOUNT_BASE
               lhs: record["META.prefix"] == "PAY"
               rhs: record["META.prefix"] == "INV"
-          - nets_to_zero:
+              tol_type: Amount
+              tolerance: 1.00
+          - nets_with_tolerance:
               column: AMOUNT_BASE
               lhs: record["META.prefix"] == "REC"
               rhs: record["META.prefix"] == "INV"
+              tol_type: Amount
+              tolerance: 1.00

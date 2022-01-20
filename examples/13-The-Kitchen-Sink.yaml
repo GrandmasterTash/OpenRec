@@ -26,79 +26,79 @@ jetwash:
   # Repeat the source_files for each _type_ of data file the charter needs to import.
   source_files:
     # The filename regex pattern use to identify files in the inbox to process in this section.
-    pattern: ^filename\.csv$
+    - pattern: ^filename\.csv$
 
-    # An optional setting - two double-quotes is the standard way of embedding double quote (e.g.
-    # "this""has a double quote in it"). However, some formats use escape slashes '\' for example
-    escape: '\'
+      # An optional setting - two double-quotes is the standard way of embedding double quote (e.g.
+      # "this""has a double quote in it"). However, some formats use escape slashes '\' for example
+      escape: '\'
 
-    # An optional setting - the quote character to use when parsing, the default is double-quotes '"'.
-    quote: '"'
+      # An optional setting - the quote character to use when parsing, the default is double-quotes '"'.
+      quote: '"'
 
-    # An optional setting - the field delimiter to use when parsing, the default is comma ','.
-    delimiter: ','
+      # An optional setting - the field delimiter to use when parsing, the default is comma ','.
+      delimiter: ','
 
-    # The headers list can be used if imported files do not have their own column headers.
-    headers: ['Reference', 'Date', 'Amount', 'Currency']
+      # The headers list can be used if imported files do not have their own column headers.
+      headers: ['Reference', 'Date', 'Amount', 'Currency']
 
-    # An optional list of column mappings for this file type.
-    column_mappings:
-      # These column transformations contain an instruction followed by the column name to perform it on.
+      # An optional list of column mappings for this file type.
+      column_mappings:
+        # These column transformations contain an instruction followed by the column name to perform it on.
 
-      # Take a value in the format 'dd-mm-yyyy' or 'dd/mm/yyyy', etc. and convert into an ISO8601 datetime, e.g. -> '2022-01-19T00:00:00.000Z'
-      dmy: TradeDate
+        # Take a value in the format 'dd-mm-yyyy' or 'dd/mm/yyyy', etc. and convert into an ISO8601 datetime, e.g. -> '2022-01-19T00:00:00.000Z'
+        - dmy: TradeDate
 
-      # Take a value in the format 'mm-dd-yyyy' and convert into an ISO8601 datetime, e.g. -> '2022-01-19T00:00:00.000Z'
-      mdy: SettlementDate
+        # Take a value in the format 'mm-dd-yyyy' and convert into an ISO8601 datetime, e.g. -> '2022-01-19T00:00:00.000Z'
+        - mdy: SettlementDate
 
-      # Take a value in the format 'yyyy-mm-dd' and convert into an ISO8601 datetime, e.g. -> '2022-01-19T00:00:00.000Z'
-      ymd: ValueDate
+        # Take a value in the format 'yyyy-mm-dd' and convert into an ISO8601 datetime, e.g. -> '2022-01-19T00:00:00.000Z'
+        - ymd: ValueDate
 
-      # Trims any surrounding whitespace from the incoming value.
-      trim: Reference
+        # Trims any surrounding whitespace from the incoming value.
+        - trim: Reference
 
-      # Forces the columns data-type to be a boolean rather than the dynamically analysed type. Can be useful where the column may be empty in
-      # some files, which would create a String column.
-      as_boolean: Internal
+        # Forces the columns data-type to be a boolean rather than the dynamically analysed type. Can be useful where the column may be empty in
+        # some files, which would create a String column.
+        - as_boolean: Internal
 
-      # Forces the columns data-type to be a datetime rather than the dynamically analysed type. Can be useful where the column may be empty in
-      # some files, which would create a String column.
-      as_datetime: TradeDate
+        # Forces the columns data-type to be a datetime rather than the dynamically analysed type. Can be useful where the column may be empty in
+        # some files, which would create a String column.
+        - as_datetime: TradeDate
 
-      # Forces the columns data-type to be a decimal rather than the dynamically analysed type. Can be useful where the column may be empty in
-      # some files, which would create a String column.
-      as_decimal: Amount
+        # Forces the columns data-type to be a decimal rather than the dynamically analysed type. Can be useful where the column may be empty in
+        # some files, which would create a String column.
+        - as_decimal: Amount
 
-      # Forces the columns data-type to be a integer rather than the dynamically analysed type. Can be useful where the column may be empty in
-      # some files, which would create a String column.
-      as_integer: Principal
+        # Forces the columns data-type to be a integer rather than the dynamically analysed type. Can be useful where the column may be empty in
+        # some files, which would create a String column.
+        - as_integer: Principal
 
-      # Use Map when one of the above transformations isn't enough - map uses Lua script to transform a column's value before the file is
-      # presented to the matching engine.
-      map:
-        # The name of the column in the source file. Column names are always case-sensitive.
-        column: Reference
-        # The Datatype of the transformed column's value. Can be one-of: -
-        #   Boolean   - e.g. 1, 0
-        #   Datetime  - ISO8601 (RFC3339) format, e.g. '2022-01-19T16:34:00.123Z'
-        #   Decimal   - 123456.789012
-        #   Integer   - 1234567890
-        #   String    - UTF-8 text, e.g. 'Hello'
-        #   Uuid      - A hypenated UUID, e.g. 'd692080a-7945-11ec-9bcb-00155dea2408'
-        as_a: String
-        # Some Lua script to return a new value. The Lua script in a Map->from section is always given the original file's value as
-        # a string called 'value'. In the example below, we're converting the value to upper-case.
-        from: value:upper()
+        # Use Map when one of the above transformations isn't enough - map uses Lua script to transform a column's value before the file is
+        # presented to the matching engine.
+        - map:
+            # The name of the column in the source file. Column names are always case-sensitive.
+            column: Reference
+            # The Datatype of the transformed column's value. Can be one-of: -
+            #   Boolean   - e.g. 1, 0
+            #   Datetime  - ISO8601 (RFC3339) format, e.g. '2022-01-19T16:34:00.123Z'
+            #   Decimal   - 123456.789012
+            #   Integer   - 1234567890
+            #   String    - UTF-8 text, e.g. 'Hello'
+            #   Uuid      - A hypenated UUID, e.g. 'd692080a-7945-11ec-9bcb-00155dea2408'
+            as_a: String
+            # Some Lua script to return a new value. The Lua script in a Map->from section is always given the original file's value as
+            # a string called 'value'. In the example below, we're converting the value to upper-case.
+            from: value:upper()
 
-    # An optional list of new columns to create in files before they are presented to the matching engine.
-    new_columns:
-      # The name of the new column.
-      column: ConvertedAmount
-      # The data type for the new column.
-      as_a: Decimal
-      # The Lua script used to create a new column. The script has access to every other field on the record by using the 'record' Lua
-      # table. All values on the record are strings - hence in the example below we're converting the strings to decimals before multiplying.
-      from: decimal(record["Amount"]) * decimal(10.5)
+      # An optional list of new columns to create in files before they are presented to the matching engine.
+      new_columns:
+        # The name of the new column.
+        - column: ConvertedAmount
+          # The data type for the new column.
+          as_a: Decimal
+          # The Lua script used to create a new column. The script has access to every other field on the record by using the 'record' Lua
+          # table. All values on the record are strings - hence in the example below we're converting the strings to decimals before multiplying.
+          from: decimal(record["Amount"]) * decimal(10.5)
 
 
 # This section is applied after jetwash and is used by the celerity module to process matching instructions and rules to
@@ -120,9 +120,9 @@ matching:
   #    invoices.csv -> 20220119_163400123-invoices.csv -> 20220119_163400123-invoices.unmatched.csv
   source_files:
     # The filename regex pattern use to identify files in the waiting folder to process in this section.
-    pattern: ^\d{8}_\d{9}_invoices.*\.csv$
-    # Prefixes every column name to ensure it wont conflict with another source_file's column. e.g. 'Amount' -> 'INV.Amount'
-    field_prefix: INV
+    - pattern: ^\d{8}_\d{9}_invoices.*\.csv$
+      # Prefixes every column name to ensure it wont conflict with another source_file's column. e.g. 'Amount' -> 'INV.Amount'
+      field_prefix: INV
 
   # The matching instructions are processed in phases. The first phase will perform the column projections and
   # column mergers, the second phase will perform the grouping instructions. Within each phase, the instructions
@@ -144,11 +144,11 @@ matching:
 
     # Merge two or more columns into a single column.
     - merge:
-      # The value from the first column in the list is used, unless it's blank, in which case the second in the list
-      # is used, unless it is blank, and so on.
-      columns: ['INV.Amount', 'PAY.Amount']
-      # The name of the new column to create. This is temporary and not stored in any files that outlive the match job.
-      into: AMOUNT
+        # The value from the first column in the list is used, unless it's blank, in which case the second in the list
+        # is used, unless it is blank, and so on.
+        columns: ['INV.Amount', 'PAY.Amount']
+        # The name of the new column to create. This is temporary and not stored in any files that outlive the match job.
+        into: AMOUNT
 
     # Groups data before testing constraint rules on it. Groups which match are 'released' (effectively deleted) from the system
     # any records at the end of the match job which don't match are exposed in the outbox in unmatched csv files.

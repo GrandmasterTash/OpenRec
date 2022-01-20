@@ -1,5 +1,7 @@
 # What is a OpenRec?
 
+TODO: some screenshots / gifs
+
 <img src="docs/overview.png" align="right" style="padding-left: 5px" width="300px"/>
 
 OpenRec is a reconciliation matching engine written in the [Rust](https://www.rust-lang.org/) language. It can be used to group and match data presented to it in CSV format using easy-to-configure YAML and Lua rules. OpenRec comprises a small number of modules which are intended to be used as libraries and services **within your own enterprise-wide solution**.
@@ -32,6 +34,8 @@ OpenRec configuration utilizes the Lua scripting language to derive calculated f
 ### Database Free
 
 The core components are entirely file-based requiring no other dependencies - although you can optionally configure Steward to provide Prometheus metrics. From the outside world, there is an inbox where data is delivered and an outbox where unmatched data is returned (to be consumed by your own systems to allow clerks/operators to investigate and correct).
+
+It's just files.
 
 
 ## Next Steps

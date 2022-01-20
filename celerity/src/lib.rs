@@ -24,6 +24,7 @@ use crate::{model::{grid::Grid, schema::Column, record::Record}, instructions::{
 // BUG: Derived data not in the debug output during the derived phase - but it IS in the first grouping phase!
 // TODO: Option in charter (effects celerity and jetwash) to NOT archive data. Enable in the big data examples
 // TODO: Change generator to group by ref not date. It's not a good example to set....
+// TODO: Opt-out of archiving for both JW and Cel.
 
 ///
 /// These are the linear state transitions of a match Job.

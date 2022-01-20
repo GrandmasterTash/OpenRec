@@ -35,6 +35,7 @@ pub mod prelude {
 }
 
 pub struct Options {
+    pub output: Option<String>,
     pub inv_schema: Option<String>, // Schemas should be provided OR the number of columns to generate.
     pub rec_schema: Option<String>, // Schemas take precedence of the number of columns.
     pub pay_schema: Option<String>,
@@ -52,6 +53,7 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
 
     let start = Instant::now();
 
+    let output = options.output.unwrap_or("./tmp".to_string());
     let rnd_seed = options.rnd_seed.unwrap_or(1234567890u64);
     let mut rng = StdRng::seed_from_u64(rnd_seed);
     let inv_schema = column_schema(&options.inv_schema, &options.inv_columns, &mut rng);
@@ -64,9 +66,9 @@ pub fn generate(options: Options) -> Result<(), csv::Error> {
     let rec_schema = Schema::new(&rec_schema, &mut rng, &mut fixed_rec_columns());
 
     let prefix = "";//Utc::now().format("%Y%m%d_%H%M%S%3f_").to_string();
-    let inv_path = format!("./tmp/{}invoices.csv", prefix);
-    let pay_path = format!("./tmp/{}payments.csv", prefix);
-    let rec_path = format!("./tmp/{}receipts.csv", prefix);
+    let inv_path = format!("{}/{}invoices.csv", output, prefix);
+    let pay_path = format!("{}/{}payments.csv", output, prefix);
+    let rec_path = format!("{}/{}receipts.csv", output, prefix);
 
     let inv_path = std::path::Path::new(&inv_path);
     let pay_path = std::path::Path::new(&pay_path);
