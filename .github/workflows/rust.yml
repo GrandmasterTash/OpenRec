@@ -11,12 +11,17 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
     - name: Build
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Generate coverage file
+      run: |
+        cargo install cargo-tarpaulin --vers "^0.19.1"
+        cargo tarpaulin --workspace --out Xml
+    - name: Upload to Codecov
+      uses: codecov/codecov-action@v1
+      with: { file: cobertura.xml }
