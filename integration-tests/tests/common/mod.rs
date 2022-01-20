@@ -210,7 +210,7 @@ pub fn assert_unmatched_ok(data_files: &Vec<PathBuf>, base_dir: &PathBuf, expect
     let unmatched_dir = get_dir_content(base_dir.join("unmatched")).expect("Unable to get the unmatched files");
     assert_eq!(unmatched_dir.files.len(), expected_unmatched, "Unmatched files didn't match expect number");
 
-    (matched, unmatched_dir.files.iter().map(|f| PathBuf::from(f)).collect())
+    (matched, unmatched_dir.files.iter().map(|f| PathBuf::from(f)).sorted().collect())
 }
 
 ///
