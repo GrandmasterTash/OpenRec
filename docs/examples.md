@@ -2,7 +2,15 @@
 
 The [examples](/examples) folder contains a series of charter examples which cover the various features of OpenRec. You should read through them, as-in turn, they progressively introduce more and more configuration concepts and matching scenarios.
 
-When familiar with the examples you should jump on over to the [Getting Started](getting_started.md) section. The docker environment it discusses using Steward to automate the initiation of match jobs. If you want to run them manually though, you can run jetwash to pre-process data and then celerity to match the data.
+The last example [The-Kitchen-Sink](/examples/13-The-Kitchen-Sink.yaml) contains a full reference of all charter configuration.
+
+## Docker Playground
+
+When familiar with the examples you should jump on over to the [Getting Started](getting_started.md) section. The docker playground will get Steward up and running to automate the initiation of match jobs.
+
+## Running Manually
+
+If you want to run them manually though, you can run jetwash to pre-process data and then celerity to match the data.
 
 Start by compiling the workspace - from the root project folder: -
 
