@@ -9,9 +9,7 @@ networks:
 
 services:
   openrec:
-    build:
-      context: ../
-    image: openrec:latest
+    image: grandmastertash/openrec:v0.1.0-alpha
     container_name: openrec
     user: "${OPENREC_UID}:${OPENREC_GID}"
     volumes:

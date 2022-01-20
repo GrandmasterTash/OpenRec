@@ -4,7 +4,6 @@ To try some of the example controls in docker you must use the following (assume
 
 ```bash
 cd docker
-docker-compose build
 ./openrec.sh
 ```
 

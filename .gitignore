@@ -16,5 +16,6 @@
 # Docker playground mounted files
 /docker/etc/charters
 
+cobertura.xml
 lcov.info
 .vscode

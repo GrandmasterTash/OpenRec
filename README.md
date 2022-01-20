@@ -1,6 +1,8 @@
 # OpenRec
 
 [![Rust](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml)
+[![Docker Image CI](https://github.com/GrandmasterTash/OpenRec/actions/workflows/docker-image.yml/badge.svg)](https://github.com/GrandmasterTash/OpenRec/actions/workflows/docker-image.yml)
+[![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## What is a OpenRec?
 
@@ -67,3 +69,4 @@ The following is on my wishlist of things to tackle: -
 * [ ] Lua updates in changesets. Allow Lua to be executed in a changeset, not just direct field value replacement.
 * [ ] Headless mode for Steward. Currently a console-only application.
 * [ ] WASM feasibility study. The ability to host the matching engine in a browser would be.... cool.
+* [ ] Windows support (I suppose)
