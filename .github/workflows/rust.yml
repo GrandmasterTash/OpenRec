@@ -24,4 +24,6 @@ jobs:
         cargo tarpaulin --workspace --out Xml
     - name: Upload to Codecov
       uses: codecov/codecov-action@v1
-      with: { file: cobertura.xml }
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: cobertura.xml
