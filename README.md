@@ -5,6 +5,7 @@ It's just files.
 [![Rust](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml)
 [![Docker Image CI](https://github.com/GrandmasterTash/OpenRec/actions/workflows/docker-image.yml/badge.svg)](https://github.com/GrandmasterTash/OpenRec/actions/workflows/docker-image.yml)
 [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![codecov](https://codecov.io/gh/GrandmasterTash/OpenRec/branch/main/graph/badge.svg?token=EA3QHJCYPJ)](https://codecov.io/gh/GrandmasterTash/OpenRec)
 
 ## What is a OpenRec?
 
