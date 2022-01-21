@@ -254,6 +254,8 @@ fn handle_job_done(control: &mut Control) {
                             let ts = timestamp(&latest);
                             let out_dir = control.root().join("outbox").join(ts);
 
+                            // TODO: .inprogress on all these files until they are written.
+
                             // Create an outbox folder.
                             if let Err(err) = fs::create_dir_all(&out_dir) {
                                 control.suspend(&format!("Can't create outbox: {}", err));

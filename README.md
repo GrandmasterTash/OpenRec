@@ -1,5 +1,7 @@
 # OpenRec
 
+It's just files.
+
 [![Rust](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/GrandmasterTash/OpenRec/actions/workflows/rust.yml)
 [![Docker Image CI](https://github.com/GrandmasterTash/OpenRec/actions/workflows/docker-image.yml/badge.svg)](https://github.com/GrandmasterTash/OpenRec/actions/workflows/docker-image.yml)
 [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,7 +10,7 @@
 
 <img src="docs/overview.png" align="right" style="padding-left: 5px" width="300px"/>
 
-OpenRec is a reconciliation matching engine written in the [Rust](https://www.rust-lang.org/) language. It can be used to group and match data presented to it in CSV format using easy-to-configure YAML and Lua rules. OpenRec comprises a small number of modules which are intended to be used as libraries and services **within your own enterprise-wide solution**.
+OpenRec is a [reconciliation matching](https://corporatefinanceinstitute.com/resources/knowledge/accounting/reconciliation/) engine written in the [Rust](https://www.rust-lang.org/) language. It can be used to group and match data presented to it in CSV format using easy-to-configure YAML and Lua rules. OpenRec comprises a small number of modules which are intended to be used as libraries and services **within your own enterprise-wide solution**.
 
 The motivation for this project was simply personal. I wished to solve the problem of writing a matching engine in a way that wouldn't consume system (memory) resources in a new, modern language. As a result you should take note: OpenRec is a matching engine, not a full solution.
 
@@ -36,11 +38,11 @@ OpenRec configuration files (called **charters**) use a very natural configurati
 
 ### Flexible/Extendible
 
-OpenRec configuration utilizes the Lua scripting language to derive calculated fields and evaluate matching rules. Lua is a well documented and OpenRec provides some very handy helper functions which can also be leveraged (there is much more detail in the examples folder).
+OpenRec configuration utilizes the [Lua scripting](http://lua-users.org/wiki/TutorialDirectory) language to derive calculated fields and evaluate matching rules. Lua is a well documented and OpenRec provides some very handy helper functions which can also be leveraged (there is much more detail in the examples folder).
 
 ### Database Free
 
-The core components are entirely file-based requiring no other dependencies - although you can optionally configure Steward to provide Prometheus metrics. From the outside world, there is an inbox where data is delivered and an outbox where unmatched data is returned (to be consumed by your own systems to allow clerks/operators to investigate and correct).
+The core components are entirely file-based requiring no other dependencies - although you can optionally configure Steward to provide [Prometheus](https://prometheus.io/) metrics (via a [Pushgateway](https://github.com/prometheus/pushgateway)). From the outside world, there is an inbox where data is delivered and an outbox where unmatched data is returned (to be consumed by your own systems to allow clerks/operators to investigate and correct).
 
 It's just files.
 
@@ -70,3 +72,4 @@ The following is on my wishlist of things to tackle: -
 * [ ] Headless mode for Steward. Currently a console-only application.
 * [ ] WASM feasibility study. The ability to host the matching engine in a browser would be.... cool.
 * [ ] Windows support (I suppose)
+* [ ] Prevent a charter being modified during a match job (i.e. Jetwash uses one ver Celerity uses another)
